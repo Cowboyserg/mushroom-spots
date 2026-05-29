@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -34,6 +34,22 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString('ru-RU', { dateStyle:'medium', timeStyle:'short' });
 }
 function meters(m) { return m == null ? '—' : `${Math.round(m)} м`; }
+function fmtOptionalNumber(value, suffix='', digits=0) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return `${Number(value).toFixed(digits)}${suffix}`;
+}
+function fmtSpeed(mps) {
+  if (mps == null || Number.isNaN(Number(mps))) return '—';
+  return `${(Number(mps) * 3.6).toFixed(1)} км/ч`;
+}
+function fmtHeading(deg) {
+  if (deg == null || Number.isNaN(Number(deg))) return '—';
+  return `${Math.round(Number(deg))}° ${directionName(Number(deg))}`;
+}
+function fmtTimeOnly(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString('ru-RU');
+}
 function escapeHtml(str='') {
   return String(str).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
@@ -100,6 +116,17 @@ function setSetting(key, value) {
   });
 }
 
+function updateGpsStatusPanel(position) {
+  $('gpsStatus').textContent = 'активен';
+  $('gpsAccuracy').textContent = meters(position.accuracy);
+  $('gpsCoords').textContent = `${fmtCoord(position.lat)}, ${fmtCoord(position.lon)}`;
+  $('gpsSatellites').textContent = 'недоступно в PWA';
+  $('gpsAltitude').textContent = position.altitude == null ? '—' : `${Math.round(position.altitude)} м${position.altitudeAccuracy != null ? ` ±${Math.round(position.altitudeAccuracy)} м` : ''}`;
+  $('gpsSpeed').textContent = fmtSpeed(position.speed);
+  $('gpsHeading').textContent = fmtHeading(position.heading);
+  $('gpsUpdatedAt').textContent = fmtTimeOnly(position.timestamp);
+}
+
 function initMap() {
   map = L.map('map', { zoomControl: true }).setView([56.9496, 24.1052], 12);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -110,15 +137,19 @@ function initMap() {
 
 function updateUserPosition(pos, center=false) {
   const { latitude, longitude, accuracy } = pos.coords;
+  const { altitude, altitudeAccuracy, speed, heading } = pos.coords;
   currentPosition = {
     lat: latitude,
     lon: longitude,
     accuracy,
-    timestamp: new Date(pos.timestamp).toISOString()
+    altitude,
+    altitudeAccuracy,
+    speed,
+    heading,
+    timestamp: new Date(pos.timestamp).toISOString(),
+    satellites: null
   };
-  $('gpsStatus').textContent = 'активен';
-  $('gpsAccuracy').textContent = meters(accuracy);
-  $('gpsCoords').textContent = `${fmtCoord(latitude)}, ${fmtCoord(longitude)}`;
+  updateGpsStatusPanel(currentPosition);
 
   const latlng = [latitude, longitude];
   if (!userMarker) {
@@ -295,9 +326,14 @@ async function averageAndSave() {
       lat: weighted.reduce((s,x)=>s+x.lat*x.w,0)/wSum,
       lon: weighted.reduce((s,x)=>s+x.lon*x.w,0)/wSum,
       accuracy: Math.min(...samples.map(s=>s.accuracy||9999)),
+      altitude: null,
+      altitudeAccuracy: null,
+      speed: null,
+      heading: null,
+      satellites: null,
       timestamp: new Date().toISOString()
     };
-    updateUserPosition({ coords:{ latitude: currentPosition.lat, longitude: currentPosition.lon, accuracy: currentPosition.accuracy }, timestamp: Date.now() }, true);
+    updateUserPosition({ coords:{ latitude: currentPosition.lat, longitude: currentPosition.lon, accuracy: currentPosition.accuracy, altitude: null, altitudeAccuracy: null, speed: null, heading: null }, timestamp: Date.now() }, true);
     $('saveHint').textContent = `Готово: собрано ${samples.length} измерений за ${Math.round((Date.now()-started)/1000)} сек. Теперь можно сохранить точку.`;
   }, 30000);
 }
@@ -502,7 +538,8 @@ async function updateStorageUi() {
 
 function getSupabaseConfig() {
   const cfg = window.MUSHROOM_CONFIG || {};
-  const url = (cfg.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const rawUrl = (cfg.SUPABASE_URL || '').trim();
+  const url = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
   const key = (cfg.SUPABASE_ANON_KEY || '').trim();
   if (!url || !key || url.includes('PASTE_') || key.includes('PASTE_')) return null;
   return { url, key };
@@ -517,7 +554,13 @@ async function supabaseFetch(path, options = {}) {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
-  const res = await fetch(`${cfg.url}/rest/v1/${path}`, { ...options, headers });
+  const requestUrl = `${cfg.url}/rest/v1/${path}`;
+  let res;
+  try {
+    res = await fetch(requestUrl, { ...options, headers });
+  } catch (err) {
+    throw new Error(`Network fetch failed. URL=${requestUrl}. ${err.message}`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Supabase ${res.status}: ${text || res.statusText}`);
@@ -690,6 +733,17 @@ function stopLiveSharing() {
   $('liveHint').textContent = 'Трансляция остановлена. Последняя позиция исчезнет у друзей, когда станет старше 5 минут.';
 }
 
+async function testSupabaseConnection() {
+  try {
+    const cfg = getSupabaseConfig();
+    if (!cfg) throw new Error('Supabase не настроен в config.js.');
+    const rows = await supabaseFetch('live_locations?select=id&limit=1', { method: 'GET' });
+    $('liveHint').textContent = `Supabase OK. URL=${cfg.url}. Ответ: ${Array.isArray(rows) ? rows.length : 'ok'}`;
+  } catch (err) {
+    $('liveHint').textContent = `Supabase test failed: ${err.message}`;
+  }
+}
+
 function bindUi() {
   $('startGpsBtn').onclick = () => startGps(true);
   $('centerMeBtn').onclick = () => currentPosition ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true);
@@ -709,6 +763,7 @@ function bindUi() {
   $('startLiveBtn').onclick = startLiveSharing;
   $('stopLiveBtn').onclick = stopLiveSharing;
   $('refreshFriendsBtn').onclick = refreshFriends;
+  $('testSupabaseBtn').onclick = testSupabaseConnection;
   $('liveName').onchange = saveLiveInputs;
   $('groupId').onchange = saveLiveInputs;
   $('installHelpBtn').onclick = () => $('helpDialog').showModal();

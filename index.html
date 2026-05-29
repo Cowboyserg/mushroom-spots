@@ -14,18 +14,24 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.0 · Sprint 3</p>
+      <p id="appVersion">v0.5.2 · Sprint 3.2</p>
     </div>
     <button id="installHelpBtn" class="ghost">?</button>
   </header>
 
   <main>
     <section class="card status-card">
-      <div class="status-grid">
+      <div class="status-grid gps-status-grid">
         <div><span class="label">GPS</span><strong id="gpsStatus">не запущен</strong></div>
         <div><span class="label">Точность</span><strong id="gpsAccuracy">—</strong></div>
         <div><span class="label">Координаты</span><strong id="gpsCoords">—</strong></div>
+        <div><span class="label">Спутники</span><strong id="gpsSatellites">недоступно в PWA</strong></div>
+        <div><span class="label">Высота</span><strong id="gpsAltitude">—</strong></div>
+        <div><span class="label">Скорость</span><strong id="gpsSpeed">—</strong></div>
+        <div><span class="label">Курс</span><strong id="gpsHeading">—</strong></div>
+        <div><span class="label">Обновлено</span><strong id="gpsUpdatedAt">—</strong></div>
       </div>
+      <p class="hint">Браузерная PWA не получает число спутников напрямую. Для оценки качества сигнала используй поле “Точность”: меньше метров — лучше.</p>
       <div class="row">
         <button id="startGpsBtn">Включить GPS</button>
         <button id="centerMeBtn" class="secondary">Ко мне</button>
@@ -103,6 +109,7 @@
         <button id="startLiveBtn">Начать трансляцию</button>
         <button id="stopLiveBtn" class="danger">Остановить</button>
         <button id="refreshFriendsBtn" class="secondary">Обновить друзей</button>
+        <button id="testSupabaseBtn" class="secondary">Проверить Supabase</button>
       </div>
       <div id="friendsList" class="friends-list"></div>
       <p class="hint" id="liveHint">Для Sprint 3 нужен Supabase URL и anon public key в файле config.js.</p>
@@ -131,8 +138,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3</h2>
-      <p class="hint">Live group location via Supabase. Mushroom spots remain local; only temporary current location is sent to the backend when sharing is enabled.</p>
+      <h2>Sprint 3.2</h2>
+      <p class="hint">Live group location diagnostics plus GNSS/GPS status panel. Satellite count is shown as unavailable because browser geolocation does not expose it.</p>
     </section>
   </main>
 

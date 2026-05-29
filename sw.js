@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mushroom-spots-v0.5.0';
+const CACHE_NAME = 'mushroom-spots-v0.5.2';
 const APP_SHELL = ['./', './index.html', './styles.css', './app.js', './config.js', './manifest.webmanifest', './icon.svg', './apple-touch-icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));

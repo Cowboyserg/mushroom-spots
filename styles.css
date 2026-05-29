@@ -7,7 +7,7 @@ main { padding:12px; max-width:920px; margin:0 auto; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:14px; margin:12px 0; box-shadow:0 4px 18px #0000000d; }
 h2 { margin:0 0 12px; font-size:18px; }
 .status-grid { display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:12px; }
-@media (min-width: 720px){ .status-grid{ grid-template-columns: 1fr 1fr 2fr; } }
+@media (min-width: 720px){ .status-grid{ grid-template-columns: 1fr 1fr 2fr; } .gps-status-grid{ grid-template-columns: 1fr 1fr 2fr 1fr; } }
 .label { display:block; color:var(--muted); font-size:12px; margin-bottom:2px; } strong { overflow-wrap:anywhere; }
 .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 button, .file-button { appearance:none; border:0; border-radius:12px; background:var(--green); color:white; padding:11px 14px; font-weight:700; cursor:pointer; }
