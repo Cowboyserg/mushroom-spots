@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.3 · Sprint 3.3</p>
+      <p id="appVersion">v0.5.4 · Sprint 3.4</p>
     </div>
     <button id="installHelpBtn" class="ghost">?</button>
   </header>
@@ -90,9 +90,12 @@
     <section class="card live-card">
       <div class="section-title">
         <h2>Друзья на карте</h2>
-        <span id="liveStatus" class="pill">выключено</span>
+        <div class="pill-row">
+          <span id="groupStatus" class="pill">не в группе</span>
+          <span id="liveStatus" class="pill">трансляция выключена</span>
+        </div>
       </div>
-      <p class="hint">Передаются только текущие координаты для группы. Грибные точки остаются локально на телефоне.</p>
+      <p class="hint">Переход по приглашению автоматически входит в группу и показывает активных участников. Передача твоей позиции начинается только после кнопки “Начать трансляцию”. Грибные точки остаются локально на телефоне.</p>
       <div class="field">
         <label for="liveName">Моё имя</label>
         <input id="liveName" placeholder="Например: Иван" />
@@ -104,15 +107,17 @@
       <div class="row">
         <button id="createGroupBtn" class="secondary">Создать группу</button>
         <button id="copyInviteBtn" class="secondary">Скопировать приглашение</button>
+        <button id="joinGroupBtn" class="secondary">Войти в группу</button>
+        <button id="leaveGroupBtn" class="secondary">Выйти из группы</button>
       </div>
       <div class="row live-actions">
         <button id="startLiveBtn">Начать трансляцию</button>
-        <button id="stopLiveBtn" class="danger">Остановить</button>
+        <button id="stopLiveBtn" class="danger">Остановить трансляцию</button>
         <button id="refreshFriendsBtn" class="secondary">Обновить друзей</button>
         <button id="testSupabaseBtn" class="secondary">Проверить Supabase</button>
       </div>
       <div id="friendsList" class="friends-list"></div>
-      <p class="hint" id="liveHint">Для Sprint 3 нужен Supabase URL и anon public key в файле config.js.</p>
+      <p class="hint" id="liveHint">Для live-режима нужен Supabase URL и anon public key в файле config.js.</p>
     </section>
 
     <section class="card">
@@ -138,8 +143,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.2</h2>
-      <p class="hint">Live group location diagnostics plus GNSS/GPS status panel. Satellite count is shown as unavailable because browser geolocation does not expose it.</p>
+      <h2>Sprint 3.4</h2>
+      <p class="hint">Invite links now auto-join the group for read-only watching. “Начать трансляцию” only starts sending your own position.</p>
     </section>
   </main>
 

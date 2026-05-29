@@ -42,3 +42,5 @@ dialog::backdrop { background:#0008; }
 .friend-stale { opacity:.62; }
 .live-card .pill.on { background:#dff2df; color:#1f612e; }
 .live-card .pill.warn { background:#fff1c2; color:#705000; }
+
+.pill-row { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.3';
+const APP_VERSION = '0.5.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -16,6 +16,7 @@ let spotMarkers = new Map();
 let selectedSpotId = null;
 let navLine = null;
 let folderHandle = null;
+let groupJoined = false;
 let liveEnabled = false;
 let liveTimer = null;
 let friendsTimer = null;
@@ -536,6 +537,7 @@ async function updateStorageUi() {
 }
 
 
+
 function getSupabaseConfig() {
   const cfg = window.MUSHROOM_CONFIG || {};
   const rawUrl = (cfg.SUPABASE_URL || '').trim();
@@ -580,17 +582,40 @@ function ensureUserId() {
   return id;
 }
 
+function updateLiveUi() {
+  if ($('groupStatus')) {
+    $('groupStatus').textContent = groupJoined ? 'в группе' : 'не в группе';
+    $('groupStatus').className = groupJoined ? 'pill on' : 'pill';
+  }
+  if ($('liveStatus')) {
+    $('liveStatus').textContent = liveEnabled ? 'трансляция включена' : 'трансляция выключена';
+    $('liveStatus').className = liveEnabled ? 'pill on' : 'pill';
+    if (!getSupabaseConfig()) $('liveStatus').className = 'pill warn';
+  }
+}
+
 function parseGroupFromUrl() {
   const url = new URL(window.location.href);
   const group = url.searchParams.get('group');
-  if (group && $('groupId')) $('groupId').value = group;
+  if (group && $('groupId')) {
+    $('groupId').value = group;
+    localStorage.setItem('mushroom_live_group_id', group);
+    return group;
+  }
+  return null;
 }
 
-function createGroup() {
+async function createGroup() {
   const group = crypto.randomUUID ? crypto.randomUUID() : uid();
   $('groupId').value = group;
   localStorage.setItem('mushroom_live_group_id', group);
-  $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям.';
+  updateLiveUi();
+  if (getSupabaseConfig()) {
+    await joinGroup(true);
+    $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
+  } else {
+    $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Для live-режима нужен Supabase в config.js.';
+  }
 }
 
 async function copyInvite() {
@@ -615,7 +640,50 @@ function saveLiveInputs() {
 function loadLiveInputs() {
   $('liveName').value = localStorage.getItem('mushroom_live_name') || '';
   $('groupId').value = localStorage.getItem('mushroom_live_group_id') || '';
-  parseGroupFromUrl();
+  const groupFromUrl = parseGroupFromUrl();
+  updateLiveUi();
+  return groupFromUrl;
+}
+
+function clearFriendMarkers() {
+  for (const marker of friendMarkers.values()) marker.remove();
+  friendMarkers.clear();
+}
+
+async function joinGroup(silent = false) {
+  if (!getSupabaseConfig()) {
+    if (!silent) alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.');
+    updateLiveUi();
+    return false;
+  }
+  const group = $('groupId').value.trim();
+  if (!group) {
+    if (!silent) alert('Создай группу или открой приглашение от друга.');
+    return false;
+  }
+  saveLiveInputs();
+  groupJoined = true;
+  updateLiveUi();
+  clearInterval(friendsTimer);
+  await refreshFriends();
+  friendsTimer = setInterval(refreshFriends, 10000);
+  if (!silent) {
+    $('liveHint').textContent = 'Ты в группе. Можно видеть активных участников без передачи своей позиции. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
+  }
+  return true;
+}
+
+async function leaveGroup() {
+  await stopLiveSharing(false);
+  groupJoined = false;
+  clearInterval(friendsTimer);
+  friendsTimer = null;
+  clearFriendMarkers();
+  $('friendsList').innerHTML = '<p class="hint">Ты вышел из группы.</p>';
+  $('groupId').value = '';
+  localStorage.removeItem('mushroom_live_group_id');
+  updateLiveUi();
+  $('liveHint').textContent = 'Ты вышел из группы. Приглашение можно открыть заново.';
 }
 
 async function publishMyLocation() {
@@ -645,6 +713,17 @@ async function publishMyLocation() {
   $('liveHint').textContent = `Позиция отправлена: ${new Date().toLocaleTimeString('ru-RU')}`;
 }
 
+async function deleteMyLiveLocation() {
+  const group = $('groupId').value.trim();
+  if (!group || !getSupabaseConfig()) return;
+  const encodedGroup = encodeURIComponent(group);
+  const encodedUser = encodeURIComponent(ensureUserId());
+  await supabaseFetch(`live_locations?group_id=eq.${encodedGroup}&user_id=eq.${encodedUser}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' }
+  });
+}
+
 async function fetchFriends() {
   const group = $('groupId').value.trim();
   if (!group) return [];
@@ -659,10 +738,12 @@ function renderFriends(rows) {
   const now = Date.now();
   const myId = ensureUserId();
   const seenIds = new Set();
+  let activeCount = 0;
 
   for (const row of rows) {
     const ageMs = now - new Date(row.updated_at).getTime();
     const stale = ageMs > 5 * 60 * 1000;
+    if (!stale) activeCount += 1;
     if (row.user_id !== myId && !stale) {
       seenIds.add(row.user_id);
       const latlng = [row.lat, row.lon];
@@ -691,15 +772,25 @@ function renderFriends(rows) {
     }
   }
 
-  if (!rows.length) list.innerHTML = '<p class="hint">В группе пока нет активных участников.</p>';
+  if (!rows.length) {
+    list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет активных участников.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
+  }
+  if (rows.length && activeCount === 0) {
+    const note = document.createElement('p');
+    note.className = 'hint';
+    note.textContent = 'Все найденные позиции устарели.';
+    list.appendChild(note);
+  }
 }
 
 async function refreshFriends() {
   try {
     const rows = await fetchFriends();
     renderFriends(rows);
+    return true;
   } catch (err) {
     $('liveHint').textContent = `Ошибка друзей: ${err.message}`;
+    return false;
   }
 }
 
@@ -710,27 +801,34 @@ async function startLiveSharing() {
   if (!name) return alert('Укажи своё имя.');
   if (!group) return alert('Создай группу или вставь ID группы от друга.');
   saveLiveInputs();
+  if (!groupJoined) {
+    const joined = await joinGroup(true);
+    if (!joined) return;
+  }
   liveEnabled = true;
-  $('liveStatus').textContent = 'включено';
-  $('liveStatus').className = 'pill on';
+  updateLiveUi();
   startGps(false);
   await publishMyLocation().catch(err => $('liveHint').textContent = err.message);
   await refreshFriends();
   clearInterval(liveTimer);
-  clearInterval(friendsTimer);
   liveTimer = setInterval(() => publishMyLocation().catch(err => $('liveHint').textContent = err.message), 15000);
-  friendsTimer = setInterval(refreshFriends, 10000);
 }
 
-function stopLiveSharing() {
+async function stopLiveSharing(keepWatching = true) {
   liveEnabled = false;
   clearInterval(liveTimer);
-  clearInterval(friendsTimer);
   liveTimer = null;
-  friendsTimer = null;
-  $('liveStatus').textContent = 'выключено';
-  $('liveStatus').className = 'pill';
-  $('liveHint').textContent = 'Трансляция остановлена. Последняя позиция исчезнет у друзей, когда станет старше 5 минут.';
+  updateLiveUi();
+  try { await deleteMyLiveLocation(); } catch (err) { console.warn('Could not delete own live location', err); }
+  if (!keepWatching) {
+    clearInterval(friendsTimer);
+    friendsTimer = null;
+  } else if (groupJoined) {
+    await refreshFriends();
+  }
+  $('liveHint').textContent = keepWatching && groupJoined
+    ? 'Трансляция остановлена. Ты остался в группе и продолжаешь видеть активных участников.'
+    : 'Трансляция остановлена.';
 }
 
 async function testSupabaseConnection() {
@@ -760,27 +858,47 @@ function bindUi() {
   $('requestPersistentBtn').onclick = requestPersistentStorage;
   $('createGroupBtn').onclick = createGroup;
   $('copyInviteBtn').onclick = copyInvite;
+  $('joinGroupBtn').onclick = () => joinGroup(false);
+  $('leaveGroupBtn').onclick = leaveGroup;
   $('startLiveBtn').onclick = startLiveSharing;
-  $('stopLiveBtn').onclick = stopLiveSharing;
-  $('refreshFriendsBtn').onclick = refreshFriends;
+  $('stopLiveBtn').onclick = () => stopLiveSharing(true);
+  $('refreshFriendsBtn').onclick = () => groupJoined ? refreshFriends() : joinGroup(false);
   $('testSupabaseBtn').onclick = testSupabaseConnection;
   $('liveName').onchange = saveLiveInputs;
-  $('groupId').onchange = saveLiveInputs;
+  $('groupId').onchange = () => {
+    saveLiveInputs();
+    groupJoined = false;
+    clearInterval(friendsTimer);
+    friendsTimer = null;
+    clearFriendMarkers();
+    renderFriends([]);
+    updateLiveUi();
+  };
   $('installHelpBtn').onclick = () => $('helpDialog').showModal();
   $('closeHelpBtn').onclick = () => $('helpDialog').close();
 }
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION}`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.4`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
   initMap();
   bindUi();
-  loadLiveInputs();
-  if (!getSupabaseConfig()) $('liveStatus').className = 'pill warn';
+  const groupFromUrl = loadLiveInputs();
   await refreshSpots();
+  if (!getSupabaseConfig()) {
+    updateLiveUi();
+    $('liveHint').textContent = 'Для live-режима нужен Supabase URL и anon public key в файле config.js.';
+  } else if ($('groupId').value.trim()) {
+    await joinGroup(true);
+    $('liveHint').textContent = groupFromUrl
+      ? 'Приглашение открыто: ты вошёл в группу и видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.'
+      : 'Последняя группа восстановлена: ты видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
+  } else {
+    updateLiveUi();
+  }
 }
 
 init().catch(err => {
