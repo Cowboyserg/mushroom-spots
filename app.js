@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.9';
+const APP_VERSION = '0.5.10';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -566,15 +566,20 @@ function initMap() {
     markerZoomAnimation: true
   }).setView([56.9496, 24.1052], 12);
 
-  baseTileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
+  if (map.attributionControl && map.attributionControl.setPrefix) {
+    map.attributionControl.setPrefix(false);
+  }
+
+  baseTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20,
     minZoom: 2,
+    subdomains: 'abcd',
     tileSize: 256,
     updateWhenIdle: false,
     updateWhenZooming: true,
     keepBuffer: 4,
     detectRetina: false,
-    attribution: '&copy; OpenStreetMap contributors'
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
   });
 
   baseTileLayer
@@ -1963,7 +1968,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.10`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.11`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
