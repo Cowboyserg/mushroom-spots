@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.6 · Sprint 3.7</p>
+      <p id="appVersion">v0.5.8 · Sprint 3.9</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -133,6 +133,54 @@
       <p class="hint" id="liveHint">Для live-режима нужен Supabase URL и anon public key в файле config.js.</p>
     </section>
 
+    <section class="card chat-card">
+      <div class="section-title">
+        <h2>Чат группы</h2>
+        <div class="pill-row">
+          <span id="chatStatus" class="pill">чат недоступен</span>
+          <span class="pill">последние 50</span>
+        </div>
+      </div>
+      <p class="hint">Сообщения видны всем, кто знает ID группы. В этом MVP правка и удаление своих сообщений определяются по локальному user_id этого браузера.</p>
+      <div id="groupChatList" class="chat-list">
+        <p class="hint">Чат появится после входа в группу.</p>
+      </div>
+      <div class="field">
+        <label for="chatMessageInput">Сообщение</label>
+        <textarea id="chatMessageInput" rows="3" maxlength="300" placeholder="Напиши сообщение группе…"></textarea>
+        <div class="chat-meta">
+          <span id="chatMessageCounter" class="chat-counter">0/300</span>
+          <span id="chatEditState" class="pill" hidden>режим правки</span>
+        </div>
+      </div>
+      <div class="row chat-actions">
+        <button id="chatSendBtn">Отправить</button>
+        <button id="chatRefreshBtn" class="secondary">Обновить</button>
+        <button id="chatCancelEditBtn" class="secondary" hidden>Отменить правку</button>
+      </div>
+      <p class="hint" id="chatHint">Для чата нужен Supabase и текущий ID группы.</p>
+    </section>
+
+
+    <section class="card maintenance-card">
+      <div class="section-title">
+        <h2>Чистка БД</h2>
+        <span class="pill">live_locations</span>
+      </div>
+      <p class="hint">Здесь чистится только live-таблица Supabase: люди в группах и их последние координаты. Локальные грибные места, заметки, фото и backup не удаляются.</p>
+      <div class="storage-state maintenance-state">
+        <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
+        <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
+      </div>
+      <div class="row maintenance-actions">
+        <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
+        <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
+        <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
+        <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
+      </div>
+      <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки Supabase.</p>
+    </section>
+
     <section class="card">
       <h2>Хранилище и резервная копия</h2>
       <div class="storage-state" id="storageState">
@@ -156,8 +204,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.7</h2>
-      <p class="hint">Debug panel: “!” now shows button-triggered API/browser requests, pending states, response statuses, and the existing map diagnostics.</p>
+      <h2>Sprint 3.9</h2>
+      <p class="hint">Добавлен чат группы с CRUD: отправка, чтение последних 50 сообщений, правка и удаление своих сообщений, ручное и автообновление.</p>
     </section>
   </main>
 

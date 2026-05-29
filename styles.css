@@ -217,3 +217,68 @@ dialog::backdrop { background:#0008; }
 #mapStatusPill.warn { background:#fff1c2; color:#705000; }
 #mapStatusPill.bad { background:#ffd7d7; color:#7a1f1f; }
 #mapStatusPill.on { background:#dff2df; color:#1f612e; }
+
+
+/* Sprint 3.8 DB cleanup controls. */
+.maintenance-card { border-color:#e0c2c2; }
+.maintenance-state strong { font-size:12px; overflow-wrap:anywhere; }
+.maintenance-actions { margin-top:10px; }
+.danger-text { color:var(--danger); }
+
+/* Sprint 3.9 group chat CRUD. */
+.chat-card .pill.on { background:#dff2df; color:#1f612e; }
+.chat-card .pill.warn { background:#fff1c2; color:#705000; }
+.chat-list {
+  display:grid;
+  gap:8px;
+  max-height:360px;
+  overflow:auto;
+  padding:8px;
+  margin:10px 0;
+  border:1px dashed var(--border);
+  border-radius:14px;
+  background:#faf8ef;
+}
+.chat-message {
+  border:1px solid var(--border);
+  background:white;
+  border-radius:14px;
+  padding:10px;
+}
+.chat-message-own {
+  outline:2px solid #d7eadb;
+}
+.chat-message-head {
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+  margin-bottom:6px;
+}
+.chat-message-head span {
+  color:var(--muted);
+  font-size:12px;
+  text-align:right;
+  flex-shrink:0;
+}
+.chat-message-body {
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  line-height:1.35;
+}
+.chat-message-actions {
+  margin-top:8px;
+}
+.chat-meta {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  margin-top:6px;
+}
+.chat-counter {
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+}
+.chat-actions { margin-top:8px; }

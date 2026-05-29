@@ -1,9 +1,12 @@
-const APP_VERSION = '0.5.6';
+const APP_VERSION = '0.5.8';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
 const SETTINGS_STORE = 'settings';
 const BACKUP_FILE_NAME = 'mushroom-spots-backup.json';
+const CHAT_MAX_LENGTH = 300;
+const CHAT_FETCH_LIMIT = 50;
+const CHAT_REFRESH_MS = 10000;
 
 let db;
 let map;
@@ -20,6 +23,9 @@ let groupJoined = false;
 let liveEnabled = false;
 let liveTimer = null;
 let friendsTimer = null;
+let chatTimer = null;
+let chatMessages = [];
+let chatEditingMessageId = null;
 let userId = null;
 let friendMarkers = new Map();
 let baseTileLayer = null;
@@ -47,6 +53,15 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   stopLiveBtn: 'Остановить трансляцию',
   refreshFriendsBtn: 'Обновить друзей',
   testSupabaseBtn: 'Проверить Supabase',
+  chatSendBtn: 'Отправить сообщение',
+  chatRefreshBtn: 'Обновить чат',
+  chatCancelEditBtn: 'Отменить правку сообщения',
+  chatEditMessageBtn: 'Править сообщение',
+  chatDeleteMessageBtn: 'Удалить сообщение',
+  cleanMyDbBtn: 'Удалить меня из БД',
+  cleanMyEverywhereDbBtn: 'Удалить меня из всех групп',
+  cleanCurrentGroupDbBtn: 'Очистить текущую группу',
+  cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -1048,6 +1063,8 @@ function updateLiveUi() {
     $('liveStatus').className = liveEnabled ? 'pill on' : 'pill';
     if (!getSupabaseConfig()) $('liveStatus').className = 'pill warn';
   }
+  updateDbCleanupUi();
+  updateChatUi();
 }
 
 function parseGroupFromUrl() {
@@ -1071,6 +1088,7 @@ async function createGroup() {
     $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
   } else {
     $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Для live-режима нужен Supabase в config.js.';
+    updateChatUi();
   }
 }
 
@@ -1126,6 +1144,8 @@ async function joinGroup(silent = false) {
   clearInterval(friendsTimer);
   await refreshFriends();
   friendsTimer = setInterval(refreshFriends, 10000);
+  await refreshGroupChat(false);
+  startChatAutoRefresh();
   if (!silent) {
     $('liveHint').textContent = 'Ты в группе. Можно видеть активных участников без передачи своей позиции. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
   }
@@ -1135,6 +1155,7 @@ async function joinGroup(silent = false) {
 async function leaveGroup() {
   await stopLiveSharing(false);
   groupJoined = false;
+  stopChatAutoRefresh(true);
   clearInterval(friendsTimer);
   friendsTimer = null;
   clearFriendMarkers();
@@ -1181,6 +1202,423 @@ async function deleteMyLiveLocation() {
     method: 'DELETE',
     headers: { Prefer: 'return=minimal' }
   });
+}
+
+
+function setDbCleanupHint(text, isError = false) {
+  const el = $('dbCleanupHint');
+  if (!el) return;
+  el.textContent = text;
+  el.className = isError ? 'hint danger-text' : 'hint';
+}
+
+function updateDbCleanupUi() {
+  const idEl = $('myLiveUserId');
+  if (idEl) idEl.textContent = ensureUserId();
+  const group = $('groupId')?.value?.trim() || '';
+  const groupEl = $('cleanupGroupMirror');
+  if (groupEl) groupEl.textContent = group || '—';
+  const hasSupabase = Boolean(getSupabaseConfig());
+  const hasGroup = Boolean(group);
+
+  if ($('cleanMyDbBtn')) $('cleanMyDbBtn').disabled = !hasSupabase || !hasGroup;
+  if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').disabled = !hasSupabase || !hasGroup;
+  if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').disabled = !hasSupabase || !hasGroup;
+  if ($('cleanMyEverywhereDbBtn')) $('cleanMyEverywhereDbBtn').disabled = !hasSupabase;
+
+  if (!hasSupabase) {
+    setDbCleanupHint('Чистка БД недоступна: нужен Supabase URL и anon public key в config.js. Локальные грибные точки не затрагиваются.');
+  } else if (!hasGroup) {
+    setDbCleanupHint('Для чистки текущей группы вставь или создай ID группы. Можно удалить “меня из всех групп” по локальному user_id.');
+  } else {
+    setDbCleanupHint('Готово к чистке live_locations. “Меня” = локальный user_id этого браузера; грибные точки IndexedDB не удаляются.');
+  }
+}
+
+function getCurrentGroupForCleanup() {
+  const group = $('groupId')?.value?.trim() || '';
+  if (!group) throw new Error('Сначала создай или вставь ID группы.');
+  return group;
+}
+
+function requireGroupTypedConfirmation(group, actionText) {
+  const typed = prompt(`${actionText}\n\nЭто удалит live-записи из Supabase, но не тронет локальные грибные точки.\n\nДля подтверждения введи ID группы полностью:`, '');
+  return typed === group;
+}
+
+function confirmDbCleanup(actionText) {
+  return confirm(`${actionText}\n\nБудут удалены только live-записи из таблицы live_locations. Локальные грибные точки, заметки и фото не затрагиваются.`);
+}
+
+async function deleteLiveRows(filterQuery, label, options = {}) {
+  if (!getSupabaseConfig()) throw new Error('Supabase не настроен в config.js.');
+  const select = options.select || 'group_id,user_id,user_name,updated_at';
+  const path = `live_locations?${filterQuery}&select=${select}`;
+  const rows = await supabaseFetch(path, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=representation' }
+  });
+  const deleted = Array.isArray(rows) ? rows.length : 0;
+  setDbCleanupHint(`${label}: удалено строк: ${deleted}.`);
+  $('liveHint').textContent = `${label}: удалено live-записей: ${deleted}.`;
+  return deleted;
+}
+
+async function afterDbCleanupRefresh() {
+  updateLiveUi();
+  updateDbCleanupUi();
+  if (groupJoined && getSupabaseConfig()) {
+    await refreshFriends();
+    await refreshGroupChat(false);
+  } else {
+    clearFriendMarkers();
+  }
+}
+
+async function cleanMyDbRow() {
+  const group = getCurrentGroupForCleanup();
+  const myId = ensureUserId();
+  if (!confirmDbCleanup(`Удалить мою live-запись из текущей группы?\n\nГруппа: ${group}\nМой user_id: ${myId}`)) return;
+
+  liveEnabled = false;
+  clearInterval(liveTimer);
+  liveTimer = null;
+  updateLiveUi();
+
+  const encodedGroup = encodeURIComponent(group);
+  const encodedUser = encodeURIComponent(myId);
+  await deleteLiveRows(`group_id=eq.${encodedGroup}&user_id=eq.${encodedUser}`, 'Удаление меня из текущей группы');
+  await afterDbCleanupRefresh();
+}
+
+async function cleanMyEverywhereDbRows() {
+  const myId = ensureUserId();
+  const typed = prompt(`Удалить мои live-записи из ВСЕХ групп?\n\nЭто использует локальный user_id этого браузера. Для подтверждения введи мой user_id полностью:`, '');
+  if (typed !== myId) return;
+
+  liveEnabled = false;
+  clearInterval(liveTimer);
+  liveTimer = null;
+  updateLiveUi();
+
+  const encodedUser = encodeURIComponent(myId);
+  await deleteLiveRows(`user_id=eq.${encodedUser}`, 'Удаление меня из всех групп');
+  await afterDbCleanupRefresh();
+}
+
+async function cleanCurrentGroupDbRows() {
+  const group = getCurrentGroupForCleanup();
+  if (!requireGroupTypedConfirmation(group, `Очистить ВСЮ текущую группу?\n\nГруппа: ${group}`)) return;
+
+  if (liveEnabled) {
+    liveEnabled = false;
+    clearInterval(liveTimer);
+    liveTimer = null;
+  }
+  groupJoined = false;
+  stopChatAutoRefresh(true);
+  clearInterval(friendsTimer);
+  friendsTimer = null;
+
+  const encodedGroup = encodeURIComponent(group);
+  await deleteLiveRows(`group_id=eq.${encodedGroup}`, 'Очистка текущей группы');
+  clearFriendMarkers();
+  $('friendsList').innerHTML = '<p class="hint">Текущая группа очищена в БД.</p>';
+  updateLiveUi();
+  updateDbCleanupUi();
+}
+
+async function cleanStaleGroupDbRows() {
+  const group = getCurrentGroupForCleanup();
+  const hours = 24;
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  if (!confirmDbCleanup(`Удалить старые live-записи текущей группы?\n\nГруппа: ${group}\nКритерий: updated_at старше ${hours} ч\nДо: ${fmtDate(cutoff)}`)) return;
+
+  const encodedGroup = encodeURIComponent(group);
+  const encodedCutoff = encodeURIComponent(cutoff);
+  await deleteLiveRows(`group_id=eq.${encodedGroup}&updated_at=lt.${encodedCutoff}`, `Удаление старых записей группы старше ${hours} ч`);
+  await afterDbCleanupRefresh();
+}
+
+
+function currentGroupId() {
+  return $('groupId')?.value?.trim() || '';
+}
+
+function currentChatName() {
+  return $('liveName')?.value?.trim() || 'Без имени';
+}
+
+function setChatHint(text, isError = false) {
+  const el = $('chatHint');
+  if (!el) return;
+  el.textContent = text;
+  el.className = isError ? 'hint danger-text' : 'hint';
+}
+
+function updateChatCounter() {
+  const input = $('chatMessageInput');
+  const counter = $('chatMessageCounter');
+  if (!input || !counter) return;
+  const length = input.value.length;
+  counter.textContent = `${length}/${CHAT_MAX_LENGTH}`;
+  counter.className = length > CHAT_MAX_LENGTH ? 'chat-counter danger-text' : 'chat-counter';
+}
+
+function updateChatUi() {
+  const hasSupabase = Boolean(getSupabaseConfig());
+  const group = currentGroupId();
+  const canUseChat = hasSupabase && Boolean(group);
+  const sendBtn = $('chatSendBtn');
+  const refreshBtn = $('chatRefreshBtn');
+  const input = $('chatMessageInput');
+  const cancelBtn = $('chatCancelEditBtn');
+  const status = $('chatStatus');
+  const editState = $('chatEditState');
+
+  if (sendBtn) {
+    sendBtn.disabled = !canUseChat;
+    sendBtn.textContent = chatEditingMessageId ? 'Сохранить правку' : 'Отправить';
+  }
+  if (refreshBtn) refreshBtn.disabled = !canUseChat;
+  if (input) input.disabled = !canUseChat;
+  if (cancelBtn) cancelBtn.hidden = !chatEditingMessageId;
+  if (editState) {
+    editState.hidden = !chatEditingMessageId;
+    editState.textContent = chatEditingMessageId ? 'режим правки' : '';
+  }
+  if (status) {
+    if (!hasSupabase) {
+      status.textContent = 'чат недоступен';
+      status.className = 'pill warn';
+    } else if (!group) {
+      status.textContent = 'нет группы';
+      status.className = 'pill';
+    } else if (chatTimer) {
+      status.textContent = 'авто 10 сек';
+      status.className = 'pill on';
+    } else {
+      status.textContent = 'готов';
+      status.className = 'pill on';
+    }
+  }
+  updateChatCounter();
+
+  if (!hasSupabase) {
+    setChatHint('Чат недоступен: нужен Supabase URL и anon public key в config.js.');
+  } else if (!group) {
+    setChatHint('Создай группу или открой приглашение, чтобы читать и писать в чат группы.');
+  } else if (!chatMessages.length) {
+    setChatHint('Чат готов. Сообщения хранятся в Supabase group_messages и привязаны к текущему ID группы.');
+  }
+}
+
+function resetChatComposer(clearText = false) {
+  chatEditingMessageId = null;
+  if (clearText && $('chatMessageInput')) $('chatMessageInput').value = '';
+  updateChatUi();
+}
+
+function stopChatAutoRefresh(clearList = false) {
+  clearInterval(chatTimer);
+  chatTimer = null;
+  resetChatComposer(clearList);
+  if (clearList) {
+    chatMessages = [];
+    const list = $('groupChatList');
+    if (list) list.innerHTML = '<p class="hint">Чат появится после входа в группу.</p>';
+  }
+  updateChatUi();
+}
+
+function startChatAutoRefresh() {
+  clearInterval(chatTimer);
+  if (!getSupabaseConfig() || !currentGroupId()) {
+    chatTimer = null;
+    updateChatUi();
+    return;
+  }
+  chatTimer = setInterval(() => refreshGroupChat(false).catch(err => setChatHint(`Ошибка автообновления чата: ${err.message}`, true)), CHAT_REFRESH_MS);
+  updateChatUi();
+}
+
+function sanitizeChatBody(value) {
+  return String(value || '').trim().slice(0, CHAT_MAX_LENGTH);
+}
+
+async function fetchGroupMessages() {
+  const group = currentGroupId();
+  if (!group) return [];
+  const encodedGroup = encodeURIComponent(group);
+  const rows = await supabaseFetch(`group_messages?group_id=eq.${encodedGroup}&select=id,group_id,user_id,display_name,body,created_at,updated_at&order=created_at.desc&limit=${CHAT_FETCH_LIMIT}`, { method: 'GET' });
+  return Array.isArray(rows) ? rows.reverse() : [];
+}
+
+function renderGroupChat(rows = chatMessages) {
+  const list = $('groupChatList');
+  if (!list) return;
+  const myId = ensureUserId();
+  list.innerHTML = '';
+
+  if (!getSupabaseConfig()) {
+    list.innerHTML = '<p class="hint">Чат недоступен: не настроен Supabase.</p>';
+    return;
+  }
+  if (!currentGroupId()) {
+    list.innerHTML = '<p class="hint">Сначала создай группу или открой приглашение.</p>';
+    return;
+  }
+  if (!rows.length) {
+    list.innerHTML = '<p class="hint">В чате пока нет сообщений.</p>';
+    return;
+  }
+
+  for (const row of rows) {
+    const isMine = row.user_id === myId;
+    const edited = row.updated_at && row.created_at && new Date(row.updated_at).getTime() - new Date(row.created_at).getTime() > 1500;
+    const item = document.createElement('div');
+    item.className = `chat-message ${isMine ? 'chat-message-own' : ''}`;
+    item.dataset.messageId = row.id;
+    item.innerHTML = `
+      <div class="chat-message-head">
+        <strong>${escapeHtml(row.display_name || 'Без имени')}${isMine ? ' · я' : ''}</strong>
+        <span>${fmtDate(row.created_at)}${edited ? ' · изменено' : ''}</span>
+      </div>
+      <div class="chat-message-body">${escapeHtml(row.body || '')}</div>
+    `;
+    if (isMine) {
+      const actions = document.createElement('div');
+      actions.className = 'row chat-message-actions';
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'secondary small-btn';
+      editBtn.textContent = 'Править';
+      editBtn.onclick = withButtonDiagnostics('chatEditMessageBtn', () => startEditChatMessage(row.id));
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'danger small-btn';
+      deleteBtn.textContent = 'Удалить';
+      deleteBtn.onclick = withButtonDiagnostics('chatDeleteMessageBtn', () => deleteChatMessage(row.id));
+      actions.append(editBtn, deleteBtn);
+      item.appendChild(actions);
+    }
+    list.appendChild(item);
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+async function refreshGroupChat(showManualHint = true) {
+  if (!getSupabaseConfig()) {
+    updateChatUi();
+    return false;
+  }
+  if (!currentGroupId()) {
+    updateChatUi();
+    return false;
+  }
+  try {
+    chatMessages = await fetchGroupMessages();
+    renderGroupChat(chatMessages);
+    if (showManualHint) setChatHint(`Чат обновлён: сообщений ${chatMessages.length}.`);
+    updateChatUi();
+    return true;
+  } catch (err) {
+    setChatHint(`Ошибка чата: ${err.message}`, true);
+    return false;
+  }
+}
+
+async function sendOrUpdateChatMessage() {
+  const group = currentGroupId();
+  if (!group) return alert('Сначала создай группу или открой приглашение.');
+  if (!getSupabaseConfig()) return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.');
+
+  const input = $('chatMessageInput');
+  const body = sanitizeChatBody(input?.value || '');
+  if (!body) return alert('Нельзя отправить пустое сообщение.');
+  if (body.length > CHAT_MAX_LENGTH) return alert(`Сообщение должно быть не длиннее ${CHAT_MAX_LENGTH} символов.`);
+
+  const name = currentChatName();
+  if ($('liveName') && !$('liveName').value.trim()) {
+    $('liveName').value = name;
+    saveLiveInputs();
+  }
+
+  if (chatEditingMessageId) {
+    await updateChatMessage(chatEditingMessageId, body, name);
+  } else {
+    await createChatMessage(body, name);
+  }
+  resetChatComposer(true);
+  await refreshGroupChat(false);
+  startChatAutoRefresh();
+}
+
+async function createChatMessage(body, name) {
+  const payload = {
+    group_id: currentGroupId(),
+    user_id: ensureUserId(),
+    display_name: name,
+    body,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+  const rows = await supabaseFetch('group_messages', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload)
+  });
+  const created = Array.isArray(rows) ? rows.length : 0;
+  setChatHint(created ? 'Сообщение отправлено.' : 'Сообщение отправлено.');
+}
+
+function startEditChatMessage(messageId) {
+  const row = chatMessages.find(item => item.id === messageId);
+  if (!row) return;
+  if (row.user_id !== ensureUserId()) return alert('В этом MVP можно редактировать только сообщения этого браузера.');
+  chatEditingMessageId = messageId;
+  $('chatMessageInput').value = row.body || '';
+  $('chatMessageInput').focus();
+  setChatHint('Режим правки: измени текст и нажми “Сохранить правку”.');
+  updateChatUi();
+}
+
+async function updateChatMessage(messageId, body, name) {
+  const encodedId = encodeURIComponent(messageId);
+  const encodedGroup = encodeURIComponent(currentGroupId());
+  const encodedUser = encodeURIComponent(ensureUserId());
+  const payload = {
+    body,
+    display_name: name,
+    updated_at: new Date().toISOString()
+  };
+  const rows = await supabaseFetch(`group_messages?id=eq.${encodedId}&group_id=eq.${encodedGroup}&user_id=eq.${encodedUser}&select=id`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload)
+  });
+  const updated = Array.isArray(rows) ? rows.length : 0;
+  if (!updated) throw new Error('Сообщение не найдено или уже не принадлежит этому локальному user_id.');
+  setChatHint('Сообщение изменено.');
+}
+
+async function deleteChatMessage(messageId) {
+  const row = chatMessages.find(item => item.id === messageId);
+  if (!row) return;
+  if (row.user_id !== ensureUserId()) return alert('В этом MVP можно удалять только сообщения этого браузера.');
+  if (!confirm('Удалить это сообщение из чата группы?')) return;
+
+  const encodedId = encodeURIComponent(messageId);
+  const encodedGroup = encodeURIComponent(currentGroupId());
+  const encodedUser = encodeURIComponent(ensureUserId());
+  const rows = await supabaseFetch(`group_messages?id=eq.${encodedId}&group_id=eq.${encodedGroup}&user_id=eq.${encodedUser}&select=id`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=representation' }
+  });
+  const deleted = Array.isArray(rows) ? rows.length : 0;
+  if (chatEditingMessageId === messageId) resetChatComposer(true);
+  setChatHint(`Удалено сообщений: ${deleted}.`);
+  await refreshGroupChat(false);
 }
 
 async function fetchFriends() {
@@ -1325,6 +1763,14 @@ function bindUi() {
   $('stopLiveBtn').onclick = withButtonDiagnostics('stopLiveBtn', () => stopLiveSharing(true));
   $('refreshFriendsBtn').onclick = withButtonDiagnostics('refreshFriendsBtn', () => groupJoined ? refreshFriends() : joinGroup(false));
   $('testSupabaseBtn').onclick = withButtonDiagnostics('testSupabaseBtn', testSupabaseConnection);
+  if ($('chatSendBtn')) $('chatSendBtn').onclick = withButtonDiagnostics('chatSendBtn', sendOrUpdateChatMessage);
+  if ($('chatRefreshBtn')) $('chatRefreshBtn').onclick = withButtonDiagnostics('chatRefreshBtn', () => refreshGroupChat(true));
+  if ($('chatCancelEditBtn')) $('chatCancelEditBtn').onclick = withButtonDiagnostics('chatCancelEditBtn', () => resetChatComposer(true));
+  if ($('chatMessageInput')) $('chatMessageInput').oninput = updateChatCounter;
+  if ($('cleanMyDbBtn')) $('cleanMyDbBtn').onclick = withButtonDiagnostics('cleanMyDbBtn', cleanMyDbRow);
+  if ($('cleanMyEverywhereDbBtn')) $('cleanMyEverywhereDbBtn').onclick = withButtonDiagnostics('cleanMyEverywhereDbBtn', cleanMyEverywhereDbRows);
+  if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').onclick = withButtonDiagnostics('cleanCurrentGroupDbBtn', cleanCurrentGroupDbRows);
+  if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
   if ($('mapDebugBtn')) $('mapDebugBtn').onclick = withButtonDiagnostics('mapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
   if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = withButtonDiagnostics('refreshMapDebugBtn', () => updateMapDebugUi(true));
@@ -1342,6 +1788,7 @@ function bindUi() {
   window.addEventListener('focus', () => safeInvalidateMap(250, 'focus'));
 
   $('liveName').onchange = saveLiveInputs;
+  $('groupId').oninput = () => { updateDbCleanupUi(); updateChatUi(); };
   $('groupId').onchange = () => {
     saveLiveInputs();
     groupJoined = false;
@@ -1349,7 +1796,10 @@ function bindUi() {
     friendsTimer = null;
     clearFriendMarkers();
     renderFriends([]);
+    stopChatAutoRefresh(true);
     updateLiveUi();
+    updateDbCleanupUi();
+    updateChatUi();
   };
   $('installHelpBtn').onclick = withButtonDiagnostics('installHelpBtn', () => $('helpDialog').showModal());
   $('closeHelpBtn').onclick = withButtonDiagnostics('closeHelpBtn', () => $('helpDialog').close());
@@ -1357,7 +1807,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.7`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.9`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
