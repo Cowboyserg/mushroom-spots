@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.4';
+const APP_VERSION = '0.5.5';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -53,6 +53,29 @@ function fmtTimeOnly(iso) {
 }
 function escapeHtml(str='') {
   return String(str).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+}
+
+function safeInvalidateMap(delay = 0) {
+  if (!map) return;
+  window.setTimeout(() => {
+    try {
+      map.invalidateSize({ animate: false, pan: false });
+    } catch (err) {
+      console.warn('Map invalidateSize failed', err);
+    }
+  }, delay);
+}
+
+function makeMapIcon(kind) {
+  const label = kind === 'user' ? 'Я' : kind === 'friend' ? 'Д' : '';
+  const labelHtml = label ? `<span>${label}</span>` : '';
+  return L.divIcon({
+    className: '',
+    html: `<div class="map-dot map-dot-${kind}">${labelHtml}</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -16]
+  });
 }
 
 function openDb() {
@@ -129,11 +152,24 @@ function updateGpsStatusPanel(position) {
 }
 
 function initMap() {
-  map = L.map('map', { zoomControl: true }).setView([56.9496, 24.1052], 12);
+  map = L.map('map', {
+    zoomControl: true,
+    preferCanvas: true,
+    attributionControl: true
+  }).setView([56.9496, 24.1052], 12);
+
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
+    attribution: '&copy; OpenStreetMap contributors',
+    crossOrigin: true
   }).addTo(map);
+
+  // Leaflet can render broken/offset tiles if the map is initialized while
+  // the PWA layout is still settling, especially after install-to-home-screen,
+  // orientation changes, or service worker updates.
+  safeInvalidateMap(0);
+  safeInvalidateMap(250);
+  safeInvalidateMap(1000);
 }
 
 function updateUserPosition(pos, center=false) {
@@ -154,13 +190,14 @@ function updateUserPosition(pos, center=false) {
 
   const latlng = [latitude, longitude];
   if (!userMarker) {
-    userMarker = L.marker(latlng, { title: 'Я здесь' }).addTo(map).bindPopup('Я здесь');
+    userMarker = L.marker(latlng, { title: 'Я здесь', icon: makeMapIcon('user') }).addTo(map).bindPopup('Я здесь');
     accuracyCircle = L.circle(latlng, { radius: accuracy || 0 }).addTo(map);
   } else {
     userMarker.setLatLng(latlng);
     accuracyCircle.setLatLng(latlng).setRadius(accuracy || 0);
   }
   if (center) map.setView(latlng, Math.max(map.getZoom(), 16));
+  safeInvalidateMap(0);
   updateSelectedDetails();
   renderList();
 }
@@ -347,10 +384,11 @@ function renderMarkers() {
   for (const marker of spotMarkers.values()) marker.remove();
   spotMarkers.clear();
   for (const spot of spots) {
-    const marker = L.marker([spot.lat, spot.lon], { title: spot.name }).addTo(map).bindPopup(markerPopup(spot));
+    const marker = L.marker([spot.lat, spot.lon], { title: spot.name, icon: makeMapIcon('spot') }).addTo(map).bindPopup(markerPopup(spot));
     marker.on('click', () => selectSpot(spot.id, false));
     spotMarkers.set(spot.id, marker);
   }
+  safeInvalidateMap(0);
 }
 
 function renderList() {
@@ -750,7 +788,7 @@ function renderFriends(rows) {
       let marker = friendMarkers.get(row.user_id);
       const popup = `<strong>${escapeHtml(row.user_name)}</strong><br>${fmtCoord(row.lat)}, ${fmtCoord(row.lon)}<br>Точность: ${meters(row.accuracy)}<br>Обновлено: ${fmtDate(row.updated_at)}`;
       if (!marker) {
-        marker = L.circleMarker(latlng, { radius: 9, weight: 3 }).addTo(map).bindPopup(popup);
+        marker = L.marker(latlng, { title: row.user_name, icon: makeMapIcon('friend') }).addTo(map).bindPopup(popup);
         friendMarkers.set(row.user_id, marker);
       } else {
         marker.setLatLng(latlng).setPopupContent(popup);
@@ -775,6 +813,8 @@ function renderFriends(rows) {
   if (!rows.length) {
     list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет активных участников.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
   }
+  safeInvalidateMap(0);
+
   if (rows.length && activeCount === 0) {
     const note = document.createElement('p');
     note.className = 'hint';
@@ -864,6 +904,14 @@ function bindUi() {
   $('stopLiveBtn').onclick = () => stopLiveSharing(true);
   $('refreshFriendsBtn').onclick = () => groupJoined ? refreshFriends() : joinGroup(false);
   $('testSupabaseBtn').onclick = testSupabaseConnection;
+
+  window.addEventListener('resize', () => safeInvalidateMap(150));
+  window.addEventListener('orientationchange', () => safeInvalidateMap(500));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) safeInvalidateMap(250);
+  });
+  window.addEventListener('focus', () => safeInvalidateMap(250));
+
   $('liveName').onchange = saveLiveInputs;
   $('groupId').onchange = () => {
     saveLiveInputs();
@@ -880,7 +928,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.5`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();

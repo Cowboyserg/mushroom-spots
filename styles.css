@@ -16,8 +16,22 @@ button:disabled { opacity:.55; cursor:not-allowed; }
 .field { margin:10px 0; } label { display:block; font-size:13px; color:var(--muted); margin-bottom:5px; }
 input, textarea { width:100%; padding:11px; border:1px solid var(--border); border-radius:12px; background:white; color:var(--text); font:inherit; }
 .hint { color:var(--muted); font-size:13px; line-height:1.35; }
-.map-wrap { height:48vh; min-height:340px; border-radius:18px; overflow:hidden; border:1px solid var(--border); background:#ddd; }
-#map { height:100%; width:100%; }
+.map-wrap {
+  height:52vh;
+  min-height:360px;
+  max-height:560px;
+  border-radius:18px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  background:#ddd;
+  position:relative;
+}
+#map {
+  height:100%;
+  width:100%;
+  min-height:360px;
+  isolation:isolate;
+}
 .section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .pill { background:#e8eadf; color:var(--green); border-radius:999px; padding:4px 9px; font-weight:800; }
 .spots-list { display:grid; gap:8px; margin-top:10px; }
@@ -44,3 +58,24 @@ dialog::backdrop { background:#0008; }
 .live-card .pill.warn { background:#fff1c2; color:#705000; }
 
 .pill-row { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+
+.map-dot {
+  width:22px;
+  height:22px;
+  border-radius:50%;
+  border:3px solid #fff;
+  box-shadow:0 2px 10px rgba(0,0,0,.35);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:10px;
+  font-weight:900;
+  color:#fff;
+  line-height:1;
+}
+.map-dot-user { background:#1f5eff; }
+.map-dot-spot { background:#248340; }
+.map-dot-friend { background:#f08a24; }
+.leaflet-container { font: inherit; }
+.leaflet-marker-icon { background:transparent; border:0; }
