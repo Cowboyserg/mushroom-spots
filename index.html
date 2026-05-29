@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1f5f3a" />
+    <meta name="description" content="Приватный GPS-блокнот грибных мест для iOS и Android." />
+    <title>Грибные места</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>Грибные места</h1>
+        <p class="subtitle">Личный GPS-блокнот. Без аккаунта. Без сервера.</p>
+      </div>
+      <div id="installHint" class="install-hint" hidden>Можно установить</div>
+    </header>
+
+    <main class="layout">
+      <section class="map-panel" aria-label="Карта">
+        <div id="map" class="map" role="application" aria-label="Карта">
+          <div id="tileLayer" class="tile-layer"></div>
+          <div id="markerLayer" class="marker-layer"></div>
+          <div class="map-controls">
+            <button id="zoomInBtn" type="button" aria-label="Приблизить">+</button>
+            <button id="zoomOutBtn" type="button" aria-label="Отдалить">−</button>
+            <button id="locateBtn" type="button">Где я</button>
+          </div>
+          <div class="attribution">© OpenStreetMap contributors</div>
+        </div>
+      </section>
+
+      <section class="side-panel" aria-label="Редактор и список точек">
+        <div class="card status-card">
+          <h2>GPS</h2>
+          <div id="gpsStatus" class="gps-status">Ждём разрешение на геолокацию…</div>
+          <div class="metrics">
+            <div><span class="metric-label">Широта</span><span id="latValue">—</span></div>
+            <div><span class="metric-label">Долгота</span><span id="lonValue">—</span></div>
+            <div><span class="metric-label">Точность</span><span id="accuracyValue">—</span></div>
+            <div><span class="metric-label">Замеры</span><span id="samplesValue">0</span></div>
+          </div>
+          <div class="actions row">
+            <button id="startAveragingBtn" type="button">Начать усреднение</button>
+            <button id="clearSamplesBtn" type="button" class="secondary">Сбросить замеры</button>
+          </div>
+          <p class="hint">Лучше постоять на месте 20–60 секунд: точка получится стабильнее.</p>
+        </div>
+
+        <form id="spotForm" class="card form-card">
+          <h2>Сохранить место</h2>
+          <label>
+            Название
+            <input id="nameInput" name="name" type="text" placeholder="Например: Сосны у старой тропы" autocomplete="off" />
+          </label>
+          <label>
+            Тип грибов
+            <input id="speciesInput" name="species" type="text" placeholder="Например: белые, лисички, подберёзовики" autocomplete="off" />
+          </label>
+          <label>
+            Заметки
+            <textarea id="notesInput" name="notes" rows="3" placeholder="Деревья, ориентиры, почва, сколько было грибов"></textarea>
+          </label>
+          <label>
+            Фото, если нужно
+            <input id="photoInput" name="photo" type="file" accept="image/*" />
+          </label>
+          <div class="actions">
+            <button id="saveSpotBtn" type="submit">Сохранить текущую / усреднённую точку</button>
+          </div>
+        </form>
+
+        <div class="card tools-card">
+          <h2>Резервная копия и обмен</h2>
+          <div class="actions wrap">
+            <button id="exportJsonBtn" type="button">Экспорт JSON</button>
+            <button id="exportGpxBtn" type="button">Экспорт GPX</button>
+            <button id="shareAllBtn" type="button">Поделиться всеми</button>
+            <label class="file-button">
+              Импорт JSON
+              <input id="importJsonInput" type="file" accept="application/json,.json" />
+            </label>
+          </div>
+          <p class="hint">JSON — полная резервная копия. GPX — совместимость с GPS/картами. Обмен работает через файл, без сервера.</p>
+        </div>
+
+        <div class="card map-pack-card">
+          <h2>Карты</h2>
+          <p class="hint"><strong>MVP:</strong> карта грузится онлайн, а точки работают локально. <strong>Следующий этап:</strong> пакеты регионов PMTiles, которые пользователь скачивает внутри приложения.</p>
+          <button type="button" class="secondary" disabled>Скачать офлайн-регион — архитектура заложена</button>
+        </div>
+
+        <div class="card list-card">
+          <div class="list-header">
+            <h2>Мои точки</h2>
+            <span id="spotCount" class="pill">0</span>
+          </div>
+          <input id="searchInput" class="search" type="search" placeholder="Поиск по названию, типу или заметке" />
+          <ul id="spotList" class="spot-list"></ul>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="spotDialog" class="spot-dialog">
+      <article>
+        <button id="closeDialogBtn" type="button" class="close" aria-label="Закрыть">×</button>
+        <h2 id="dialogTitle">Точка</h2>
+        <div id="dialogContent"></div>
+        <div class="actions wrap">
+          <button id="navigateDialogBtn" type="button">Показать на карте</button>
+          <button id="shareDialogBtn" type="button" class="secondary">Поделиться точкой</button>
+          <button id="deleteDialogBtn" type="button" class="danger">Удалить</button>
+        </div>
+      </article>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
