@@ -1,20 +1,15 @@
 {
   "name": "Грибные места",
   "short_name": "Грибы",
-  "description": "Приватный GPS-блокнот для сохранения грибных мест локально на устройстве.",
-  "start_url": "./index.html",
+  "description": "Личный GPS-журнал грибных мест",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f5f1e8",
-  "theme_color": "#1f5f3a",
-  "orientation": "any",
+  "background_color": "#f4f2ea",
+  "theme_color": "#244b2f",
   "lang": "ru",
   "icons": [
-    {
-      "src": "./icon.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "apple-touch-icon.svg", "sizes": "180x180", "type": "image/svg+xml" }
   ]
 }

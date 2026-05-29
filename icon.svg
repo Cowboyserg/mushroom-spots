@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mushroom Spots icon">
-  <rect width="512" height="512" rx="112" fill="#1f5f3a"/>
-  <circle cx="256" cy="256" r="176" fill="#f5f1e8" opacity=".96"/>
-  <path d="M123 247c9-78 64-129 133-129s124 51 133 129c4 34-18 57-49 51-28-5-55-8-84-8s-56 3-84 8c-31 6-53-17-49-51z" fill="#a43e2f"/>
-  <path d="M210 278h92l26 115c-21 11-45 17-72 17s-51-6-72-17l26-115z" fill="#fffaf0"/>
-  <circle cx="202" cy="195" r="24" fill="#fffaf0"/>
-  <circle cx="283" cy="173" r="18" fill="#fffaf0"/>
-  <circle cx="324" cy="231" r="20" fill="#fffaf0"/>
-  <path d="M256 78c82 0 155 55 176 133" fill="none" stroke="#fffaf0" stroke-width="22" stroke-linecap="round" opacity=".72"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#244b2f"/><circle cx="256" cy="230" r="142" fill="#f4f2ea"/><path d="M116 238c16-92 82-150 140-150s124 58 140 150c-77-22-203-22-280 0z" fill="#b7523b"/><path d="M216 238h80l28 154H188z" fill="#f4f2ea"/><circle cx="198" cy="164" r="16" fill="#f4f2ea"/><circle cx="268" cy="132" r="13" fill="#f4f2ea"/><circle cx="316" cy="183" r="17" fill="#f4f2ea"/></svg>
