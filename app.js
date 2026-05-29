@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.8';
+const APP_VERSION = '0.5.9';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -41,7 +41,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   centerMeBtn: 'Ко мне',
   repairMapBtn: 'Починить карту',
   saveSpotBtn: 'Сохранить текущую точку',
-  averageBtn: 'Усреднить 30 сек',
+  averageBtn: 'Уточнить GPS 30 сек',
   navigateBtn: 'Показать направление',
   shareSpotBtn: 'Экспорт точки',
   deleteSpotBtn: 'Удалить',
@@ -49,9 +49,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   copyInviteBtn: 'Скопировать приглашение',
   joinGroupBtn: 'Войти в группу',
   leaveGroupBtn: 'Выйти из группы',
-  startLiveBtn: 'Начать трансляцию',
-  stopLiveBtn: 'Остановить трансляцию',
-  refreshFriendsBtn: 'Обновить друзей',
+  startLiveBtn: 'Начать показ моей позиции',
+  stopLiveBtn: 'Остановить мою позицию',
+  refreshFriendsBtn: 'Обновить участников',
   testSupabaseBtn: 'Проверить Supabase',
   chatSendBtn: 'Отправить сообщение',
   chatRefreshBtn: 'Обновить чат',
@@ -138,6 +138,42 @@ function setButtonApiStatus(ctxOrButtonId, status, detail = '') {
     updatedAt: new Date().toISOString()
   });
   updateMapDebugUi(false);
+}
+
+
+function markButtonBlocked(detail) {
+  if (activeButtonDiagnostics) setButtonApiStatus(activeButtonDiagnostics, 'заблокировано', detail);
+}
+
+function markButtonCancelled(detail) {
+  if (activeButtonDiagnostics) setButtonApiStatus(activeButtonDiagnostics, 'отменено', detail);
+}
+
+function setDisabled(id, disabled) {
+  const el = $(id);
+  if (el) el.disabled = Boolean(disabled);
+}
+
+function updateActionButtonsUi() {
+  const hasSupabase = Boolean(getSupabaseConfig());
+  const hasGroup = Boolean(currentGroupId());
+  const hasPosition = Boolean(currentPosition);
+  const hasSelected = Boolean(selectedSpotId);
+
+  setDisabled('saveSpotBtn', !hasPosition);
+  setDisabled('averageBtn', !navigator.geolocation);
+  setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
+  setDisabled('navigateBtn', !hasSelected || !hasPosition);
+  setDisabled('shareSpotBtn', !hasSelected);
+  setDisabled('deleteSpotBtn', !hasSelected);
+
+  setDisabled('copyInviteBtn', !hasGroup);
+  setDisabled('joinGroupBtn', !hasSupabase || !hasGroup || groupJoined);
+  setDisabled('leaveGroupBtn', !groupJoined);
+  setDisabled('startLiveBtn', !hasSupabase || !hasGroup || liveEnabled);
+  setDisabled('stopLiveBtn', !liveEnabled);
+  setDisabled('refreshFriendsBtn', !hasSupabase || !hasGroup || !groupJoined);
+  setDisabled('testSupabaseBtn', !hasSupabase);
 }
 
 function beginApiRequest(apiName, method = 'API', target = '', ctx = activeButtonDiagnostics) {
@@ -586,6 +622,7 @@ function updateUserPosition(pos, center=false) {
     satellites: null
   };
   updateGpsStatusPanel(currentPosition);
+  updateActionButtonsUi();
 
   const latlng = [latitude, longitude];
   if (!userMarker) {
@@ -757,15 +794,15 @@ async function saveCurrentSpot() {
 }
 
 async function averageAndSave() {
-  if (!navigator.geolocation) return alert('Геолокация не поддерживается.');
-  $('saveHint').textContent = 'Усреднение: стой на месте 30 секунд…';
+  if (!navigator.geolocation) { markButtonBlocked('геолокация не поддерживается'); return alert('Геолокация не поддерживается.'); }
+  $('saveHint').textContent = 'Уточнение GPS: стой на месте 30 секунд…';
   const samples = [];
   const started = Date.now();
   const requestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', '30 sec averaging');
   const sampleWatch = navigator.geolocation.watchPosition(
     (pos) => {
       samples.push({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy });
-      $('saveHint').textContent = `Усреднение: ${samples.length} измерений, лучшая точность ${meters(Math.min(...samples.map(s=>s.accuracy||9999)))}`;
+      $('saveHint').textContent = `Уточнение GPS: ${samples.length} измерений, лучшая точность ${meters(Math.min(...samples.map(s=>s.accuracy||9999)))}`;
     },
     (err) => {
       finishApiRequest(requestId, 'ошибка', err.message);
@@ -777,7 +814,7 @@ async function averageAndSave() {
     navigator.geolocation.clearWatch(sampleWatch);
     if (!samples.length) {
       finishApiRequest(requestId, 'ошибка', 'GPS-измерения не собраны');
-      $('saveHint').textContent = 'Не удалось собрать GPS-измерения.';
+      $('saveHint').textContent = 'Не удалось уточнить GPS: измерения не собраны.';
       return;
     }
     const weighted = samples.map(s => ({ ...s, w: 1 / Math.max(s.accuracy || 50, 1) }));
@@ -852,6 +889,7 @@ function selectSpot(id, center=false) {
   if (marker) marker.openPopup();
   updateSelectedDetails();
   renderList();
+  updateActionButtonsUi();
 }
 window.selectSpotFromPopup = (id) => selectSpot(id, false);
 
@@ -1059,12 +1097,13 @@ function updateLiveUi() {
     $('groupStatus').className = groupJoined ? 'pill on' : 'pill';
   }
   if ($('liveStatus')) {
-    $('liveStatus').textContent = liveEnabled ? 'трансляция включена' : 'трансляция выключена';
+    $('liveStatus').textContent = liveEnabled ? 'моя позиция видна' : 'моя позиция скрыта';
     $('liveStatus').className = liveEnabled ? 'pill on' : 'pill';
     if (!getSupabaseConfig()) $('liveStatus').className = 'pill warn';
   }
   updateDbCleanupUi();
   updateChatUi();
+  updateActionButtonsUi();
 }
 
 function parseGroupFromUrl() {
@@ -1085,7 +1124,7 @@ async function createGroup() {
   updateLiveUi();
   if (getSupabaseConfig()) {
     await joinGroup(true);
-    $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
+    $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   } else {
     $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Для live-режима нужен Supabase в config.js.';
     updateChatUi();
@@ -1094,7 +1133,7 @@ async function createGroup() {
 
 async function copyInvite() {
   const group = $('groupId').value.trim();
-  if (!group) return alert('Сначала создай или вставь ID группы.');
+  if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай или вставь ID группы.'); }
   const url = new URL(window.location.href);
   url.searchParams.set('group', group);
   const text = url.toString();
@@ -1129,17 +1168,20 @@ function clearFriendMarkers() {
 
 async function joinGroup(silent = false) {
   if (!getSupabaseConfig()) {
-    if (!silent) alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.');
+    if (!silent) { markButtonBlocked('Supabase не настроен'); alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.'); }
     updateLiveUi();
     return false;
   }
   const group = $('groupId').value.trim();
   if (!group) {
-    if (!silent) alert('Создай группу или открой приглашение от друга.');
+    if (!silent) { markButtonBlocked('нет ID группы'); alert('Создай группу или открой приглашение от друга.'); }
     return false;
   }
   saveLiveInputs();
   groupJoined = true;
+  await upsertGroupMember(false).catch(err => {
+    $('liveHint').textContent = `Группа открыта, но имя участника не записано: ${err.message}`;
+  });
   updateLiveUi();
   clearInterval(friendsTimer);
   await refreshFriends();
@@ -1147,13 +1189,14 @@ async function joinGroup(silent = false) {
   await refreshGroupChat(false);
   startChatAutoRefresh();
   if (!silent) {
-    $('liveHint').textContent = 'Ты в группе. Можно видеть активных участников без передачи своей позиции. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
+    $('liveHint').textContent = 'Ты в группе. Можно видеть активных участников без передачи своей позиции. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   }
   return true;
 }
 
 async function leaveGroup() {
   await stopLiveSharing(false);
+  await deleteMyGroupMember().catch(err => console.warn('Could not delete own group member row', err));
   groupJoined = false;
   stopChatAutoRefresh(true);
   clearInterval(friendsTimer);
@@ -1278,7 +1321,7 @@ async function afterDbCleanupRefresh() {
 async function cleanMyDbRow() {
   const group = getCurrentGroupForCleanup();
   const myId = ensureUserId();
-  if (!confirmDbCleanup(`Удалить мою live-запись из текущей группы?\n\nГруппа: ${group}\nМой user_id: ${myId}`)) return;
+  if (!confirmDbCleanup(`Удалить мою live-запись из текущей группы?\n\nГруппа: ${group}\nМой user_id: ${myId}`)) { markButtonCancelled('чистка отменена пользователем'); return; }
 
   liveEnabled = false;
   clearInterval(liveTimer);
@@ -1294,7 +1337,7 @@ async function cleanMyDbRow() {
 async function cleanMyEverywhereDbRows() {
   const myId = ensureUserId();
   const typed = prompt(`Удалить мои live-записи из ВСЕХ групп?\n\nЭто использует локальный user_id этого браузера. Для подтверждения введи мой user_id полностью:`, '');
-  if (typed !== myId) return;
+  if (typed !== myId) { markButtonCancelled('user_id не подтверждён'); return; }
 
   liveEnabled = false;
   clearInterval(liveTimer);
@@ -1308,7 +1351,7 @@ async function cleanMyEverywhereDbRows() {
 
 async function cleanCurrentGroupDbRows() {
   const group = getCurrentGroupForCleanup();
-  if (!requireGroupTypedConfirmation(group, `Очистить ВСЮ текущую группу?\n\nГруппа: ${group}`)) return;
+  if (!requireGroupTypedConfirmation(group, `Очистить ВСЮ текущую группу?\n\nГруппа: ${group}`)) { markButtonCancelled('ID группы не подтверждён'); return; }
 
   if (liveEnabled) {
     liveEnabled = false;
@@ -1332,7 +1375,7 @@ async function cleanStaleGroupDbRows() {
   const group = getCurrentGroupForCleanup();
   const hours = 24;
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  if (!confirmDbCleanup(`Удалить старые live-записи текущей группы?\n\nГруппа: ${group}\nКритерий: updated_at старше ${hours} ч\nДо: ${fmtDate(cutoff)}`)) return;
+  if (!confirmDbCleanup(`Удалить старые live-записи текущей группы?\n\nГруппа: ${group}\nКритерий: updated_at старше ${hours} ч\nДо: ${fmtDate(cutoff)}`)) { markButtonCancelled('чистка отменена пользователем'); return; }
 
   const encodedGroup = encodeURIComponent(group);
   const encodedCutoff = encodeURIComponent(cutoff);
@@ -1368,7 +1411,7 @@ function updateChatCounter() {
 function updateChatUi() {
   const hasSupabase = Boolean(getSupabaseConfig());
   const group = currentGroupId();
-  const canUseChat = hasSupabase && Boolean(group);
+  const canUseChat = hasSupabase && Boolean(group) && groupJoined;
   const sendBtn = $('chatSendBtn');
   const refreshBtn = $('chatRefreshBtn');
   const input = $('chatMessageInput');
@@ -1394,6 +1437,9 @@ function updateChatUi() {
     } else if (!group) {
       status.textContent = 'нет группы';
       status.className = 'pill';
+    } else if (!groupJoined) {
+      status.textContent = 'сначала войди';
+      status.className = 'pill';
     } else if (chatTimer) {
       status.textContent = 'авто 10 сек';
       status.className = 'pill on';
@@ -1408,6 +1454,8 @@ function updateChatUi() {
     setChatHint('Чат недоступен: нужен Supabase URL и anon public key в config.js.');
   } else if (!group) {
     setChatHint('Создай группу или открой приглашение, чтобы читать и писать в чат группы.');
+  } else if (!groupJoined) {
+    setChatHint('Чат заблокирован: сначала нажми “Войти в группу” или открой приглашение.');
   } else if (!chatMessages.length) {
     setChatHint('Чат готов. Сообщения хранятся в Supabase group_messages и привязаны к текущему ID группы.');
   }
@@ -1433,7 +1481,7 @@ function stopChatAutoRefresh(clearList = false) {
 
 function startChatAutoRefresh() {
   clearInterval(chatTimer);
-  if (!getSupabaseConfig() || !currentGroupId()) {
+  if (!getSupabaseConfig() || !currentGroupId() || !groupJoined) {
     chatTimer = null;
     updateChatUi();
     return;
@@ -1466,6 +1514,10 @@ function renderGroupChat(rows = chatMessages) {
   }
   if (!currentGroupId()) {
     list.innerHTML = '<p class="hint">Сначала создай группу или открой приглашение.</p>';
+    return;
+  }
+  if (!groupJoined) {
+    list.innerHTML = '<p class="hint">Чат появится после входа в группу.</p>';
     return;
   }
   if (!rows.length) {
@@ -1516,6 +1568,11 @@ async function refreshGroupChat(showManualHint = true) {
     updateChatUi();
     return false;
   }
+  if (!groupJoined) {
+    markButtonBlocked('чат доступен только после входа в группу');
+    updateChatUi();
+    return false;
+  }
   try {
     chatMessages = await fetchGroupMessages();
     renderGroupChat(chatMessages);
@@ -1530,13 +1587,14 @@ async function refreshGroupChat(showManualHint = true) {
 
 async function sendOrUpdateChatMessage() {
   const group = currentGroupId();
-  if (!group) return alert('Сначала создай группу или открой приглашение.');
-  if (!getSupabaseConfig()) return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.');
+  if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай группу или открой приглашение.'); }
+  if (!getSupabaseConfig()) { markButtonBlocked('Supabase не настроен'); return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.'); }
+  if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); return alert('Сначала войди в группу.'); }
 
   const input = $('chatMessageInput');
   const body = sanitizeChatBody(input?.value || '');
-  if (!body) return alert('Нельзя отправить пустое сообщение.');
-  if (body.length > CHAT_MAX_LENGTH) return alert(`Сообщение должно быть не длиннее ${CHAT_MAX_LENGTH} символов.`);
+  if (!body) { markButtonBlocked('пустое сообщение'); return alert('Нельзя отправить пустое сообщение.'); }
+  if (body.length > CHAT_MAX_LENGTH) { markButtonBlocked('сообщение длиннее лимита'); return alert(`Сообщение должно быть не длиннее ${CHAT_MAX_LENGTH} символов.`); }
 
   const name = currentChatName();
   if ($('liveName') && !$('liveName').value.trim()) {
@@ -1606,7 +1664,7 @@ async function deleteChatMessage(messageId) {
   const row = chatMessages.find(item => item.id === messageId);
   if (!row) return;
   if (row.user_id !== ensureUserId()) return alert('В этом MVP можно удалять только сообщения этого браузера.');
-  if (!confirm('Удалить это сообщение из чата группы?')) return;
+  if (!confirm('Удалить это сообщение из чата группы?')) { markButtonCancelled('удаление сообщения отменено'); return; }
 
   const encodedId = encodeURIComponent(messageId);
   const encodedGroup = encodeURIComponent(currentGroupId());
@@ -1621,84 +1679,173 @@ async function deleteChatMessage(messageId) {
   await refreshGroupChat(false);
 }
 
-async function fetchFriends() {
-  const group = $('groupId').value.trim();
-  if (!group) return [];
+async function upsertGroupMember(isLive = liveEnabled) {
+  if (!getSupabaseConfig()) return false;
+  const group = currentGroupId();
+  if (!group) return false;
+  const name = currentChatName();
+  const payload = {
+    group_id: group,
+    user_id: ensureUserId(),
+    display_name: name,
+    is_live: Boolean(isLive),
+    last_seen_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+  await supabaseFetch('group_members?on_conflict=group_id,user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(payload)
+  });
+  return true;
+}
+
+async function deleteMyGroupMember() {
+  const group = currentGroupId();
+  if (!group || !getSupabaseConfig()) return false;
   const encodedGroup = encodeURIComponent(group);
-  const rows = await supabaseFetch(`live_locations?group_id=eq.${encodedGroup}&select=group_id,user_id,user_name,lat,lon,accuracy,updated_at&order=updated_at.desc`, { method: 'GET' });
+  const encodedUser = encodeURIComponent(ensureUserId());
+  await supabaseFetch(`group_members?group_id=eq.${encodedGroup}&user_id=eq.${encodedUser}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' }
+  });
+  return true;
+}
+
+async function fetchGroupMembers() {
+  const group = currentGroupId();
+  if (!group || !getSupabaseConfig()) return [];
+  const encodedGroup = encodeURIComponent(group);
+  const rows = await supabaseFetch(`group_members?group_id=eq.${encodedGroup}&select=group_id,user_id,display_name,is_live,last_seen_at,updated_at&order=last_seen_at.desc`, { method: 'GET' });
   return Array.isArray(rows) ? rows : [];
 }
 
-function renderFriends(rows) {
+async function fetchFriends() {
+  const group = currentGroupId();
+  if (!group) return { locations: [], members: [] };
+  const encodedGroup = encodeURIComponent(group);
+  const locations = await supabaseFetch(`live_locations?group_id=eq.${encodedGroup}&select=group_id,user_id,user_name,lat,lon,accuracy,updated_at&order=updated_at.desc`, { method: 'GET' });
+  let members = [];
+  try {
+    members = await fetchGroupMembers();
+  } catch (err) {
+    console.warn('group_members unavailable', err);
+    $('liveHint').textContent = `Участники без позиции недоступны: ${err.message}`;
+  }
+  return {
+    locations: Array.isArray(locations) ? locations : [],
+    members
+  };
+}
+
+function renderFriends(data) {
   const list = $('friendsList');
   list.innerHTML = '';
+  const locations = Array.isArray(data) ? data : (data?.locations || []);
+  const members = Array.isArray(data) ? [] : (data?.members || []);
   const now = Date.now();
   const myId = ensureUserId();
-  const seenIds = new Set();
-  let activeCount = 0;
+  const seenMarkerIds = new Set();
+  let activeLocationCount = 0;
+
+  const people = new Map();
+  for (const member of members) {
+    people.set(member.user_id, { member, location: null });
+  }
+  for (const location of locations) {
+    const previous = people.get(location.user_id) || { member: null, location: null };
+    previous.location = location;
+    people.set(location.user_id, previous);
+  }
+
+  const rows = Array.from(people.entries()).map(([id, value]) => ({
+    userId: id,
+    name: value.member?.display_name || value.location?.user_name || 'Без имени',
+    member: value.member,
+    location: value.location
+  }));
+
+  rows.sort((a, b) => {
+    const at = new Date(a.location?.updated_at || a.member?.last_seen_at || 0).getTime();
+    const bt = new Date(b.location?.updated_at || b.member?.last_seen_at || 0).getTime();
+    return bt - at;
+  });
 
   for (const row of rows) {
-    const ageMs = now - new Date(row.updated_at).getTime();
-    const stale = ageMs > 5 * 60 * 1000;
-    if (!stale) activeCount += 1;
-    if (row.user_id !== myId && !stale) {
-      seenIds.add(row.user_id);
-      const latlng = [row.lat, row.lon];
-      let marker = friendMarkers.get(row.user_id);
-      const popup = `<strong>${escapeHtml(row.user_name)}</strong><br>${fmtCoord(row.lat)}, ${fmtCoord(row.lon)}<br>Точность: ${meters(row.accuracy)}<br>Обновлено: ${fmtDate(row.updated_at)}`;
+    const loc = row.location;
+    const member = row.member;
+    const locAgeMs = loc ? now - new Date(loc.updated_at).getTime() : Infinity;
+    const memberAgeMs = member ? now - new Date(member.last_seen_at || member.updated_at).getTime() : Infinity;
+    const hasActiveLocation = Boolean(loc) && locAgeMs <= 5 * 60 * 1000;
+    const isPresent = Boolean(member) && memberAgeMs <= 10 * 60 * 1000;
+    if (hasActiveLocation) activeLocationCount += 1;
+
+    if (loc && row.userId !== myId && hasActiveLocation) {
+      seenMarkerIds.add(row.userId);
+      const latlng = [loc.lat, loc.lon];
+      let marker = friendMarkers.get(row.userId);
+      const popup = `<strong>${escapeHtml(row.name)}</strong><br>${fmtCoord(loc.lat)}, ${fmtCoord(loc.lon)}<br>Точность: ${meters(loc.accuracy)}<br>Обновлено: ${fmtDate(loc.updated_at)}`;
       if (!marker) {
-        marker = L.marker(latlng, { title: row.user_name, icon: makeMapIcon('friend') }).addTo(map).bindPopup(popup);
-        friendMarkers.set(row.user_id, marker);
+        marker = L.marker(latlng, { title: row.name, icon: makeMapIcon('friend') }).addTo(map).bindPopup(popup);
+        friendMarkers.set(row.userId, marker);
       } else {
         marker.setLatLng(latlng).setPopupContent(popup);
       }
     }
 
-    const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, row)) : '—';
     const item = document.createElement('div');
-    item.className = `friend-item ${stale ? 'friend-stale' : ''}`;
-    item.innerHTML = `<div><div class="friend-name">${escapeHtml(row.user_name)}${row.user_id === myId ? ' · я' : ''}</div><div class="friend-meta">${stale ? 'устарело' : 'активно'} · ${fmtDate(row.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(row.accuracy)}</div></div>`;
-    item.onclick = () => map.setView([row.lat, row.lon], Math.max(map.getZoom(), 16));
+    item.className = `friend-item ${loc && !hasActiveLocation ? 'friend-stale' : ''}`;
+    const suffix = row.userId === myId ? ' · я' : '';
+    let meta;
+    if (loc) {
+      const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
+      meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
+      item.onclick = () => map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16));
+    } else {
+      meta = `${isPresent ? 'в группе' : 'давно не обновлялся'} · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)}`;
+    }
+    item.innerHTML = `<div><div class="friend-name">${escapeHtml(row.name)}${suffix}</div><div class="friend-meta">${meta}</div></div>`;
     list.appendChild(item);
   }
 
   for (const [id, marker] of friendMarkers.entries()) {
-    if (!seenIds.has(id)) {
+    if (!seenMarkerIds.has(id)) {
       marker.remove();
       friendMarkers.delete(id);
     }
   }
 
   if (!rows.length) {
-    list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет активных участников.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
+    list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет участников. Если таблица group_members не создана, будут видны только люди с включённой позицией.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
   }
   safeInvalidateMap(0, 'render/update');
 
-  if (rows.length && activeCount === 0) {
+  if (rows.length && activeLocationCount === 0) {
     const note = document.createElement('p');
     note.className = 'hint';
-    note.textContent = 'Все найденные позиции устарели.';
+    note.textContent = 'В группе есть участники, но сейчас ни у кого нет активной позиции на карте.';
     list.appendChild(note);
   }
 }
 
 async function refreshFriends() {
   try {
+    if (groupJoined) await upsertGroupMember(liveEnabled).catch(err => console.warn('Could not refresh group member heartbeat', err));
     const rows = await fetchFriends();
     renderFriends(rows);
     return true;
   } catch (err) {
-    $('liveHint').textContent = `Ошибка друзей: ${err.message}`;
+    $('liveHint').textContent = `Ошибка участников: ${err.message}`;
     return false;
   }
 }
 
 async function startLiveSharing() {
-  if (!getSupabaseConfig()) return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.');
+  if (!getSupabaseConfig()) { markButtonBlocked('Supabase не настроен'); return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.'); }
   const name = $('liveName').value.trim();
   const group = $('groupId').value.trim();
-  if (!name) return alert('Укажи своё имя.');
-  if (!group) return alert('Создай группу или вставь ID группы от друга.');
+  if (!name) { markButtonBlocked('не указано имя'); return alert('Укажи своё имя.'); }
+  if (!group) { markButtonBlocked('нет ID группы'); return alert('Создай группу или вставь ID группы от друга.'); }
   saveLiveInputs();
   if (!groupJoined) {
     const joined = await joinGroup(true);
@@ -1708,6 +1855,7 @@ async function startLiveSharing() {
   updateLiveUi();
   startGps(false);
   await publishMyLocation().catch(err => $('liveHint').textContent = err.message);
+  await upsertGroupMember(true).catch(err => console.warn('Could not update member live state', err));
   await refreshFriends();
   clearInterval(liveTimer);
   liveTimer = setInterval(() => publishMyLocation().catch(err => $('liveHint').textContent = err.message), 15000);
@@ -1719,6 +1867,7 @@ async function stopLiveSharing(keepWatching = true) {
   liveTimer = null;
   updateLiveUi();
   try { await deleteMyLiveLocation(); } catch (err) { console.warn('Could not delete own live location', err); }
+  try { await upsertGroupMember(false); } catch (err) { console.warn('Could not update member live state', err); }
   if (!keepWatching) {
     clearInterval(friendsTimer);
     friendsTimer = null;
@@ -1727,7 +1876,7 @@ async function stopLiveSharing(keepWatching = true) {
   }
   $('liveHint').textContent = keepWatching && groupJoined
     ? 'Трансляция остановлена. Ты остался в группе и продолжаешь видеть активных участников.'
-    : 'Трансляция остановлена.';
+    : 'Показ моей позиции остановлен.';
 }
 
 async function testSupabaseConnection() {
@@ -1761,7 +1910,14 @@ function bindUi() {
   $('leaveGroupBtn').onclick = withButtonDiagnostics('leaveGroupBtn', leaveGroup);
   $('startLiveBtn').onclick = withButtonDiagnostics('startLiveBtn', startLiveSharing);
   $('stopLiveBtn').onclick = withButtonDiagnostics('stopLiveBtn', () => stopLiveSharing(true));
-  $('refreshFriendsBtn').onclick = withButtonDiagnostics('refreshFriendsBtn', () => groupJoined ? refreshFriends() : joinGroup(false));
+  $('refreshFriendsBtn').onclick = withButtonDiagnostics('refreshFriendsBtn', () => {
+    if (!groupJoined) {
+      markButtonBlocked('сначала войди в группу');
+      $('liveHint').textContent = 'Обновление участников доступно только после входа в группу.';
+      return false;
+    }
+    return refreshFriends();
+  });
   $('testSupabaseBtn').onclick = withButtonDiagnostics('testSupabaseBtn', testSupabaseConnection);
   if ($('chatSendBtn')) $('chatSendBtn').onclick = withButtonDiagnostics('chatSendBtn', sendOrUpdateChatMessage);
   if ($('chatRefreshBtn')) $('chatRefreshBtn').onclick = withButtonDiagnostics('chatRefreshBtn', () => refreshGroupChat(true));
@@ -1788,7 +1944,7 @@ function bindUi() {
   window.addEventListener('focus', () => safeInvalidateMap(250, 'focus'));
 
   $('liveName').onchange = saveLiveInputs;
-  $('groupId').oninput = () => { updateDbCleanupUi(); updateChatUi(); };
+  $('groupId').oninput = () => { updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); };
   $('groupId').onchange = () => {
     saveLiveInputs();
     groupJoined = false;
@@ -1807,7 +1963,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.9`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.10`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
@@ -1822,8 +1978,8 @@ async function init() {
   } else if ($('groupId').value.trim()) {
     await joinGroup(true);
     $('liveHint').textContent = groupFromUrl
-      ? 'Приглашение открыто: ты вошёл в группу и видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.'
-      : 'Последняя группа восстановлена: ты видишь участников. Чтобы друзья видели тебя, нажми “Начать трансляцию”.';
+      ? 'Приглашение открыто: ты вошёл в группу и видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.'
+      : 'Последняя группа восстановлена: ты видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   } else {
     updateLiveUi();
   }

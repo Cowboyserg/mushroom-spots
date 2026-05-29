@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.8 · Sprint 3.9</p>
+      <p id="appVersion">v0.5.9 · Sprint 3.10</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -75,7 +75,7 @@
       </div>
       <div class="row">
         <button id="saveSpotBtn">Сохранить текущую точку</button>
-        <button id="averageBtn" class="secondary">Усреднить 30 сек</button>
+        <button id="averageBtn" class="secondary">Уточнить GPS 30 сек</button>
       </div>
       <p class="hint" id="saveHint">Сначала включи GPS. Чем меньше точность в метрах, тем лучше.</p>
     </section>
@@ -102,13 +102,13 @@
 
     <section class="card live-card">
       <div class="section-title">
-        <h2>Друзья на карте</h2>
+        <h2>Участники группы</h2>
         <div class="pill-row">
           <span id="groupStatus" class="pill">не в группе</span>
-          <span id="liveStatus" class="pill">трансляция выключена</span>
+          <span id="liveStatus" class="pill">моя позиция скрыта</span>
         </div>
       </div>
-      <p class="hint">Переход по приглашению автоматически входит в группу и показывает активных участников. Передача твоей позиции начинается только после кнопки “Начать трансляцию”. Грибные точки остаются локально на телефоне.</p>
+      <p class="hint">Переход по приглашению автоматически входит в группу и показывает активных участников. Имя видно участникам после входа в группу; точка на карте появляется только после кнопки “Начать показ моей позиции”. Грибные точки остаются локально на телефоне.</p>
       <div class="field">
         <label for="liveName">Моё имя</label>
         <input id="liveName" placeholder="Например: Иван" />
@@ -124,9 +124,9 @@
         <button id="leaveGroupBtn" class="secondary">Выйти из группы</button>
       </div>
       <div class="row live-actions">
-        <button id="startLiveBtn">Начать трансляцию</button>
-        <button id="stopLiveBtn" class="danger">Остановить трансляцию</button>
-        <button id="refreshFriendsBtn" class="secondary">Обновить друзей</button>
+        <button id="startLiveBtn">Начать показ моей позиции</button>
+        <button id="stopLiveBtn" class="danger">Остановить мою позицию</button>
+        <button id="refreshFriendsBtn" class="secondary">Обновить участников</button>
         <button id="testSupabaseBtn" class="secondary">Проверить Supabase</button>
       </div>
       <div id="friendsList" class="friends-list"></div>
@@ -163,22 +163,24 @@
 
 
     <section class="card maintenance-card">
-      <div class="section-title">
-        <h2>Чистка БД</h2>
-        <span class="pill">live_locations</span>
-      </div>
-      <p class="hint">Здесь чистится только live-таблица Supabase: люди в группах и их последние координаты. Локальные грибные места, заметки, фото и backup не удаляются.</p>
-      <div class="storage-state maintenance-state">
-        <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
-        <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
-      </div>
-      <div class="row maintenance-actions">
-        <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
-        <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
-        <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
-        <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
-      </div>
-      <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки Supabase.</p>
+      <details>
+        <summary>
+          <span>Техническая чистка БД</span>
+          <span class="pill">live_locations</span>
+        </summary>
+        <p class="hint">Здесь чистится только live-таблица Supabase: люди в группах и их последние координаты. Локальные грибные места, заметки, фото и backup не удаляются.</p>
+        <div class="storage-state maintenance-state">
+          <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
+          <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
+        </div>
+        <div class="row maintenance-actions">
+          <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
+          <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
+          <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
+          <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
+        </div>
+        <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки Supabase.</p>
+      </details>
     </section>
 
     <section class="card">
@@ -204,8 +206,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.9</h2>
-      <p class="hint">Добавлен чат группы с CRUD: отправка, чтение последних 50 сообщений, правка и удаление своих сообщений, ручное и автообновление.</p>
+      <h2>Sprint 3.10</h2>
+      <p class="hint">Уточнена логика кнопок: группа, чат и показ моей позиции разделены. Участники могут быть видны по имени даже без точки на карте.</p>
     </section>
   </main>
 

@@ -282,3 +282,30 @@ dialog::backdrop { background:#0008; }
   font-weight:700;
 }
 .chat-actions { margin-top:8px; }
+
+.maintenance-card details {
+  display: grid;
+  gap: 12px;
+}
+
+.maintenance-card summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.maintenance-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.maintenance-card summary::before {
+  content: '▸';
+  margin-right: 6px;
+}
+
+.maintenance-card details[open] summary::before {
+  content: '▾';
+}
