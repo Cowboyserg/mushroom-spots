@@ -7,16 +7,19 @@
   <title>Грибные места</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="apple-touch-icon.svg" />
-  <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.5 · Sprint 3.5</p>
+      <p id="appVersion">v0.5.6 · Sprint 3.6</p>
     </div>
-    <button id="installHelpBtn" class="ghost">?</button>
+    <div class="topbar-actions">
+      <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика">!</button>
+      <button id="installHelpBtn" class="ghost">?</button>
+    </div>
   </header>
 
   <main>
@@ -38,8 +41,18 @@
       </div>
     </section>
 
-    <section class="map-wrap">
-      <div id="map"></div>
+    <section class="map-card card">
+      <div class="section-title">
+        <h2>Карта</h2>
+        <div class="pill-row">
+          <span id="mapStatusPill" class="pill">карта запускается</span>
+          <button id="repairMapBtn" class="secondary small-btn">Починить карту</button>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <div id="map"></div>
+      </div>
+      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”.</p>
     </section>
 
     <section class="card">
@@ -143,8 +156,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.5</h2>
-      <p class="hint">Map stability hotfix: Leaflet sizing is refreshed after layout changes, and markers use local CSS icons instead of fragile default image paths.</p>
+      <h2>Sprint 3.6</h2>
+      <p class="hint">Map rendering fix: local critical Leaflet CSS, tile diagnostics, repair controls, and a dedicated “!” troubleshooting panel.</p>
     </section>
   </main>
 
@@ -153,6 +166,18 @@
     <p><strong>iPhone:</strong> открой ссылку в Safari → Поделиться → На экран «Домой».</p>
     <p><strong>Android:</strong> открой ссылку в Chrome → меню ⋮ → Установить приложение.</p>
     <button id="closeHelpBtn">Понятно</button>
+  </dialog>
+
+  <dialog id="mapDebugDialog" class="wide-dialog">
+    <h2>Диагностика карты</h2>
+    <p class="hint">Этот экран показывает состояние Leaflet-контейнера, тайлов и сетевых ошибок карты. Его можно прислать разработчику при проблемах.</p>
+    <pre id="mapDebugText" class="debug-box">Диагностика ещё не собрана.</pre>
+    <div class="row">
+      <button id="refreshMapDebugBtn" class="secondary">Обновить диагностику</button>
+      <button id="repairMapFromDebugBtn" class="secondary">Починить карту</button>
+      <button id="copyMapDebugBtn" class="secondary">Скопировать</button>
+      <button id="closeMapDebugBtn">Закрыть</button>
+    </div>
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>

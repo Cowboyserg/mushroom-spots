@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.5';
+const APP_VERSION = '0.5.6';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -22,6 +22,9 @@ let liveTimer = null;
 let friendsTimer = null;
 let userId = null;
 let friendMarkers = new Map();
+let baseTileLayer = null;
+let mapDebugEvents = [];
+let mapTileStats = { loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null };
 
 const $ = (id) => document.getElementById(id);
 
@@ -55,15 +58,150 @@ function escapeHtml(str='') {
   return String(str).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
 
-function safeInvalidateMap(delay = 0) {
+function recordMapDebug(message, data = null) {
+  const item = {
+    at: new Date().toISOString(),
+    message,
+    data
+  };
+  mapDebugEvents.unshift(item);
+  mapDebugEvents = mapDebugEvents.slice(0, 30);
+  updateMapDebugUi(false);
+}
+
+function setMapStatus(text, mode = '') {
+  const pill = $('mapStatusPill');
+  if (!pill) return;
+  pill.textContent = text;
+  pill.className = `pill ${mode}`.trim();
+}
+
+function safeInvalidateMap(delay = 0, reason = 'manual') {
   if (!map) return;
   window.setTimeout(() => {
     try {
       map.invalidateSize({ animate: false, pan: false });
+      recordMapDebug(`invalidateSize: ${reason}`);
+      updateMapDebugUi(false);
     } catch (err) {
       console.warn('Map invalidateSize failed', err);
+      recordMapDebug('invalidateSize failed', err.message);
+      setMapStatus('ошибка размера карты', 'bad');
     }
   }, delay);
+}
+
+function getMapDebugSnapshot() {
+  const mapEl = $('map');
+  const wrapEl = document.querySelector('.map-wrap');
+  const mapRect = mapEl ? mapEl.getBoundingClientRect() : null;
+  const wrapRect = wrapEl ? wrapEl.getBoundingClientRect() : null;
+  const tiles = Array.from(document.querySelectorAll('.leaflet-tile'));
+  const loadedTiles = tiles.filter(t => t.classList.contains('leaflet-tile-loaded'));
+  const brokenTiles = tiles.filter(t => t.complete && t.naturalWidth === 0);
+  const center = map ? map.getCenter() : null;
+  const cfg = getSupabaseConfig ? getSupabaseConfig() : null;
+
+  return {
+    appVersion: APP_VERSION,
+    url: location.href,
+    userAgent: navigator.userAgent,
+    online: navigator.onLine,
+    mapExists: Boolean(map),
+    leafletLoaded: Boolean(window.L),
+    mapSize: map ? map.getSize() : null,
+    mapCenter: center ? { lat: Number(center.lat.toFixed(6)), lng: Number(center.lng.toFixed(6)) } : null,
+    mapZoom: map ? map.getZoom() : null,
+    mapElementRect: mapRect ? { width: Math.round(mapRect.width), height: Math.round(mapRect.height), top: Math.round(mapRect.top), left: Math.round(mapRect.left) } : null,
+    mapWrapRect: wrapRect ? { width: Math.round(wrapRect.width), height: Math.round(wrapRect.height), top: Math.round(wrapRect.top), left: Math.round(wrapRect.left) } : null,
+    tileStats: mapTileStats,
+    tileDom: {
+      total: tiles.length,
+      loaded: loadedTiles.length,
+      broken: brokenTiles.length,
+      sample: tiles.slice(0, 6).map(t => ({
+        src: t.currentSrc || t.src || '',
+        cls: t.className,
+        complete: t.complete,
+        natural: `${t.naturalWidth || 0}x${t.naturalHeight || 0}`,
+        style: t.getAttribute('style') || ''
+      }))
+    },
+    cssCheck: {
+      leafletTilePosition: tiles[0] ? getComputedStyle(tiles[0]).position : 'no tile',
+      mapPosition: mapEl ? getComputedStyle(mapEl).position : 'no map',
+      mapOverflow: mapEl ? getComputedStyle(mapEl).overflow : 'no map'
+    },
+    supabaseConfigured: Boolean(cfg),
+    recentEvents: mapDebugEvents
+  };
+}
+
+function updateMapDebugUi(forceText = false) {
+  const textEl = $('mapDebugText');
+  const snapshot = getMapDebugSnapshot();
+
+  if (snapshot.tileStats.error > 0) {
+    setMapStatus('ошибки тайлов', 'bad');
+  } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
+    setMapStatus('тайлы не загружены', 'warn');
+  } else if (snapshot.mapElementRect && snapshot.mapElementRect.height < 100) {
+    setMapStatus('малый контейнер', 'bad');
+  } else if (snapshot.tileDom.loaded > 0) {
+    setMapStatus(`тайлы: ${snapshot.tileDom.loaded}/${snapshot.tileDom.total}`, 'on');
+  } else {
+    setMapStatus('карта ждёт тайлы', 'warn');
+  }
+
+  if (textEl && (forceText || $('mapDebugDialog')?.open)) {
+    textEl.textContent = JSON.stringify(snapshot, null, 2);
+  }
+
+  const hint = $('mapHint');
+  if (hint) {
+    if (snapshot.tileStats.error > 0) {
+      hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
+    } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
+      hint.textContent = 'Тайлы созданы, но не загрузились. Проверь интернет или нажми “Починить карту”.';
+    } else {
+      hint.textContent = 'Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”.';
+    }
+  }
+}
+
+function repairMap() {
+  if (!map) return;
+  recordMapDebug('repairMap started');
+  safeInvalidateMap(0, 'repair immediate');
+  safeInvalidateMap(200, 'repair delayed 200');
+  safeInvalidateMap(800, 'repair delayed 800');
+  try {
+    if (baseTileLayer && baseTileLayer.redraw) {
+      baseTileLayer.redraw();
+      recordMapDebug('tile layer redraw');
+    }
+  } catch (err) {
+    recordMapDebug('tile layer redraw failed', err.message);
+  }
+  if (currentPosition) {
+    try { map.setView([currentPosition.lat, currentPosition.lon], Math.max(map.getZoom(), 16), { animate: false }); } catch {}
+  }
+  updateMapDebugUi(true);
+}
+
+async function copyMapDebug() {
+  const text = JSON.stringify(getMapDebugSnapshot(), null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('Диагностика карты скопирована.');
+  } catch {
+    const box = $('mapDebugText');
+    if (box) {
+      box.textContent = text;
+      box.focus();
+    }
+    alert('Не удалось скопировать автоматически. Текст показан в окне диагностики.');
+  }
 }
 
 function makeMapIcon(kind) {
@@ -152,24 +290,65 @@ function updateGpsStatusPanel(position) {
 }
 
 function initMap() {
-  map = L.map('map', {
+  if (!window.L) {
+    setMapStatus('Leaflet не загружен', 'bad');
+    recordMapDebug('Leaflet JS is not loaded');
+    return;
+  }
+
+  const mapEl = $('map');
+  if (!mapEl) {
+    recordMapDebug('Map element not found');
+    return;
+  }
+
+  map = L.map(mapEl, {
     zoomControl: true,
     preferCanvas: true,
-    attributionControl: true
+    attributionControl: true,
+    zoomAnimation: true,
+    markerZoomAnimation: true
   }).setView([56.9496, 24.1052], 12);
 
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  baseTileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors',
-    crossOrigin: true
-  }).addTo(map);
+    minZoom: 2,
+    tileSize: 256,
+    updateWhenIdle: false,
+    updateWhenZooming: true,
+    keepBuffer: 4,
+    detectRetina: false,
+    attribution: '&copy; OpenStreetMap contributors'
+  });
+
+  baseTileLayer
+    .on('loading', () => {
+      mapTileStats.loading += 1;
+      recordMapDebug('tile loading');
+    })
+    .on('tileload', (e) => {
+      mapTileStats.load += 1;
+      mapTileStats.lastTileUrl = e.tile?.currentSrc || e.tile?.src || null;
+      updateMapDebugUi(false);
+    })
+    .on('tileerror', (e) => {
+      mapTileStats.error += 1;
+      mapTileStats.lastError = e.tile?.currentSrc || e.tile?.src || 'unknown tile';
+      recordMapDebug('tile error', mapTileStats.lastError);
+      setMapStatus('ошибка тайлов', 'bad');
+    })
+    .addTo(map);
+
+  map.on('load moveend zoomend resize', () => updateMapDebugUi(false));
 
   // Leaflet can render broken/offset tiles if the map is initialized while
   // the PWA layout is still settling, especially after install-to-home-screen,
   // orientation changes, or service worker updates.
-  safeInvalidateMap(0);
-  safeInvalidateMap(250);
-  safeInvalidateMap(1000);
+  setMapStatus('карта загружается', 'warn');
+  safeInvalidateMap(0, 'init');
+  safeInvalidateMap(250, 'init delayed 250');
+  safeInvalidateMap(1000, 'init delayed 1000');
+  window.setTimeout(updateMapDebugUi, 1200);
 }
 
 function updateUserPosition(pos, center=false) {
@@ -197,7 +376,7 @@ function updateUserPosition(pos, center=false) {
     accuracyCircle.setLatLng(latlng).setRadius(accuracy || 0);
   }
   if (center) map.setView(latlng, Math.max(map.getZoom(), 16));
-  safeInvalidateMap(0);
+  safeInvalidateMap(0, 'render/update');
   updateSelectedDetails();
   renderList();
 }
@@ -388,7 +567,7 @@ function renderMarkers() {
     marker.on('click', () => selectSpot(spot.id, false));
     spotMarkers.set(spot.id, marker);
   }
-  safeInvalidateMap(0);
+  safeInvalidateMap(0, 'render/update');
 }
 
 function renderList() {
@@ -813,7 +992,7 @@ function renderFriends(rows) {
   if (!rows.length) {
     list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет активных участников.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
   }
-  safeInvalidateMap(0);
+  safeInvalidateMap(0, 'render/update');
 
   if (rows.length && activeCount === 0) {
     const note = document.createElement('p');
@@ -904,13 +1083,21 @@ function bindUi() {
   $('stopLiveBtn').onclick = () => stopLiveSharing(true);
   $('refreshFriendsBtn').onclick = () => groupJoined ? refreshFriends() : joinGroup(false);
   $('testSupabaseBtn').onclick = testSupabaseConnection;
+  if ($('repairMapBtn')) $('repairMapBtn').onclick = repairMap;
+  if ($('mapDebugBtn')) $('mapDebugBtn').onclick = () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); };
+  if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = () => updateMapDebugUi(true);
+  if ($('repairMapFromDebugBtn')) $('repairMapFromDebugBtn').onclick = repairMap;
+  if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = copyMapDebug;
+  if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = () => $('mapDebugDialog').close();
 
-  window.addEventListener('resize', () => safeInvalidateMap(150));
-  window.addEventListener('orientationchange', () => safeInvalidateMap(500));
+  window.addEventListener('online', () => { recordMapDebug('browser online'); repairMap(); });
+  window.addEventListener('offline', () => { recordMapDebug('browser offline'); updateMapDebugUi(true); });
+  window.addEventListener('resize', () => safeInvalidateMap(150, 'resize'));
+  window.addEventListener('orientationchange', () => safeInvalidateMap(500, 'orientationchange'));
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) safeInvalidateMap(250);
+    if (!document.hidden) safeInvalidateMap(250, 'visibilitychange');
   });
-  window.addEventListener('focus', () => safeInvalidateMap(250));
+  window.addEventListener('focus', () => safeInvalidateMap(250, 'focus'));
 
   $('liveName').onchange = saveLiveInputs;
   $('groupId').onchange = () => {
@@ -928,12 +1115,13 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.5`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.6`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
   initMap();
   bindUi();
+  recordMapDebug('app initialized');
   const groupFromUrl = loadLiveInputs();
   await refreshSpots();
   if (!getSupabaseConfig()) {
