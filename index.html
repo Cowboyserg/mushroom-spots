@@ -14,10 +14,10 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.6 · Sprint 3.6</p>
+      <p id="appVersion">v0.5.6 · Sprint 3.7</p>
     </div>
     <div class="topbar-actions">
-      <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика">!</button>
+      <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
       <button id="installHelpBtn" class="ghost">?</button>
     </div>
   </header>
@@ -156,8 +156,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.6</h2>
-      <p class="hint">Map rendering fix: local critical Leaflet CSS, tile diagnostics, repair controls, and a dedicated “!” troubleshooting panel.</p>
+      <h2>Sprint 3.7</h2>
+      <p class="hint">Debug panel: “!” now shows button-triggered API/browser requests, pending states, response statuses, and the existing map diagnostics.</p>
     </section>
   </main>
 
@@ -169,8 +169,8 @@
   </dialog>
 
   <dialog id="mapDebugDialog" class="wide-dialog">
-    <h2>Диагностика карты</h2>
-    <p class="hint">Этот экран показывает состояние Leaflet-контейнера, тайлов и сетевых ошибок карты. Его можно прислать разработчику при проблемах.</p>
+    <h2>Диагностика карты и API</h2>
+    <p class="hint">Сверху показано: какая кнопка нажата и какой статус у связанного запроса — пендинг, HTTP-статус, готово или ошибка. Ниже остаётся диагностика карты.</p>
     <pre id="mapDebugText" class="debug-box">Диагностика ещё не собрана.</pre>
     <div class="row">
       <button id="refreshMapDebugBtn" class="secondary">Обновить диагностику</button>

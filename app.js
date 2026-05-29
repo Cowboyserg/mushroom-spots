@@ -25,6 +25,40 @@ let friendMarkers = new Map();
 let baseTileLayer = null;
 let mapDebugEvents = [];
 let mapTileStats = { loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null };
+let apiDebugEvents = [];
+let apiButtonStates = new Map();
+let apiRequestSeq = 0;
+let activeButtonDiagnostics = null;
+
+const BUTTON_DIAGNOSTIC_LABELS = {
+  startGpsBtn: 'Включить GPS',
+  centerMeBtn: 'Ко мне',
+  repairMapBtn: 'Починить карту',
+  saveSpotBtn: 'Сохранить текущую точку',
+  averageBtn: 'Усреднить 30 сек',
+  navigateBtn: 'Показать направление',
+  shareSpotBtn: 'Экспорт точки',
+  deleteSpotBtn: 'Удалить',
+  createGroupBtn: 'Создать группу',
+  copyInviteBtn: 'Скопировать приглашение',
+  joinGroupBtn: 'Войти в группу',
+  leaveGroupBtn: 'Выйти из группы',
+  startLiveBtn: 'Начать трансляцию',
+  stopLiveBtn: 'Остановить трансляцию',
+  refreshFriendsBtn: 'Обновить друзей',
+  testSupabaseBtn: 'Проверить Supabase',
+  exportAllBtn: 'Скачать backup JSON',
+  chooseFolderBtn: 'Выбрать папку для backup',
+  saveFolderBackupBtn: 'Сохранить backup в папку',
+  requestPersistentBtn: 'Запросить постоянное хранение',
+  mapDebugBtn: 'Открыть диагностику',
+  refreshMapDebugBtn: 'Обновить диагностику',
+  repairMapFromDebugBtn: 'Починить карту из диагностики',
+  copyMapDebugBtn: 'Скопировать диагностику',
+  closeMapDebugBtn: 'Закрыть диагностику',
+  installHelpBtn: 'Открыть помощь',
+  closeHelpBtn: 'Закрыть помощь'
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -56,6 +90,174 @@ function fmtTimeOnly(iso) {
 }
 function escapeHtml(str='') {
   return String(str).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+}
+
+function getButtonDiagnosticLabel(buttonId) {
+  const el = buttonId ? $(buttonId) : null;
+  return BUTTON_DIAGNOSTIC_LABELS[buttonId] || (el ? el.textContent.trim() : '') || buttonId || 'автоматически';
+}
+
+function shortApiTarget(target = '') {
+  const text = String(target || '');
+  if (text.length <= 120) return text;
+  return `${text.slice(0, 117)}…`;
+}
+
+function getButtonStatusLine(state) {
+  const detail = state.detail ? ` / ${state.detail}` : '';
+  return `${state.label} — ${state.status}${detail}`;
+}
+
+function setButtonApiStatus(ctxOrButtonId, status, detail = '') {
+  const ctx = typeof ctxOrButtonId === 'object' && ctxOrButtonId
+    ? ctxOrButtonId
+    : { buttonId: ctxOrButtonId, label: getButtonDiagnosticLabel(ctxOrButtonId), actionId: null };
+  const buttonId = ctx.buttonId || 'auto';
+  const previous = apiButtonStates.get(buttonId) || {};
+  apiButtonStates.set(buttonId, {
+    buttonId,
+    label: ctx.label || getButtonDiagnosticLabel(buttonId),
+    status,
+    detail,
+    actionId: ctx.actionId || previous.actionId || null,
+    updatedAt: new Date().toISOString()
+  });
+  updateMapDebugUi(false);
+}
+
+function beginApiRequest(apiName, method = 'API', target = '', ctx = activeButtonDiagnostics) {
+  const request = {
+    id: `api-${++apiRequestSeq}`,
+    buttonId: ctx?.buttonId || 'auto',
+    buttonLabel: ctx?.label || 'автоматически',
+    apiName,
+    method,
+    target: shortApiTarget(target),
+    status: 'пендинг',
+    detail: '',
+    startedAt: new Date().toISOString(),
+    finishedAt: null
+  };
+  if (ctx) ctx.pendingRequests = (ctx.pendingRequests || 0) + 1;
+  apiDebugEvents.unshift(request);
+  apiDebugEvents = apiDebugEvents.slice(0, 80);
+  if (ctx) setButtonApiStatus(ctx, 'пендинг', `${apiName}: пендинг`);
+  updateMapDebugUi(false);
+  return request.id;
+}
+
+function finishApiRequest(requestId, status, detail = '') {
+  const request = apiDebugEvents.find(item => item.id === requestId);
+  if (!request) return;
+  request.status = status;
+  request.detail = detail;
+  request.finishedAt = new Date().toISOString();
+
+  const ctx = activeButtonDiagnostics && activeButtonDiagnostics.buttonId === request.buttonId
+    ? activeButtonDiagnostics
+    : null;
+  if (ctx && ctx.pendingRequests) ctx.pendingRequests = Math.max(0, ctx.pendingRequests - 1);
+
+  setButtonApiStatus(
+    { buttonId: request.buttonId, label: request.buttonLabel, actionId: ctx?.actionId || null },
+    status,
+    `${request.apiName}: ${detail || status}`
+  );
+  updateMapDebugUi(false);
+}
+
+function getApiDebugSnapshot() {
+  return {
+    activeButton: activeButtonDiagnostics ? {
+      buttonId: activeButtonDiagnostics.buttonId,
+      label: activeButtonDiagnostics.label,
+      pendingRequests: activeButtonDiagnostics.pendingRequests || 0,
+      startedAt: activeButtonDiagnostics.startedAt
+    } : null,
+    buttons: Array.from(apiButtonStates.values()).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
+    requests: apiDebugEvents.slice(0, 40)
+  };
+}
+
+function formatDiagnosticsText() {
+  const api = getApiDebugSnapshot();
+  const lines = [];
+  lines.push('КНОПКИ / API');
+  lines.push('Формат: кнопка нажата — статус ответа/пендинг.');
+  if (!api.buttons.length) {
+    lines.push('- Нажатий ещё не было.');
+  } else {
+    for (const state of api.buttons.slice(0, 24)) {
+      lines.push(`- ${getButtonStatusLine(state)}`);
+    }
+  }
+  lines.push('');
+  lines.push('ПОСЛЕДНИЕ ЗАПРОСЫ');
+  if (!api.requests.length) {
+    lines.push('- Запросов ещё не было.');
+  } else {
+    for (const request of api.requests.slice(0, 24)) {
+      const detail = request.detail ? ` / ${request.detail}` : '';
+      const target = request.target ? ` ${request.target}` : '';
+      lines.push(`- ${request.buttonLabel} -> ${request.method} ${request.apiName}${target}: ${request.status}${detail}`);
+    }
+  }
+  lines.push('');
+  lines.push('КАРТА JSON');
+  lines.push(JSON.stringify(getMapDebugSnapshot(), null, 2));
+  lines.push('');
+  lines.push('API JSON');
+  lines.push(JSON.stringify(api, null, 2));
+  return lines.join('\n');
+}
+
+function withButtonDiagnostics(buttonId, handler) {
+  return function wrappedButtonHandler(event) {
+    const previousContext = activeButtonDiagnostics;
+    const ctx = {
+      actionId: uid(),
+      buttonId,
+      label: getButtonDiagnosticLabel(buttonId),
+      startedAt: new Date().toISOString(),
+      pendingRequests: 0
+    };
+    activeButtonDiagnostics = ctx;
+    setButtonApiStatus(ctx, 'пендинг', 'кнопка нажата');
+
+    const finishIfNoPending = () => {
+      if ((ctx.pendingRequests || 0) === 0) {
+        const current = apiButtonStates.get(buttonId);
+        if (current && current.actionId === ctx.actionId && current.status === 'пендинг') {
+          setButtonApiStatus(ctx, 'готово', 'обработчик завершён');
+        }
+      }
+    };
+
+    try {
+      const result = handler.call(this, event);
+      if (result && typeof result.then === 'function') {
+        return result
+          .then((value) => {
+            finishIfNoPending();
+            return value;
+          })
+          .catch((err) => {
+            setButtonApiStatus(ctx, 'ошибка', err?.message || String(err));
+            throw err;
+          })
+          .finally(() => {
+            activeButtonDiagnostics = previousContext;
+          });
+      }
+      finishIfNoPending();
+      activeButtonDiagnostics = previousContext;
+      return result;
+    } catch (err) {
+      setButtonApiStatus(ctx, 'ошибка', err?.message || String(err));
+      activeButtonDiagnostics = previousContext;
+      throw err;
+    }
+  };
 }
 
 function recordMapDebug(message, data = null) {
@@ -154,7 +356,7 @@ function updateMapDebugUi(forceText = false) {
   }
 
   if (textEl && (forceText || $('mapDebugDialog')?.open)) {
-    textEl.textContent = JSON.stringify(snapshot, null, 2);
+    textEl.textContent = formatDiagnosticsText();
   }
 
   const hint = $('mapHint');
@@ -190,11 +392,14 @@ function repairMap() {
 }
 
 async function copyMapDebug() {
-  const text = JSON.stringify(getMapDebugSnapshot(), null, 2);
+  const requestId = beginApiRequest('Clipboard.writeText', 'BROWSER', 'diagnostics text');
+  const text = formatDiagnosticsText();
   try {
     await navigator.clipboard.writeText(text);
-    alert('Диагностика карты скопирована.');
-  } catch {
+    finishApiRequest(requestId, 'готово', 'диагностика скопирована');
+    alert('Диагностика скопирована.');
+  } catch (err) {
+    finishApiRequest(requestId, 'ошибка', err?.message || 'clipboard недоступен');
     const box = $('mapDebugText');
     if (box) {
       box.textContent = text;
@@ -387,15 +592,27 @@ function startGps(center=true) {
     return;
   }
   $('gpsStatus').textContent = 'запрос разрешения…';
+  const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'GPS permission/current position');
   navigator.geolocation.getCurrentPosition(
-    (pos) => updateUserPosition(pos, center),
-    (err) => { $('gpsStatus').textContent = 'ошибка'; alert(`GPS ошибка: ${err.message}`); },
+    (pos) => {
+      finishApiRequest(requestId, 'готово', `GPS ${meters(pos.coords.accuracy)}`);
+      updateUserPosition(pos, center);
+    },
+    (err) => {
+      finishApiRequest(requestId, 'ошибка', err.message);
+      $('gpsStatus').textContent = 'ошибка';
+      alert(`GPS ошибка: ${err.message}`);
+    },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
   if (watchId == null) {
+    const watchRequestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', 'GPS live updates');
     watchId = navigator.geolocation.watchPosition(
-      (pos) => updateUserPosition(pos, false),
-      () => {},
+      (pos) => {
+        finishApiRequest(watchRequestId, 'готово', `watch активен, GPS ${meters(pos.coords.accuracy)}`);
+        updateUserPosition(pos, false);
+      },
+      (err) => finishApiRequest(watchRequestId, 'ошибка', err.message),
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
     );
   }
@@ -468,8 +685,10 @@ async function saveBackupToFolder(showSuccess = false) {
     if (showSuccess) alert('Сначала выбери папку для backup.');
     return false;
   }
+  const requestId = beginApiRequest('FileSystem backup write', 'BROWSER', BACKUP_FILE_NAME);
   const permission = await verifyFolderPermission(folderHandle, true);
   if (!permission) {
+    finishApiRequest(requestId, 'отказ', 'нет разрешения на запись');
     $('folderStatus').textContent = 'нет разрешения';
     if (showSuccess) alert('Нет разрешения на запись в выбранную папку.');
     return false;
@@ -478,6 +697,7 @@ async function saveBackupToFolder(showSuccess = false) {
   const writable = await fileHandle.createWritable();
   await writable.write(JSON.stringify(buildBackupPayload(), null, 2));
   await writable.close();
+  finishApiRequest(requestId, 'готово', 'backup записан');
   await setSetting('lastFolderBackupAt', new Date().toISOString());
   await updateStorageUi();
   if (showSuccess) alert(`Backup сохранён в файл ${BACKUP_FILE_NAME}`);
@@ -526,17 +746,25 @@ async function averageAndSave() {
   $('saveHint').textContent = 'Усреднение: стой на месте 30 секунд…';
   const samples = [];
   const started = Date.now();
+  const requestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', '30 sec averaging');
   const sampleWatch = navigator.geolocation.watchPosition(
     (pos) => {
       samples.push({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy });
       $('saveHint').textContent = `Усреднение: ${samples.length} измерений, лучшая точность ${meters(Math.min(...samples.map(s=>s.accuracy||9999)))}`;
     },
-    (err) => alert(`Ошибка усреднения: ${err.message}`),
+    (err) => {
+      finishApiRequest(requestId, 'ошибка', err.message);
+      alert(`Ошибка усреднения: ${err.message}`);
+    },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
   setTimeout(async () => {
     navigator.geolocation.clearWatch(sampleWatch);
-    if (!samples.length) { $('saveHint').textContent = 'Не удалось собрать GPS-измерения.'; return; }
+    if (!samples.length) {
+      finishApiRequest(requestId, 'ошибка', 'GPS-измерения не собраны');
+      $('saveHint').textContent = 'Не удалось собрать GPS-измерения.';
+      return;
+    }
     const weighted = samples.map(s => ({ ...s, w: 1 / Math.max(s.accuracy || 50, 1) }));
     const wSum = weighted.reduce((s,x)=>s+x.w,0);
     currentPosition = {
@@ -552,6 +780,7 @@ async function averageAndSave() {
     };
     updateUserPosition({ coords:{ latitude: currentPosition.lat, longitude: currentPosition.lon, accuracy: currentPosition.accuracy, altitude: null, altitudeAccuracy: null, speed: null, heading: null }, timestamp: Date.now() }, true);
     $('saveHint').textContent = `Готово: собрано ${samples.length} измерений за ${Math.round((Date.now()-started)/1000)} сек. Теперь можно сохранить точку.`;
+    finishApiRequest(requestId, 'готово', `${samples.length} измерений`);
   }, 30000);
 }
 
@@ -698,12 +927,15 @@ async function chooseBackupFolder() {
     alert('Выбор папки не поддерживается этим браузером. Используй ручной экспорт JSON.');
     return;
   }
+  const requestId = beginApiRequest('showDirectoryPicker', 'BROWSER', 'backup folder');
   try {
     folderHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    finishApiRequest(requestId, 'готово', 'папка выбрана');
     await setSetting('backupFolderHandle', folderHandle);
     $('folderStatus').textContent = folderHandle.name || 'выбрана';
     await saveBackupToFolder(true);
   } catch (err) {
+    finishApiRequest(requestId, err.name === 'AbortError' ? 'отменено' : 'ошибка', err.message);
     if (err.name !== 'AbortError') alert(`Ошибка выбора папки: ${err.message}`);
   }
 }
@@ -722,7 +954,9 @@ async function requestPersistentStorage() {
     alert('Этот браузер не поддерживает запрос постоянного хранения.');
     return;
   }
+  const requestId = beginApiRequest('navigator.storage.persist', 'BROWSER', 'persistent storage');
   const granted = await navigator.storage.persist();
+  finishApiRequest(requestId, granted ? 'готово' : 'отказ', granted ? 'разрешено' : 'браузер не дал гарантию');
   await setSetting('persistentStorageGranted', granted);
   await updateStorageUi();
   alert(granted ? 'Браузер разрешил более устойчивое хранение данных.' : 'Браузер не дал постоянное хранение. Делай backup JSON вручную.');
@@ -773,17 +1007,22 @@ async function supabaseFetch(path, options = {}) {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
+  const method = options.method || 'GET';
   const requestUrl = `${cfg.url}/rest/v1/${path}`;
+  const requestId = beginApiRequest('Supabase REST', method, requestUrl);
   let res;
   try {
     res = await fetch(requestUrl, { ...options, headers });
   } catch (err) {
+    finishApiRequest(requestId, 'ошибка сети', err.message);
     throw new Error(`Network fetch failed. URL=${requestUrl}. ${err.message}`);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    finishApiRequest(requestId, `HTTP ${res.status}`, text || res.statusText);
     throw new Error(`Supabase ${res.status}: ${text || res.statusText}`);
   }
+  finishApiRequest(requestId, `HTTP ${res.status}`, res.statusText || 'OK');
   if (res.status === 204) return null;
   const text = await res.text();
   return text ? JSON.parse(text) : null;
@@ -841,10 +1080,13 @@ async function copyInvite() {
   const url = new URL(window.location.href);
   url.searchParams.set('group', group);
   const text = url.toString();
+  const requestId = beginApiRequest('Clipboard.writeText', 'BROWSER', 'invite link');
   try {
     await navigator.clipboard.writeText(text);
+    finishApiRequest(requestId, 'готово', 'приглашение скопировано');
     $('liveHint').textContent = 'Ссылка-приглашение скопирована.';
-  } catch {
+  } catch (err) {
+    finishApiRequest(requestId, 'ошибка', err?.message || 'clipboard недоступен');
     prompt('Скопируй ссылку:', text);
   }
 }
@@ -1062,33 +1304,33 @@ async function testSupabaseConnection() {
 }
 
 function bindUi() {
-  $('startGpsBtn').onclick = () => startGps(true);
-  $('centerMeBtn').onclick = () => currentPosition ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true);
-  $('saveSpotBtn').onclick = saveCurrentSpot;
-  $('averageBtn').onclick = averageAndSave;
+  $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
+  $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
+  $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveCurrentSpot);
+  $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
-  $('navigateBtn').onclick = showNavigationLine;
-  $('shareSpotBtn').onclick = exportSelected;
-  $('deleteSpotBtn').onclick = deleteSelected;
-  $('exportAllBtn').onclick = exportAll;
+  $('navigateBtn').onclick = withButtonDiagnostics('navigateBtn', showNavigationLine);
+  $('shareSpotBtn').onclick = withButtonDiagnostics('shareSpotBtn', exportSelected);
+  $('deleteSpotBtn').onclick = withButtonDiagnostics('deleteSpotBtn', deleteSelected);
+  $('exportAllBtn').onclick = withButtonDiagnostics('exportAllBtn', exportAll);
   $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { alert(`Ошибка импорта: ${err.message}`); } finally { e.target.value = ''; } };
-  $('chooseFolderBtn').onclick = chooseBackupFolder;
-  $('saveFolderBackupBtn').onclick = () => saveBackupToFolder(true).catch(err => alert(`Ошибка backup: ${err.message}`));
-  $('requestPersistentBtn').onclick = requestPersistentStorage;
-  $('createGroupBtn').onclick = createGroup;
-  $('copyInviteBtn').onclick = copyInvite;
-  $('joinGroupBtn').onclick = () => joinGroup(false);
-  $('leaveGroupBtn').onclick = leaveGroup;
-  $('startLiveBtn').onclick = startLiveSharing;
-  $('stopLiveBtn').onclick = () => stopLiveSharing(true);
-  $('refreshFriendsBtn').onclick = () => groupJoined ? refreshFriends() : joinGroup(false);
-  $('testSupabaseBtn').onclick = testSupabaseConnection;
-  if ($('repairMapBtn')) $('repairMapBtn').onclick = repairMap;
-  if ($('mapDebugBtn')) $('mapDebugBtn').onclick = () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); };
-  if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = () => updateMapDebugUi(true);
-  if ($('repairMapFromDebugBtn')) $('repairMapFromDebugBtn').onclick = repairMap;
-  if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = copyMapDebug;
-  if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = () => $('mapDebugDialog').close();
+  $('chooseFolderBtn').onclick = withButtonDiagnostics('chooseFolderBtn', chooseBackupFolder);
+  $('saveFolderBackupBtn').onclick = withButtonDiagnostics('saveFolderBackupBtn', () => saveBackupToFolder(true).catch(err => alert(`Ошибка backup: ${err.message}`)));
+  $('requestPersistentBtn').onclick = withButtonDiagnostics('requestPersistentBtn', requestPersistentStorage);
+  $('createGroupBtn').onclick = withButtonDiagnostics('createGroupBtn', createGroup);
+  $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
+  $('joinGroupBtn').onclick = withButtonDiagnostics('joinGroupBtn', () => joinGroup(false));
+  $('leaveGroupBtn').onclick = withButtonDiagnostics('leaveGroupBtn', leaveGroup);
+  $('startLiveBtn').onclick = withButtonDiagnostics('startLiveBtn', startLiveSharing);
+  $('stopLiveBtn').onclick = withButtonDiagnostics('stopLiveBtn', () => stopLiveSharing(true));
+  $('refreshFriendsBtn').onclick = withButtonDiagnostics('refreshFriendsBtn', () => groupJoined ? refreshFriends() : joinGroup(false));
+  $('testSupabaseBtn').onclick = withButtonDiagnostics('testSupabaseBtn', testSupabaseConnection);
+  if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
+  if ($('mapDebugBtn')) $('mapDebugBtn').onclick = withButtonDiagnostics('mapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
+  if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = withButtonDiagnostics('refreshMapDebugBtn', () => updateMapDebugUi(true));
+  if ($('repairMapFromDebugBtn')) $('repairMapFromDebugBtn').onclick = withButtonDiagnostics('repairMapFromDebugBtn', repairMap);
+  if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = withButtonDiagnostics('copyMapDebugBtn', copyMapDebug);
+  if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = withButtonDiagnostics('closeMapDebugBtn', () => $('mapDebugDialog').close());
 
   window.addEventListener('online', () => { recordMapDebug('browser online'); repairMap(); });
   window.addEventListener('offline', () => { recordMapDebug('browser offline'); updateMapDebugUi(true); });
@@ -1109,13 +1351,13 @@ function bindUi() {
     renderFriends([]);
     updateLiveUi();
   };
-  $('installHelpBtn').onclick = () => $('helpDialog').showModal();
-  $('closeHelpBtn').onclick = () => $('helpDialog').close();
+  $('installHelpBtn').onclick = withButtonDiagnostics('installHelpBtn', () => $('helpDialog').showModal());
+  $('closeHelpBtn').onclick = withButtonDiagnostics('closeHelpBtn', () => $('helpDialog').close());
 }
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.6`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.7`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
