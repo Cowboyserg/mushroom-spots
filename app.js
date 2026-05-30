@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.10';
+const APP_VERSION = '0.5.11';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -62,6 +62,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanMyEverywhereDbBtn: 'Удалить меня из всех групп',
   cleanCurrentGroupDbBtn: 'Очистить текущую группу',
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
+  resetAppCacheBtn: 'Сбросить кэш приложения',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -147,6 +148,50 @@ function markButtonBlocked(detail) {
 
 function markButtonCancelled(detail) {
   if (activeButtonDiagnostics) setButtonApiStatus(activeButtonDiagnostics, 'отменено', detail);
+}
+
+
+function cacheBustUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('app_reload', String(Date.now()));
+  return url.toString();
+}
+
+async function resetAppCache() {
+  const ok = confirm('Сбросить кэш приложения и перезагрузить страницу?\n\nЛокальные грибные точки, фото, имя, ID группы и backup-настройки останутся. Будут удалены только Cache Storage и регистрация Service Worker.');
+  if (!ok) { markButtonCancelled('сброс кэша отменён пользователем'); return; }
+
+  const deletedCaches = [];
+  const unregisteredWorkers = [];
+
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    for (const key of keys) {
+      const deleted = await caches.delete(key);
+      deletedCaches.push(`${key}:${deleted ? 'deleted' : 'not-deleted'}`);
+    }
+  } else {
+    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'Cache API не поддерживается');
+  }
+
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const reg of regs) {
+      const ok = await reg.unregister();
+      unregisteredWorkers.push(`${reg.scope}:${ok ? 'unregistered' : 'not-unregistered'}`);
+    }
+  } else {
+    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'Service Worker не поддерживается');
+  }
+
+  const cacheDetail = deletedCaches.length ? `${deletedCaches.length} cache(s)` : 'cache отсутствует';
+  const swDetail = unregisteredWorkers.length ? `${unregisteredWorkers.length} SW` : 'SW отсутствует';
+  setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'готово', `${cacheDetail}, ${swDetail}; перезагрузка`);
+  recordMapDebug('app cache reset requested', { deletedCaches, unregisteredWorkers });
+
+  setTimeout(() => {
+    window.location.replace(cacheBustUrl());
+  }, 350);
 }
 
 function setDisabled(id, disabled) {
@@ -1932,6 +1977,7 @@ function bindUi() {
   if ($('cleanMyEverywhereDbBtn')) $('cleanMyEverywhereDbBtn').onclick = withButtonDiagnostics('cleanMyEverywhereDbBtn', cleanMyEverywhereDbRows);
   if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').onclick = withButtonDiagnostics('cleanCurrentGroupDbBtn', cleanCurrentGroupDbRows);
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
+  if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
   if ($('mapDebugBtn')) $('mapDebugBtn').onclick = withButtonDiagnostics('mapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
   if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = withButtonDiagnostics('refreshMapDebugBtn', () => updateMapDebugUi(true));
@@ -1968,7 +2014,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.11`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.12`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();

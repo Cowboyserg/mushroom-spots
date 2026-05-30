@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.10 · Sprint 3.11</p>
+      <p id="appVersion">v0.5.11 · Sprint 3.12</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -165,14 +165,18 @@
     <section class="card maintenance-card">
       <details>
         <summary>
-          <span>Техническая чистка БД</span>
-          <span class="pill">live_locations</span>
+          <span>Техническое обслуживание</span>
+          <span class="pill">кэш / live_locations</span>
         </summary>
-        <p class="hint">Здесь чистится только live-таблица Supabase: люди в группах и их последние координаты. Локальные грибные места, заметки, фото и backup не удаляются.</p>
+        <p class="hint">Здесь можно сбросить кэш приложения или очистить live-таблицу Supabase. Локальные грибные места, заметки, фото, имя, ID группы и backup не удаляются.</p>
         <div class="storage-state maintenance-state">
           <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
           <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
         </div>
+        <div class="row maintenance-actions">
+          <button id="resetAppCacheBtn" class="secondary">Сбросить кэш приложения</button>
+        </div>
+        <p class="hint">Сброс кэша удаляет только Cache Storage и Service Worker, затем перезагружает страницу. Пользовательские данные остаются на телефоне.</p>
         <div class="row maintenance-actions">
           <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
           <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
@@ -206,7 +210,7 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.11</h2>
+      <h2>Sprint 3.12</h2>
       <p class="hint">Уточнена логика кнопок: группа, чат и показ моей позиции разделены. Участники могут быть видны по имени даже без точки на карте.</p>
     </section>
   </main>
