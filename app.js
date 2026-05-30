@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.3';
+const APP_VERSION = '0.7.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -22,6 +22,7 @@ const BBOX_EXPORT_MAX_ZOOM = 14;
 const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
 const MAP_ADVANCED_CONTROLS_KEY = 'mushroom_show_map_advanced_controls_v1';
 const APP_SCREENS = ['map', 'spots', 'group', 'offline', 'settings'];
+const APP_CACHE_RESET_MARKER_KEY = 'mushroom_app_cache_reset_marker_v1';
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
 const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
@@ -627,44 +628,83 @@ function markButtonCancelled(detail) {
 function cacheBustUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set('app_reload', String(Date.now()));
+  url.searchParams.set('app_version', APP_VERSION);
   return url.toString();
 }
 
-async function resetAppCache() {
-  const ok = confirm('Сбросить кэш приложения и перезагрузить страницу?\n\nЛокальные грибные точки, фото, имя, ID группы и backup-настройки останутся. Будут удалены только Cache Storage и регистрация Service Worker.');
-  if (!ok) { markButtonCancelled('сброс кэша отменён пользователем'); return; }
-
+async function deleteVisibleCacheStorage() {
   const deletedCaches = [];
-  const unregisteredWorkers = [];
-
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    for (const key of keys) {
-      const deleted = await caches.delete(key);
-      deletedCaches.push(`${key}:${deleted ? 'deleted' : 'not-deleted'}`);
-    }
-  } else {
+  if (!('caches' in window)) {
     setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'Cache API не поддерживается');
+    return deletedCaches;
   }
 
-  if ('serviceWorker' in navigator) {
-    const regs = await navigator.serviceWorker.getRegistrations();
-    for (const reg of regs) {
+  const keys = await caches.keys();
+  for (const key of keys) {
+    const deleted = await caches.delete(key);
+    deletedCaches.push(`${key}:${deleted ? 'deleted' : 'not-deleted'}`);
+  }
+  return deletedCaches;
+}
+
+async function unregisterVisibleServiceWorkers() {
+  const unregisteredWorkers = [];
+  if (!('serviceWorker' in navigator)) {
+    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'Service Worker не поддерживается');
+    return unregisteredWorkers;
+  }
+
+  const regs = await navigator.serviceWorker.getRegistrations();
+  for (const reg of regs) {
+    try {
+      if (reg.active) reg.active.postMessage({ type: 'MUSHROOM_CLEAR_APP_CACHE', version: APP_VERSION });
+      if (reg.waiting) reg.waiting.postMessage({ type: 'MUSHROOM_CLEAR_APP_CACHE', version: APP_VERSION });
+      if (typeof reg.update === 'function') await reg.update().catch(() => null);
       const ok = await reg.unregister();
       unregisteredWorkers.push(`${reg.scope}:${ok ? 'unregistered' : 'not-unregistered'}`);
+    } catch (err) {
+      unregisteredWorkers.push(`${reg.scope}:error:${err.message}`);
     }
-  } else {
-    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'Service Worker не поддерживается');
   }
+  return unregisteredWorkers;
+}
 
-  const cacheDetail = deletedCaches.length ? `${deletedCaches.length} cache(s)` : 'cache отсутствует';
-  const swDetail = unregisteredWorkers.length ? `${unregisteredWorkers.length} SW` : 'SW отсутствует';
-  setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'готово', `${cacheDetail}, ${swDetail}; перезагрузка`);
-  recordMapDebug('app cache reset requested', { deletedCaches, unregisteredWorkers });
+async function resetAppCache() {
+  const ok = confirm('Сбросить кэш приложения и перезагрузить страницу?\n\nЛокальные грибные точки, фото, имя, ID группы и backup-настройки останутся. Будут удалены только Cache Storage и регистрация Service Worker. Если Android PWA держит старую версию, после перезагрузки закрой и открой приложение ещё раз.');
+  if (!ok) { markButtonCancelled('сброс кэша отменён пользователем'); return; }
 
-  setTimeout(() => {
-    window.location.replace(cacheBustUrl());
-  }, 350);
+  setDisabled('resetAppCacheBtn', true);
+  setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'pending', 'удаляю кэш и Service Worker');
+
+  const reloadUrl = cacheBustUrl();
+  const resetMarker = { requestedAt: new Date().toISOString(), targetVersion: APP_VERSION, reloadUrl };
+
+  let deletedCaches = [];
+  let unregisteredWorkers = [];
+  try {
+    localStorage.setItem(APP_CACHE_RESET_MARKER_KEY, JSON.stringify(resetMarker));
+  } catch (_) {}
+
+  try {
+    deletedCaches = await deleteVisibleCacheStorage();
+    unregisteredWorkers = await unregisterVisibleServiceWorkers();
+
+    // Give Android WebView/standalone PWA a short moment to detach the old controller.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    const cacheDetail = deletedCaches.length ? `${deletedCaches.length} cache(s)` : 'cache отсутствует';
+    const swDetail = unregisteredWorkers.length ? `${unregisteredWorkers.length} SW` : 'SW отсутствует';
+    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'готово', `${cacheDetail}, ${swDetail}; перезагрузка без кэша`);
+    recordMapDebug('app cache reset requested', { deletedCaches, unregisteredWorkers, reloadUrl });
+
+    // Location query busts the document; versioned script/link URLs bust app.js/styles.css/manifest.
+    window.location.replace(reloadUrl);
+  } catch (err) {
+    setDisabled('resetAppCacheBtn', false);
+    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'ошибка', err.message);
+    recordMapDebug('app cache reset failed', { error: err.message, deletedCaches, unregisteredWorkers });
+    alert(`Не удалось полностью сбросить кэш: ${err.message}`);
+  }
 }
 
 function setDisabled(id, disabled) {
@@ -5707,7 +5747,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.4`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

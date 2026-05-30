@@ -1,4 +1,5 @@
-const CACHE_NAME = 'mushroom-spots-v0.7.3-sprint5.3';
+const CACHE_NAME = 'mushroom-spots-v0.7.4-sprint5.4';
+const APP_ASSET_VERSION = '0.7.4';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.
@@ -7,13 +8,55 @@ const CACHE_NAME = 'mushroom-spots-v0.7.3-sprint5.3';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
-  './leaflet-offline-lite.js',
-  './manifest.webmanifest',
+  `./styles.css?v=${APP_ASSET_VERSION}`,
+  `./app.js?v=${APP_ASSET_VERSION}`,
+  `./leaflet-offline-lite.js?v=${APP_ASSET_VERSION}`,
+  `./manifest.webmanifest?v=${APP_ASSET_VERSION}`,
   './icon.svg',
-  './apple-touch-icon.svg'
+  `./apple-touch-icon.svg?v=${APP_ASSET_VERSION}`
 ];
+
+const APP_SHELL_PATHS = new Set([
+  '/',
+  '/index.html',
+  '/styles.css',
+  '/app.js',
+  '/leaflet-offline-lite.js',
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/apple-touch-icon.svg'
+]);
+
+async function clearAllVisibleCaches() {
+  const keys = await caches.keys();
+  await Promise.all(keys.map((key) => caches.delete(key)));
+}
+
+function isAppShellRequest(url) {
+  const path = url.pathname;
+  return APP_SHELL_PATHS.has(path) ||
+    path.endsWith('/') ||
+    path.endsWith('/index.html') ||
+    path.endsWith('/styles.css') ||
+    path.endsWith('/app.js') ||
+    path.endsWith('/leaflet-offline-lite.js') ||
+    path.endsWith('/manifest.webmanifest') ||
+    path.endsWith('/icon.svg') ||
+    path.endsWith('/apple-touch-icon.svg') ||
+    url.searchParams.has('app_reload') ||
+    url.searchParams.has('app_version') ||
+    url.searchParams.has('v');
+}
+
+function networkRequestFor(req, url) {
+  if (isAppShellRequest(url)) {
+    // On Android PWA/WebView the HTTP cache can keep an older app.js even after
+    // Cache Storage is deleted. cache:'reload' forces a revalidation/fresh fetch
+    // for versioned app-shell assets while preserving normal runtime behavior.
+    return new Request(req, { cache: 'reload' });
+  }
+  return req;
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -31,6 +74,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === 'MUSHROOM_CLEAR_APP_CACHE') {
+    event.waitUntil(clearAllVisibleCaches());
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -44,7 +94,9 @@ self.addEventListener('fetch', (event) => {
     req.method !== 'GET' ||
     url.origin !== self.location.origin ||
     req.headers.has('range') ||
-    url.pathname.endsWith('.pmtiles')
+    url.pathname.endsWith('.pmtiles') ||
+    url.pathname.endsWith('/config.js') ||
+    url.pathname.endsWith('/offline-map-packages.json')
   ) {
     return;
   }
@@ -53,7 +105,7 @@ self.addEventListener('fetch', (event) => {
     const cached = await caches.match(req);
 
     try {
-      const res = await fetch(req);
+      const res = await fetch(networkRequestFor(req, url));
 
       // Cache only successful same-origin GET responses.
       if (res && res.ok) {

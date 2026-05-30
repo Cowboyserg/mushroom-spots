@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.4" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.4" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=0.7.4" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.3 · Sprint 5.3</p>
+      <p id="appVersion">v0.7.4 · Sprint 5.4</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -324,7 +324,7 @@
     <section class="card settings-summary-card">
       <div class="section-title">
         <h2>Настройки</h2>
-        <span class="pill">v0.7.3 · Sprint 5.3</span>
+        <span class="pill">v0.7.4 · Sprint 5.4</span>
       </div>
       <p class="hint">Здесь собраны обслуживание, диагностика, версия и backup. Быстрый debug также остаётся доступен через кнопку “!” в верхней панели.</p>
       <label class="settings-toggle-row" for="showMapAdvancedToggle">
@@ -352,7 +352,7 @@
         <div class="row maintenance-actions">
           <button id="resetAppCacheBtn" class="secondary">Сбросить кэш приложения</button>
         </div>
-        <p class="hint">Сброс кэша удаляет только Cache Storage и Service Worker, затем перезагружает страницу. Пользовательские данные остаются на телефоне.</p>
+        <p class="hint">Сброс кэша удаляет Cache Storage и Service Worker, затем перезагружает страницу с обходом старых app.js/styles.css. Пользовательские данные остаются на телефоне. Если Android PWA всё ещё показывает старую версию, закрой приложение из списка последних и открой снова.</p>
         <div class="row maintenance-actions">
           <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
           <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
@@ -384,7 +384,7 @@
       <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
     </section>
     <section class="card">
-      <h2>Sprint 5.3</h2>
+      <h2>Sprint 5.4</h2>
       <p class="hint">Исправлена читаемость информации о точках на карте: popup-карточки теперь имеют явный тёмный текст и светлый фон, без изменения логики карты и сохранения.</p>
     </section>
     </section>
@@ -420,10 +420,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.4"><\/script>');
     }
   </script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=0.7.4"></script>
+  <script src="app.js?v=0.7.4"></script>
 </body>
 </html>
