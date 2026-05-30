@@ -798,3 +798,47 @@ body {
     height: 38px;
   }
 }
+
+/* Sprint 5.3 — map point readability hotfix.
+   Popup text must not inherit light/white UI colors over light popup surfaces. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid rgba(36, 75, 47, 0.14);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.20);
+}
+.leaflet-popup-content {
+  color: var(--text);
+  font-weight: 600;
+}
+.leaflet-popup-content strong,
+.leaflet-popup-content b,
+.leaflet-popup-content p,
+.leaflet-popup-content div,
+.leaflet-popup-content span:not(.hint) {
+  color: var(--text);
+}
+.leaflet-popup-content .hint {
+  color: var(--muted);
+}
+.leaflet-popup-content button {
+  color: #fff;
+  background: var(--green);
+  margin-top: 8px;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--green);
+  background: rgba(255, 253, 247, 0.92);
+  border-radius: 999px;
+  width: 26px;
+  height: 26px;
+  line-height: 24px;
+  text-align: center;
+  font-weight: 900;
+}
+.leaflet-offline-lite-popup .leaflet-popup-content-wrapper,
+.leaflet-offline-lite-popup .leaflet-popup-content {
+  background: var(--card);
+  color: var(--text);
+}
