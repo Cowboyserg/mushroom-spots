@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.7';
+const APP_VERSION = '0.6.8';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -113,6 +113,7 @@ let pmtilesRuntimeProbe = {
   header: null,
   metadata: null,
   error: null,
+  diagnostics: null,
   checkedAt: null
 };
 let apiDebugEvents = [];
@@ -693,6 +694,14 @@ function formatDiagnosticsText() {
   lines.push(`- pmtiles runtime: ${provider.pmtilesRuntime.status}`);
   lines.push(`- pmtiles file: ${provider.pmtilesRuntime.packageFound ? 'found' : 'not-found/unchecked'}`);
   lines.push(`- pmtiles url: ${provider.pmtilesRuntime.url}`);
+  if (provider.pmtilesRuntime.error) lines.push(`- pmtiles error: ${provider.pmtilesRuntime.error}`);
+  if (provider.pmtilesRuntime.diagnostics) {
+    const diag = provider.pmtilesRuntime.diagnostics;
+    lines.push(`- pmtiles transport: ${diag.summary || diag.status || 'unknown'}`);
+    if (diag.head) lines.push(`- pmtiles HEAD: ${diag.head.status || 'n/a'}${diag.head.error ? ` / ${diag.head.error}` : ''}`);
+    if (diag.range) lines.push(`- pmtiles Range: ${diag.range.status || 'n/a'}${diag.range.bytes != null ? ` / ${diag.range.bytes} bytes` : ''}${diag.range.error ? ` / ${diag.range.error}` : ''}`);
+    if (diag.hint) lines.push(`- pmtiles hint: ${diag.hint}`);
+  }
   lines.push(`- packages manifest: ${provider.offlineMapManifest.status}`);
   lines.push(`- selected package: ${provider.offlineMapManifest.selectedPackageName || provider.offlineMapManifest.selectedPackageId || 'none'}`);
   lines.push(`- pmtiles preview: ${provider.pmtilesPreview.status}`);
@@ -837,6 +846,7 @@ function mapProviderSnapshot() {
       header: pmtilesRuntimeProbe.header,
       metadata: pmtilesRuntimeProbe.metadata,
       error: pmtilesRuntimeProbe.error,
+      diagnostics: pmtilesRuntimeProbe.diagnostics,
       checkedAt: pmtilesRuntimeProbe.checkedAt
     },
     pmtilesPreview: {
@@ -942,6 +952,7 @@ function setPmtilesProbeState(patch = {}, reason = 'pmtiles probe update') {
   };
   recordMapDebug(reason, { pmtilesRuntime: pmtilesRuntimeProbe });
   updatePmtilesRuntimeStatusPill();
+  renderPmtilesProbeDetails();
 }
 
 function setPmtilesPreviewState(patch = {}, reason = 'pmtiles preview update') {
@@ -1135,6 +1146,7 @@ function renderOfflineMapPackageUi() {
       status.textContent = 'Manifest: не загружен. Доступен встроенный mini sample.';
     }
   }
+  renderPmtilesProbeDetails();
   updateMapDebugUi(false);
 }
 
@@ -1154,6 +1166,7 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     header: null,
     metadata: null,
     error: null,
+    diagnostics: null,
     packageId: pkg.id,
     packageName: pkg.name
   };
@@ -1582,19 +1595,152 @@ async function startMapLibreSmokeTest() {
   });
 }
 
+
+function simplifyFetchError(err) {
+  const message = err?.message || String(err || 'unknown error');
+  if (/failed to fetch|load failed|networkerror|network error/i.test(message)) {
+    return `${message} (network/CORS/redirect/range blocked)`;
+  }
+  return message;
+}
+
+function headerValue(headers, name) {
+  try { return headers.get(name); } catch (err) { return null; }
+}
+
+function bytesToAscii(bytes, max = 12) {
+  return Array.from(bytes.slice(0, max)).map((byte) => {
+    if (byte >= 32 && byte <= 126) return String.fromCharCode(byte);
+    return '.';
+  }).join('');
+}
+
+function inferPmtilesDiagnosticsHint(diag) {
+  const source = diag.sourceType || inferPmtilesSourceType(diag.url);
+  const headError = diag.head?.error || '';
+  const rangeError = diag.range?.error || '';
+  const text = `${headError} ${rangeError}`;
+  if (diag.range?.status === 404 || diag.head?.status === 404) return 'URL не указывает на файл .pmtiles или release asset не найден.';
+  if (/CORS|Failed to fetch|blocked|network/i.test(text) && source === 'github-release-asset') {
+    return 'Похоже на ограничение GitHub Release asset для browser Range/CORS. Asset может скачиваться вручную, но не читаться как live PMTiles source.';
+  }
+  if (/CORS|Failed to fetch|blocked|network/i.test(text)) {
+    return 'Похоже на CORS/Range/network блокировку. Для remote PMTiles нужны Range requests и CORS.';
+  }
+  if (diag.range?.status === 200 && diag.range?.bytes > 1024 * 1024) {
+    return 'Сервер проигнорировал Range и начал отдавать большой файл целиком. Для PMTiles нужен byte-range доступ.';
+  }
+  if (diag.range?.bytes != null && diag.range.bytes < 127) return 'Получено меньше 127 байт; PMTiles header неполный.';
+  if (diag.range?.magic && !/^PMTiles/.test(diag.range.magic)) return 'Первые байты не похожи на PMTiles header; возможно URL ведёт не на .pmtiles, а на HTML/redirect/error page.';
+  return null;
+}
+
+async function runPmtilesTransportDiagnostics(url = PMTILES_DEFAULT_URL, packageInfo = null) {
+  const absoluteUrl = getAbsolutePmtilesUrl(url);
+  const diag = {
+    url,
+    absoluteUrl,
+    packageId: packageInfo?.id || null,
+    packageName: packageInfo?.name || null,
+    sourceType: packageInfo?.sourceType || inferPmtilesSourceType(url),
+    sameOrigin: (() => { try { return new URL(absoluteUrl).origin === window.location.origin; } catch (err) { return false; } })(),
+    status: 'checking',
+    summary: 'checking transport',
+    checkedAt: new Date().toISOString(),
+    head: null,
+    range: null,
+    hint: null
+  };
+
+  try {
+    const head = await fetch(absoluteUrl, { method: 'HEAD', cache: 'no-store', redirect: 'follow' });
+    diag.head = {
+      ok: head.ok,
+      status: head.status,
+      statusText: head.statusText,
+      redirected: head.redirected,
+      finalUrl: head.url,
+      contentLength: headerNumber(headerValue(head.headers, 'content-length')),
+      contentType: headerValue(head.headers, 'content-type'),
+      acceptRanges: headerValue(head.headers, 'accept-ranges'),
+      accessControlAllowOrigin: headerValue(head.headers, 'access-control-allow-origin'),
+      error: null
+    };
+  } catch (err) {
+    diag.head = { ok: false, status: null, error: simplifyFetchError(err) };
+  }
+
+  try {
+    const range = await fetch(absoluteUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: { Range: 'bytes=0-126' }
+    });
+    const buffer = await range.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    diag.range = {
+      ok: range.ok,
+      status: range.status,
+      statusText: range.statusText,
+      redirected: range.redirected,
+      finalUrl: range.url,
+      bytes: bytes.byteLength,
+      magic: bytesToAscii(bytes, 12),
+      contentRange: headerValue(range.headers, 'content-range'),
+      contentLength: headerNumber(headerValue(range.headers, 'content-length')),
+      contentType: headerValue(range.headers, 'content-type'),
+      acceptRanges: headerValue(range.headers, 'accept-ranges'),
+      accessControlAllowOrigin: headerValue(range.headers, 'access-control-allow-origin'),
+      error: null
+    };
+  } catch (err) {
+    diag.range = { ok: false, status: null, bytes: null, magic: null, error: simplifyFetchError(err) };
+  }
+
+  diag.hint = inferPmtilesDiagnosticsHint(diag);
+  if (diag.range?.ok && diag.range.bytes >= 127 && /^PMTiles/.test(diag.range.magic || '')) {
+    diag.status = 'transport-ready';
+    diag.summary = `range ok, ${diag.range.bytes} bytes, ${diag.range.magic}`;
+  } else if (diag.head?.status === 404 || diag.range?.status === 404) {
+    diag.status = 'not-found';
+    diag.summary = 'HTTP 404';
+  } else if (diag.head?.error || diag.range?.error) {
+    diag.status = 'transport-error';
+    diag.summary = diag.range?.error || diag.head?.error || 'transport error';
+  } else {
+    diag.status = 'unexpected-response';
+    diag.summary = `HEAD ${diag.head?.status || 'n/a'}, Range ${diag.range?.status || 'n/a'}`;
+  }
+  return diag;
+}
+
+function renderPmtilesProbeDetails() {
+  const el = $('pmtilesProbeDetails');
+  if (!el) return;
+  const pkg = getSelectedOfflineMapPackage(true);
+  const diag = pmtilesRuntimeProbe.diagnostics;
+  if (!diag) {
+    el.textContent = `Проверка: выбран пакет “${pkg.name}”. Нажми “Проверить выбранный PMTiles”, чтобы увидеть HTTP/Range диагностику.`;
+    return;
+  }
+  const parts = [`Проверка: ${diag.summary || diag.status}`];
+  if (diag.head) parts.push(`HEAD ${diag.head.status || 'n/a'}`);
+  if (diag.range) parts.push(`Range ${diag.range.status || 'n/a'}${diag.range.bytes != null ? ` / ${diag.range.bytes} bytes` : ''}`);
+  if (diag.hint) parts.push(`Подсказка: ${diag.hint}`);
+  el.textContent = parts.join(' · ');
+}
+
 async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null) {
   let sizeBytes = null;
-  try {
-    const head = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-    if (head.status === 404) {
-      localStorage.removeItem(OFFLINE_MAP_PACKAGE_META_KEY);
-      throw Object.assign(new Error(`${url} not found`), { code: 'PMTILES_NOT_FOUND', status: 404 });
-    }
-    if (!head.ok) throw Object.assign(new Error(`HEAD ${url} failed: HTTP ${head.status}`), { status: head.status });
-    sizeBytes = headerNumber(head.headers.get('content-length'));
-  } catch (err) {
-    if (err?.code === 'PMTILES_NOT_FOUND') throw err;
-    recordMapDebug('PMTiles HEAD check failed; trying PMTiles reader', err?.message || String(err));
+  const transportDiagnostics = await runPmtilesTransportDiagnostics(url, packageInfo);
+  sizeBytes = transportDiagnostics.head?.contentLength || transportDiagnostics.range?.contentLength || null;
+  setPmtilesProbeState({ diagnostics: transportDiagnostics }, 'PMTiles transport diagnostics completed');
+  renderPmtilesProbeDetails();
+
+  if (transportDiagnostics.status === 'not-found') {
+    localStorage.removeItem(OFFLINE_MAP_PACKAGE_META_KEY);
+    throw Object.assign(new Error(`${url} not found`), { code: 'PMTILES_NOT_FOUND', status: 404, diagnostics: transportDiagnostics });
   }
 
   const absoluteUrl = getAbsolutePmtilesUrl(url);
@@ -1653,6 +1799,7 @@ async function runPmtilesRuntimeProbe() {
     header: null,
     metadata: null,
     error: null,
+    diagnostics: null,
     packageId: activePackage.id || null,
     packageName: activePackage.name || null
   }, 'PMTiles runtime probe started');
@@ -1698,7 +1845,7 @@ async function runPmtilesRuntimeProbe() {
         updateMapDebugUi(true);
         return false;
       }
-      setPmtilesProbeState({ status: 'package-error', error: err?.message || String(err) }, 'PMTiles package read failed');
+      setPmtilesProbeState({ status: 'package-error', error: err?.message || String(err), diagnostics: err?.diagnostics || pmtilesRuntimeProbe.diagnostics || null }, 'PMTiles package read failed');
       setCurrentPmtilesProbeButtonStatus('ошибка', err?.message || String(err));
       updateMapDebugUi(true);
       return false;
@@ -3886,7 +4033,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.7`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.8`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
