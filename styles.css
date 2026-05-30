@@ -60,6 +60,13 @@ dialog::backdrop { background:#0008; }
 
 .pill-row { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 
+.people-panel { border:1px dashed var(--border); border-radius:14px; padding:10px; background:#faf8ef; margin:10px 0; }
+.profile-chip-row { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+.profile-chip { background:#e8eadf; color:var(--green); border:1px solid var(--border); padding:8px 11px; }
+.profile-chip.active { background:#dff2df; color:#1f612e; outline:2px solid #b7d7bd; }
+.profile-actions { margin-top:8px; }
+.friend-cached { background:#fffaf0; border-style:dashed; }
+
 
 .map-dot {
   width:22px;

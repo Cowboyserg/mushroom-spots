@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.14';
+const APP_VERSION = '0.5.15';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -8,6 +8,12 @@ const CHAT_MAX_LENGTH = 300;
 const CHAT_FETCH_LIMIT = 50;
 const CHAT_REFRESH_MS = 10000;
 const CHAT_SPOT_PREFIX = '::spot::';
+const PROFILE_STORAGE_KEY = 'mushroom_people_profiles_v1';
+const ACTIVE_PROFILE_STORAGE_KEY = 'mushroom_active_profile_id';
+const MEMBER_SYNC_PENDING_KEY = 'mushroom_member_sync_pending_v1';
+const GROUP_MEMBERS_CACHE_PREFIX = 'mushroom_group_members_cache_v1:';
+const MEMBER_SYNC_RETRY_MS = 15000;
+const SUPABASE_TIMEOUT_MS = 12000;
 
 let db;
 let map;
@@ -41,6 +47,10 @@ let apiDebugEvents = [];
 let apiButtonStates = new Map();
 let apiRequestSeq = 0;
 let activeButtonDiagnostics = null;
+let peopleProfiles = [];
+let activeProfileId = null;
+let memberSyncPending = false;
+let memberSyncTimer = null;
 
 const BUTTON_DIAGNOSTIC_LABELS = {
   startGpsBtn: 'Включить GPS',
@@ -57,6 +67,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   deleteSpotBtn: 'Удалить',
   createGroupBtn: 'Создать группу',
   copyInviteBtn: 'Скопировать приглашение',
+  savePersonProfileBtn: 'Запомнить локального человека',
+  newPersonProfileBtn: 'Другой человек',
+  profileQuickLoginBtn: 'Войти как сохранённый человек',
   joinGroupBtn: 'Войти в группу',
   leaveGroupBtn: 'Выйти из группы',
   startLiveBtn: 'Начать показ моей позиции',
@@ -117,6 +130,304 @@ function fmtTimeOnly(iso) {
 }
 function escapeHtml(str='') {
   return String(str).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+}
+
+function safeJsonParse(value, fallback = null) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function uniqueProfiles(profiles) {
+  const seen = new Set();
+  return (profiles || []).filter(profile => {
+    if (!profile || !profile.id || seen.has(profile.id)) return false;
+    seen.add(profile.id);
+    return true;
+  });
+}
+
+function makeLocalProfile(name = '', groupId = '', id = null) {
+  const profileId = id || (crypto.randomUUID ? crypto.randomUUID() : uid());
+  const now = new Date().toISOString();
+  return {
+    id: profileId,
+    displayName: String(name || '').trim(),
+    lastGroupId: String(groupId || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+    lastJoinedAt: '',
+    lastSyncedAt: ''
+  };
+}
+
+function savePeopleProfiles() {
+  peopleProfiles = uniqueProfiles(peopleProfiles);
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(peopleProfiles));
+  if (activeProfileId) localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileId);
+}
+
+function getActiveProfile() {
+  return peopleProfiles.find(profile => profile.id === activeProfileId) || peopleProfiles[0] || null;
+}
+
+function loadPeopleProfiles() {
+  const savedProfiles = uniqueProfiles(safeJsonParse(localStorage.getItem(PROFILE_STORAGE_KEY), []));
+  const legacyId = localStorage.getItem('mushroom_live_user_id');
+  const legacyName = localStorage.getItem('mushroom_live_name') || '';
+  const legacyGroup = localStorage.getItem('mushroom_live_group_id') || '';
+  peopleProfiles = savedProfiles;
+
+  if (!peopleProfiles.length) {
+    peopleProfiles.push(makeLocalProfile(legacyName, legacyGroup, legacyId));
+  } else if (legacyId && !peopleProfiles.some(profile => profile.id === legacyId)) {
+    peopleProfiles.push(makeLocalProfile(legacyName, legacyGroup, legacyId));
+  }
+
+  activeProfileId = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || legacyId || peopleProfiles[0]?.id || null;
+  if (!peopleProfiles.some(profile => profile.id === activeProfileId)) activeProfileId = peopleProfiles[0]?.id || null;
+  savePeopleProfiles();
+  ensureUserId();
+  return peopleProfiles;
+}
+
+function updateActiveProfileFromInputs() {
+  const profile = getActiveProfile();
+  if (!profile) return null;
+  const name = $('liveName')?.value?.trim() || profile.displayName || '';
+  const group = $('groupId')?.value?.trim() || '';
+  if (name) profile.displayName = name;
+  profile.lastGroupId = group;
+  profile.updatedAt = new Date().toISOString();
+  savePeopleProfiles();
+  localStorage.setItem('mushroom_live_user_id', profile.id);
+  localStorage.setItem('mushroom_live_name', profile.displayName || '');
+  localStorage.setItem('mushroom_live_group_id', group);
+  return profile;
+}
+
+function applyProfileToInputs(profile, keepCurrentGroup = false) {
+  if (!profile) return;
+  if ($('liveName')) $('liveName').value = profile.displayName || '';
+  if ($('groupId') && !keepCurrentGroup) $('groupId').value = profile.lastGroupId || '';
+  localStorage.setItem('mushroom_live_user_id', profile.id);
+  localStorage.setItem('mushroom_live_name', profile.displayName || '');
+  localStorage.setItem('mushroom_live_group_id', $('groupId')?.value?.trim() || profile.lastGroupId || '');
+}
+
+function resetRuntimeGroupSession() {
+  liveEnabled = false;
+  groupJoined = false;
+  clearInterval(liveTimer);
+  clearInterval(friendsTimer);
+  liveTimer = null;
+  friendsTimer = null;
+  clearFriendMarkers();
+  stopChatAutoRefresh(true);
+  setMemberSyncPending(false, 'local session reset');
+}
+
+function switchActiveProfile(profileId, options = {}) {
+  const profile = peopleProfiles.find(item => item.id === profileId);
+  if (!profile) return false;
+  const keepCurrentGroup = Boolean(options.keepCurrentGroup);
+  const shouldJoin = Boolean(options.joinAfterSwitch);
+  if (profile.id !== activeProfileId) resetRuntimeGroupSession();
+  activeProfileId = profile.id;
+  userId = profile.id;
+  savePeopleProfiles();
+  applyProfileToInputs(profile, keepCurrentGroup);
+  renderPeopleProfiles();
+  updateLiveUi();
+  if (shouldJoin && currentGroupId()) joinGroup(false).catch(err => alert(`Ошибка входа: ${err.message}`));
+  return true;
+}
+
+function renderPeopleProfiles() {
+  const wrap = $('peopleProfiles');
+  const hint = $('peopleHint');
+  const active = getActiveProfile();
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  for (const profile of peopleProfiles) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = profile.id === activeProfileId ? 'profile-chip active' : 'profile-chip secondary';
+    btn.textContent = `${profile.id === activeProfileId ? '✓ ' : ''}${profile.displayName || 'Без имени'}`;
+    btn.title = profile.lastGroupId ? `Последняя группа: ${profile.lastGroupId}` : 'Локальный профиль на этом устройстве';
+    btn.onclick = withButtonDiagnostics('profileQuickLoginBtn', () => switchActiveProfile(profile.id, { keepCurrentGroup: true, joinAfterSwitch: Boolean(currentGroupId()) }));
+    wrap.appendChild(btn);
+  }
+
+  if (hint) {
+    if (active) {
+      const group = active.lastGroupId || currentGroupId() || '—';
+      hint.textContent = `Локально запомнен: ${active.displayName || 'Без имени'}. Последняя группа: ${group}. В лесу вход открывается локально сразу, а запись участника синхронизируется при связи.`;
+    } else {
+      hint.textContent = 'Локальный человек ещё не создан.';
+    }
+  }
+  const saveBtn = $('savePersonProfileBtn');
+  if (saveBtn) saveBtn.disabled = !($('liveName')?.value?.trim());
+}
+
+function saveCurrentPersonProfile() {
+  const name = $('liveName')?.value?.trim();
+  if (!name) { markButtonBlocked('пустое имя'); alert('Сначала укажи имя.'); return false; }
+  const profile = updateActiveProfileFromInputs();
+  renderPeopleProfiles();
+  $('liveHint').textContent = `Локальный человек сохранён: ${profile.displayName}.`;
+  return true;
+}
+
+function createNewPersonProfile() {
+  const typed = prompt('Имя нового человека на этом телефоне:', '');
+  const name = String(typed || '').trim();
+  if (!name) { markButtonCancelled('новый человек не создан'); return false; }
+  resetRuntimeGroupSession();
+  const profile = makeLocalProfile(name, currentGroupId());
+  peopleProfiles.push(profile);
+  activeProfileId = profile.id;
+  userId = profile.id;
+  savePeopleProfiles();
+  applyProfileToInputs(profile, true);
+  renderPeopleProfiles();
+  updateLiveUi();
+  $('liveHint').textContent = `Создан локальный человек: ${name}. Нажми “Войти как ${name}”, чтобы записать его в группу.`;
+  return true;
+}
+
+function groupMembersCacheKey(group) {
+  return `${GROUP_MEMBERS_CACHE_PREFIX}${encodeURIComponent(group || '')}`;
+}
+
+function normalizeMemberForCache(member) {
+  if (!member || !member.user_id) return null;
+  return {
+    group_id: member.group_id || currentGroupId(),
+    user_id: member.user_id,
+    display_name: member.display_name || member.user_name || 'Без имени',
+    is_live: Boolean(member.is_live),
+    last_seen_at: member.last_seen_at || member.updated_at || new Date().toISOString(),
+    updated_at: member.updated_at || member.last_seen_at || new Date().toISOString(),
+    cache_only: Boolean(member.cache_only)
+  };
+}
+
+function selfMemberRow() {
+  const now = new Date().toISOString();
+  return normalizeMemberForCache({
+    group_id: currentGroupId(),
+    user_id: ensureUserId(),
+    display_name: currentChatName(),
+    is_live: Boolean(liveEnabled),
+    last_seen_at: now,
+    updated_at: now
+  });
+}
+
+function saveGroupMembersCache(group, data = {}) {
+  if (!group) return;
+  const byId = new Map();
+  for (const member of data.members || []) {
+    const normalized = normalizeMemberForCache(member);
+    if (normalized) byId.set(normalized.user_id, normalized);
+  }
+  for (const loc of data.locations || []) {
+    if (!loc?.user_id || byId.has(loc.user_id)) continue;
+    const normalized = normalizeMemberForCache({
+      group_id: group,
+      user_id: loc.user_id,
+      display_name: loc.user_name || 'Без имени',
+      is_live: true,
+      last_seen_at: loc.updated_at,
+      updated_at: loc.updated_at,
+      cache_only: true
+    });
+    if (normalized) byId.set(normalized.user_id, normalized);
+  }
+  const self = selfMemberRow();
+  if (self) byId.set(self.user_id, self);
+  const snapshot = { groupId: group, cachedAt: new Date().toISOString(), members: Array.from(byId.values()) };
+  localStorage.setItem(groupMembersCacheKey(group), JSON.stringify(snapshot));
+}
+
+function loadGroupMembersCache(group) {
+  const snapshot = safeJsonParse(localStorage.getItem(groupMembersCacheKey(group)), null);
+  if (!snapshot || !Array.isArray(snapshot.members)) return null;
+  return snapshot;
+}
+
+function mergeSelfIntoGroupCache(group) {
+  if (!group) return;
+  const snapshot = loadGroupMembersCache(group) || { groupId: group, cachedAt: new Date().toISOString(), members: [] };
+  const byId = new Map(snapshot.members.map(member => [member.user_id, member]));
+  const self = selfMemberRow();
+  if (self) byId.set(self.user_id, self);
+  snapshot.members = Array.from(byId.values());
+  snapshot.cachedAt = new Date().toISOString();
+  localStorage.setItem(groupMembersCacheKey(group), JSON.stringify(snapshot));
+}
+
+function renderCachedFriends(group, reason = '') {
+  const snapshot = loadGroupMembersCache(group);
+  if (!snapshot) return false;
+  renderFriends({ locations: [], members: snapshot.members, fromCache: true, cachedAt: snapshot.cachedAt });
+  if (reason) $('liveHint').textContent = `Показаны участники из кэша (${fmtDate(snapshot.cachedAt)}). ${reason}`;
+  return true;
+}
+
+function setMemberSyncPending(pending, reason = '') {
+  memberSyncPending = Boolean(pending);
+  if (memberSyncPending) {
+    localStorage.setItem(MEMBER_SYNC_PENDING_KEY, JSON.stringify({
+      groupId: currentGroupId(),
+      userId: ensureUserId(),
+      displayName: currentChatName(),
+      isLive: Boolean(liveEnabled),
+      reason,
+      updatedAt: new Date().toISOString()
+    }));
+  } else {
+    localStorage.removeItem(MEMBER_SYNC_PENDING_KEY);
+  }
+  updateLiveUi();
+}
+
+function restoreMemberSyncPending() {
+  const pending = safeJsonParse(localStorage.getItem(MEMBER_SYNC_PENDING_KEY), null);
+  memberSyncPending = Boolean(pending && pending.groupId && pending.userId);
+}
+
+function handleMemberSyncFailure(err) {
+  const message = err?.message || String(err || 'ошибка синхронизации');
+  setMemberSyncPending(true, message);
+  scheduleMemberSyncRetry();
+  return message;
+}
+
+function scheduleMemberSyncRetry() {
+  clearInterval(memberSyncTimer);
+  memberSyncTimer = setInterval(() => retryMemberSync('timer').catch(console.warn), MEMBER_SYNC_RETRY_MS);
+}
+
+async function retryMemberSync(reason = 'manual') {
+  if (!memberSyncPending || !groupJoined || !currentGroupId() || !getSupabaseConfig()) return false;
+  if (navigator.onLine === false) return false;
+  try {
+    await upsertGroupMember(liveEnabled);
+    $('liveHint').textContent = reason === 'online'
+      ? 'Связь вернулась: имя участника синхронизировано.'
+      : 'Имя участника синхронизировано.';
+    await refreshFriends();
+    return true;
+  } catch (err) {
+    handleMemberSyncFailure(err);
+    return false;
+  }
 }
 
 function getButtonDiagnosticLabel(buttonId) {
@@ -229,6 +540,7 @@ function updateActionButtonsUi() {
   setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
   setDisabled('deleteSpotBtn', !hasSelected);
 
+  if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : (currentChatName() !== 'Без имени' ? `Войти как ${currentChatName()}` : 'Войти в группу');
   setDisabled('copyInviteBtn', !hasGroup);
   setDisabled('joinGroupBtn', !hasSupabase || !hasGroup || groupJoined);
   setDisabled('leaveGroupBtn', !groupJoined);
@@ -1238,11 +1550,17 @@ async function supabaseFetch(path, options = {}) {
   const requestUrl = `${cfg.url}/rest/v1/${path}`;
   const requestId = beginApiRequest('Supabase REST', method, requestUrl);
   let res;
+  const controller = new AbortController();
+  const timeoutMs = Number(options.timeoutMs || SUPABASE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    res = await fetch(requestUrl, { ...options, headers });
+    res = await fetch(requestUrl, { ...options, headers, signal: options.signal || controller.signal });
   } catch (err) {
-    finishApiRequest(requestId, 'ошибка сети', err.message);
-    throw new Error(`Network fetch failed. URL=${requestUrl}. ${err.message}`);
+    const detail = err?.name === 'AbortError' ? `timeout ${timeoutMs}ms` : err.message;
+    finishApiRequest(requestId, 'ошибка сети', detail);
+    throw new Error(`Network fetch failed. URL=${requestUrl}. ${detail}`);
+  } finally {
+    clearTimeout(timeout);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -1256,19 +1574,27 @@ async function supabaseFetch(path, options = {}) {
 }
 
 function ensureUserId() {
-  let id = localStorage.getItem('mushroom_live_user_id');
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID() : uid();
-    localStorage.setItem('mushroom_live_user_id', id);
+  let profile = getActiveProfile();
+  if (!profile) {
+    profile = makeLocalProfile(localStorage.getItem('mushroom_live_name') || '', localStorage.getItem('mushroom_live_group_id') || '', localStorage.getItem('mushroom_live_user_id'));
+    peopleProfiles.push(profile);
+    activeProfileId = profile.id;
+    savePeopleProfiles();
   }
-  userId = id;
-  return id;
+  userId = profile.id;
+  localStorage.setItem('mushroom_live_user_id', userId);
+  return userId;
 }
 
 function updateLiveUi() {
   if ($('groupStatus')) {
-    $('groupStatus').textContent = groupJoined ? 'в группе' : 'не в группе';
-    $('groupStatus').className = groupJoined ? 'pill on' : 'pill';
+    if (groupJoined && memberSyncPending) {
+      $('groupStatus').textContent = 'в группе локально';
+      $('groupStatus').className = 'pill warn';
+    } else {
+      $('groupStatus').textContent = groupJoined ? 'в группе' : 'не в группе';
+      $('groupStatus').className = groupJoined ? 'pill on' : 'pill';
+    }
   }
   if ($('liveStatus')) {
     $('liveStatus').textContent = liveEnabled ? 'моя позиция видна' : 'моя позиция скрыта';
@@ -1323,15 +1649,21 @@ async function copyInvite() {
 }
 
 function saveLiveInputs() {
-  localStorage.setItem('mushroom_live_name', $('liveName').value.trim());
-  localStorage.setItem('mushroom_live_group_id', $('groupId').value.trim());
+  updateActiveProfileFromInputs();
+  renderPeopleProfiles();
 }
 
 function loadLiveInputs() {
-  $('liveName').value = localStorage.getItem('mushroom_live_name') || '';
-  $('groupId').value = localStorage.getItem('mushroom_live_group_id') || '';
+  const profile = getActiveProfile();
+  $('liveName').value = localStorage.getItem('mushroom_live_name') || profile?.displayName || '';
+  $('groupId').value = localStorage.getItem('mushroom_live_group_id') || profile?.lastGroupId || '';
   const groupFromUrl = parseGroupFromUrl();
+  if (groupFromUrl && profile) {
+    profile.lastGroupId = groupFromUrl;
+    savePeopleProfiles();
+  }
   updateLiveUi();
+  renderPeopleProfiles();
   return groupFromUrl;
 }
 
@@ -1341,28 +1673,44 @@ function clearFriendMarkers() {
 }
 
 async function joinGroup(silent = false) {
-  if (!getSupabaseConfig()) {
-    if (!silent) { markButtonBlocked('Supabase не настроен'); alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.'); }
-    updateLiveUi();
-    return false;
-  }
   const group = $('groupId').value.trim();
+  const name = $('liveName').value.trim();
   if (!group) {
     if (!silent) { markButtonBlocked('нет ID группы'); alert('Создай группу или открой приглашение от друга.'); }
     return false;
   }
+  if (!name) {
+    if (!silent) { markButtonBlocked('не указано имя'); alert('Укажи своё имя.'); }
+    return false;
+  }
+
   saveLiveInputs();
   groupJoined = true;
-  await upsertGroupMember(false).catch(err => {
-    $('liveHint').textContent = `Группа открыта, но имя участника не записано: ${err.message}`;
-  });
+  mergeSelfIntoGroupCache(group);
+  renderCachedFriends(group, 'Локальный вход выполнен; обновляю сеть…');
   updateLiveUi();
   clearInterval(friendsTimer);
+  clearInterval(memberSyncTimer);
+
+  if (!getSupabaseConfig()) {
+    setMemberSyncPending(true, 'Supabase не настроен');
+    $('liveHint').textContent = 'Группа открыта локально. Для синхронизации участников нужен Supabase URL и anon public key в config.js.';
+    return true;
+  }
+
+  try {
+    await upsertGroupMember(false);
+    setMemberSyncPending(false, 'joined');
+  } catch (err) {
+    const message = handleMemberSyncFailure(err);
+    $('liveHint').textContent = `Группа открыта локально, но имя участника ждёт сеть: ${message}`;
+  }
+
   await refreshFriends();
   friendsTimer = setInterval(refreshFriends, 10000);
   await refreshGroupChat(false);
   startChatAutoRefresh();
-  if (!silent) {
+  if (!silent && !memberSyncPending) {
     $('liveHint').textContent = 'Ты в группе. Можно видеть активных участников без передачи своей позиции. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   }
   return true;
@@ -1372,6 +1720,7 @@ async function leaveGroup() {
   await stopLiveSharing(false);
   await deleteMyGroupMember().catch(err => console.warn('Could not delete own group member row', err));
   groupJoined = false;
+  setMemberSyncPending(false, 'left group');
   stopChatAutoRefresh(true);
   clearInterval(friendsTimer);
   friendsTimer = null;
@@ -1533,6 +1882,7 @@ async function cleanCurrentGroupDbRows() {
     liveTimer = null;
   }
   groupJoined = false;
+  setMemberSyncPending(false, 'left group');
   stopChatAutoRefresh(true);
   clearInterval(friendsTimer);
   friendsTimer = null;
@@ -2033,6 +2383,18 @@ async function upsertGroupMember(isLive = liveEnabled) {
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(payload)
   });
+  const profile = getActiveProfile();
+  if (profile) {
+    profile.displayName = name;
+    profile.lastGroupId = group;
+    profile.lastJoinedAt = profile.lastJoinedAt || new Date().toISOString();
+    profile.lastSyncedAt = new Date().toISOString();
+    profile.updatedAt = new Date().toISOString();
+    savePeopleProfiles();
+    renderPeopleProfiles();
+  }
+  setMemberSyncPending(false, 'group_members synced');
+  mergeSelfIntoGroupCache(group);
   return true;
 }
 
@@ -2060,18 +2422,33 @@ async function fetchFriends() {
   const group = currentGroupId();
   if (!group) return { locations: [], members: [] };
   const encodedGroup = encodeURIComponent(group);
-  const locations = await supabaseFetch(`live_locations?group_id=eq.${encodedGroup}&select=group_id,user_id,user_name,lat,lon,accuracy,updated_at&order=updated_at.desc`, { method: 'GET' });
+  let locations = [];
   let members = [];
+  let locationError = null;
+  let memberError = null;
+
+  try {
+    const rows = await supabaseFetch(`live_locations?group_id=eq.${encodedGroup}&select=group_id,user_id,user_name,lat,lon,accuracy,updated_at&order=updated_at.desc`, { method: 'GET' });
+    locations = Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    locationError = err;
+  }
+
   try {
     members = await fetchGroupMembers();
   } catch (err) {
-    console.warn('group_members unavailable', err);
-    $('liveHint').textContent = `Участники без позиции недоступны: ${err.message}`;
+    memberError = err;
   }
-  return {
-    locations: Array.isArray(locations) ? locations : [],
-    members
-  };
+
+  if (locationError && memberError) {
+    throw new Error(`live_locations: ${locationError.message}; group_members: ${memberError.message}`);
+  }
+  if (locationError) $('liveHint').textContent = `Позиции временно недоступны: ${locationError.message}`;
+  if (memberError) $('liveHint').textContent = `Участники без позиции временно недоступны: ${memberError.message}`;
+
+  const data = { locations, members };
+  saveGroupMembersCache(group, data);
+  return data;
 }
 
 function renderFriends(data) {
@@ -2079,6 +2456,8 @@ function renderFriends(data) {
   list.innerHTML = '';
   const locations = Array.isArray(data) ? data : (data?.locations || []);
   const members = Array.isArray(data) ? [] : (data?.members || []);
+  const fromCache = Boolean(data && !Array.isArray(data) && data.fromCache);
+  const cachedAt = data && !Array.isArray(data) ? data.cachedAt : null;
   const now = Date.now();
   const myId = ensureUserId();
   const seenMarkerIds = new Set();
@@ -2130,13 +2509,15 @@ function renderFriends(data) {
     }
 
     const item = document.createElement('div');
-    item.className = `friend-item ${loc && !hasActiveLocation ? 'friend-stale' : ''}`;
+    item.className = `friend-item ${loc && !hasActiveLocation ? 'friend-stale' : ''} ${fromCache ? 'friend-cached' : ''}`;
     const suffix = row.userId === myId ? ' · я' : '';
     let meta;
     if (loc) {
       const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
       meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
       item.onclick = () => map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16));
+    } else if (fromCache) {
+      meta = `из кэша · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)} · кэш: ${fmtDate(cachedAt)}`;
     } else {
       meta = `${isPresent ? 'в группе' : 'давно не обновлялся'} · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)}`;
     }
@@ -2152,11 +2533,18 @@ function renderFriends(data) {
   }
 
   if (!rows.length) {
-    list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет участников. Если таблица group_members не создана, будут видны только люди с включённой позицией.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
+    list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет участников. Если связи нет, список появится из кэша после первого успешного обновления.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
   }
   safeInvalidateMap(0, 'render/update');
 
-  if (rows.length && activeLocationCount === 0) {
+  if (rows.length && fromCache) {
+    const cacheNote = document.createElement('p');
+    cacheNote.className = 'hint';
+    cacheNote.textContent = `Показан локальный кэш участников. Он может быть устаревшим; последнее успешное обновление: ${fmtDate(cachedAt)}.`;
+    list.appendChild(cacheNote);
+  }
+
+  if (rows.length && activeLocationCount === 0 && !fromCache) {
     const note = document.createElement('p');
     note.className = 'hint';
     note.textContent = 'В группе есть участники, но сейчас ни у кого нет активной позиции на карте.';
@@ -2165,13 +2553,22 @@ function renderFriends(data) {
 }
 
 async function refreshFriends() {
+  const group = currentGroupId();
   try {
-    if (groupJoined) await upsertGroupMember(liveEnabled).catch(err => console.warn('Could not refresh group member heartbeat', err));
+    if (groupJoined) {
+      try {
+        await upsertGroupMember(liveEnabled);
+      } catch (err) {
+        console.warn('Could not refresh group member heartbeat', err);
+        handleMemberSyncFailure(err);
+      }
+    }
     const rows = await fetchFriends();
     renderFriends(rows);
     return true;
   } catch (err) {
-    $('liveHint').textContent = `Ошибка участников: ${err.message}`;
+    const usedCache = group ? renderCachedFriends(group, `Ошибка обновления: ${err.message}`) : false;
+    if (!usedCache) $('liveHint').textContent = `Ошибка участников: ${err.message}`;
     return false;
   }
 }
@@ -2191,7 +2588,7 @@ async function startLiveSharing() {
   updateLiveUi();
   startGps(false);
   await publishMyLocation().catch(err => $('liveHint').textContent = err.message);
-  await upsertGroupMember(true).catch(err => console.warn('Could not update member live state', err));
+  await upsertGroupMember(true).catch(err => { console.warn('Could not update member live state', err); handleMemberSyncFailure(err); });
   await refreshFriends();
   clearInterval(liveTimer);
   liveTimer = setInterval(() => publishMyLocation().catch(err => $('liveHint').textContent = err.message), 15000);
@@ -2203,7 +2600,7 @@ async function stopLiveSharing(keepWatching = true) {
   liveTimer = null;
   updateLiveUi();
   try { await deleteMyLiveLocation(); } catch (err) { console.warn('Could not delete own live location', err); }
-  try { await upsertGroupMember(false); } catch (err) { console.warn('Could not update member live state', err); }
+  try { await upsertGroupMember(false); } catch (err) { console.warn('Could not update member live state', err); handleMemberSyncFailure(err); }
   if (!keepWatching) {
     clearInterval(friendsTimer);
     friendsTimer = null;
@@ -2246,6 +2643,8 @@ function bindUi() {
   $('requestPersistentBtn').onclick = withButtonDiagnostics('requestPersistentBtn', requestPersistentStorage);
   $('createGroupBtn').onclick = withButtonDiagnostics('createGroupBtn', createGroup);
   $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
+  if ($('savePersonProfileBtn')) $('savePersonProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', saveCurrentPersonProfile);
+  if ($('newPersonProfileBtn')) $('newPersonProfileBtn').onclick = withButtonDiagnostics('newPersonProfileBtn', createNewPersonProfile);
   $('joinGroupBtn').onclick = withButtonDiagnostics('joinGroupBtn', () => joinGroup(false));
   $('leaveGroupBtn').onclick = withButtonDiagnostics('leaveGroupBtn', leaveGroup);
   $('startLiveBtn').onclick = withButtonDiagnostics('startLiveBtn', startLiveSharing);
@@ -2275,7 +2674,7 @@ function bindUi() {
   if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = withButtonDiagnostics('copyMapDebugBtn', copyMapDebug);
   if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = withButtonDiagnostics('closeMapDebugBtn', () => $('mapDebugDialog').close());
 
-  window.addEventListener('online', () => { recordMapDebug('browser online'); repairMap(); });
+  window.addEventListener('online', () => { recordMapDebug('browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
   window.addEventListener('offline', () => { recordMapDebug('browser offline'); updateMapDebugUi(true); });
   window.addEventListener('resize', () => safeInvalidateMap(150, 'resize'));
   window.addEventListener('orientationchange', () => safeInvalidateMap(500, 'orientationchange'));
@@ -2284,11 +2683,13 @@ function bindUi() {
   });
   window.addEventListener('focus', () => safeInvalidateMap(250, 'focus'));
 
+  $('liveName').oninput = () => { updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); };
   $('liveName').onchange = saveLiveInputs;
-  $('groupId').oninput = () => { updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); };
+  $('groupId').oninput = () => { updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); };
   $('groupId').onchange = () => {
     saveLiveInputs();
     groupJoined = false;
+    setMemberSyncPending(false, 'group changed');
     clearInterval(friendsTimer);
     friendsTimer = null;
     clearFriendMarkers();
@@ -2304,14 +2705,18 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.15`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.16`;
   db = await openDb();
   await restoreFolderHandle();
+  loadPeopleProfiles();
+  restoreMemberSyncPending();
   ensureUserId();
   initMap();
   bindUi();
   recordMapDebug('app initialized');
   const groupFromUrl = loadLiveInputs();
+  renderPeopleProfiles();
+  scheduleMemberSyncRetry();
   await refreshSpots();
   if (!getSupabaseConfig()) {
     updateLiveUi();
@@ -2319,8 +2724,8 @@ async function init() {
   } else if ($('groupId').value.trim()) {
     await joinGroup(true);
     $('liveHint').textContent = groupFromUrl
-      ? 'Приглашение открыто: ты вошёл в группу и видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.'
-      : 'Последняя группа восстановлена: ты видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
+      ? 'Приглашение открыто: вход выполнен локально, имя участника синхронизируется при связи. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.'
+      : 'Последняя группа восстановлена локально. Участники показываются из сети или кэша; чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   } else {
     updateLiveUi();
   }

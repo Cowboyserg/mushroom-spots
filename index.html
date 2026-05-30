@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.14 · Sprint 3.15</p>
+      <p id="appVersion">v0.5.15 · Sprint 3.16</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -113,10 +113,18 @@
           <span id="liveStatus" class="pill">моя позиция скрыта</span>
         </div>
       </div>
-      <p class="hint">Переход по приглашению автоматически входит в группу и показывает активных участников. Имя видно участникам после входа в группу; точка на карте появляется только после кнопки “Начать показ моей позиции”. Грибные точки остаются локально на телефоне.</p>
+      <p class="hint">Переход по приглашению открывает группу локально: имя и последняя группа запоминаются на этом телефоне, а синхронизация с Supabase догоняет при связи. Точка на карте появляется только после кнопки “Начать показ моей позиции”.</p>
       <div class="field">
         <label for="liveName">Моё имя</label>
         <input id="liveName" placeholder="Например: Иван" />
+      </div>
+      <div class="people-panel">
+        <p class="hint" id="peopleHint">Локальный человек будет запомнен на этом устройстве.</p>
+        <div id="peopleProfiles" class="profile-chip-row"></div>
+        <div class="row profile-actions">
+          <button id="savePersonProfileBtn" class="secondary">Запомнить имя</button>
+          <button id="newPersonProfileBtn" class="secondary">Другой человек</button>
+        </div>
       </div>
       <div class="field">
         <label for="groupId">ID группы</label>
@@ -215,8 +223,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.15</h2>
-      <p class="hint">Добавлены кликабельные точки в чате: можно отправить сохранённую или выбранную на карте точку, а затем открыть её из чата на карте.</p>
+      <h2>Sprint 3.16</h2>
+      <p class="hint">Добавлены локальные люди, быстрый вход под сохранённым именем, локальный вход в группу при плохой связи и кэш участников группы.</p>
     </section>
   </main>
 
