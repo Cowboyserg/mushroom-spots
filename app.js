@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.14';
+const APP_VERSION = '0.7.0';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -19,6 +19,8 @@ const OFFLINE_MAP_SELECTED_PACKAGE_KEY = 'mushroom_offline_map_selected_package_
 const REMEMBERED_PMTILES_MAPS_KEY = 'mushroom_remembered_pmtiles_maps_v1';
 const BBOX_EXPORT_OUTPUT_FILE = 'mushroom-medium-z14.pmtiles';
 const BBOX_EXPORT_MAX_ZOOM = 14;
+const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
+const APP_SCREENS = ['map', 'spots', 'group', 'offline', 'settings'];
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
 const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
@@ -60,6 +62,7 @@ let map;
 let userMarker;
 let accuracyCircle;
 let currentPosition = null;
+let activeAppScreen = 'map';
 let watchId = null;
 let spots = [];
 let spotMarkers = new Map();
@@ -3124,6 +3127,78 @@ function setMapStatus(text, mode = '') {
   pill.className = `pill ${mode}`.trim();
 }
 
+function normalizeAppScreen(screen) {
+  return APP_SCREENS.includes(screen) ? screen : 'map';
+}
+
+function resizePmtilesPreviewMap(delay = 0, reason = 'screen change') {
+  if (!pmtilesPreviewMap || typeof pmtilesPreviewMap.resize !== 'function') return;
+  window.setTimeout(() => {
+    try {
+      pmtilesPreviewMap.resize();
+      if (typeof pmtilesPreviewMap.triggerRepaint === 'function') pmtilesPreviewMap.triggerRepaint();
+      recordMapDebug(`PMTiles preview resize: ${reason}`);
+    } catch (err) {
+      recordMapDebug('PMTiles preview resize failed', err?.message || String(err));
+    }
+  }, delay);
+}
+
+function resizeActiveScreenMaps(reason = 'screen change') {
+  if (activeAppScreen === 'map') {
+    safeInvalidateMap(0, reason);
+    safeInvalidateMap(250, `${reason} delayed`);
+    window.setTimeout(() => updateMapDebugUi(false), 300);
+  }
+  if (activeAppScreen === 'offline') {
+    resizePmtilesPreviewMap(0, reason);
+    resizePmtilesPreviewMap(250, `${reason} delayed`);
+  }
+}
+
+function switchAppScreen(screen, options = {}) {
+  const next = normalizeAppScreen(screen);
+  const { persist = true, scrollTop = true } = options;
+  activeAppScreen = next;
+
+  document.querySelectorAll('[data-app-screen]').forEach((section) => {
+    const isActive = section.dataset.appScreen === next;
+    section.hidden = !isActive;
+    section.classList.toggle('app-screen-active', isActive);
+  });
+
+  document.querySelectorAll('[data-screen-target]').forEach((button) => {
+    const isActive = button.dataset.screenTarget === next;
+    button.classList.toggle('active', isActive);
+    if (isActive) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+
+  if (persist) {
+    try { localStorage.setItem(APP_SCREEN_STORAGE_KEY, next); } catch {}
+  }
+
+  if (scrollTop) {
+    const activeSection = document.querySelector(`[data-app-screen="${next}"]`);
+    activeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  resizeActiveScreenMaps(`active screen: ${next}`);
+  return next;
+}
+
+function restoreAppScreen() {
+  let saved = 'map';
+  try { saved = localStorage.getItem(APP_SCREEN_STORAGE_KEY) || 'map'; } catch {}
+  switchAppScreen(saved, { persist: false, scrollTop: false });
+}
+
+function bindAppNavigationShell() {
+  document.querySelectorAll('[data-screen-target]').forEach((button) => {
+    button.addEventListener('click', () => switchAppScreen(button.dataset.screenTarget || 'map'));
+  });
+}
+
 function safeInvalidateMap(delay = 0, reason = 'manual') {
   if (!map) return;
   window.setTimeout(() => {
@@ -3155,6 +3230,7 @@ function getMapDebugSnapshot() {
     url: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine,
+    activeAppScreen,
     providerState: mapProviderSnapshot(),
     mapExists: Boolean(map),
     leafletLoaded: Boolean(window.L),
@@ -3208,7 +3284,7 @@ function updateMapDebugUi(forceText = false) {
     setMapStatus('Карта: ошибка тайлов', 'bad');
   } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
     setMapStatus('Карта: тайлы не загружены', 'warn');
-  } else if (snapshot.mapElementRect && snapshot.mapElementRect.height < 100) {
+  } else if (activeAppScreen === 'map' && snapshot.mapElementRect && snapshot.mapElementRect.height < 100) {
     setMapStatus('Карта: малый контейнер', 'bad');
   } else {
     setMapStatus('Карта: онлайн загружается', 'warn');
@@ -4077,6 +4153,7 @@ function selectSpot(id, center=false) {
   const spot = spots.find(s => s.id === id);
   if (!spot) return;
   $('selectedCard').hidden = false;
+  if (center) switchAppScreen('map');
   if (center && canUseMapRuntime()) map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
   const marker = spotMarkers.get(id);
   if (marker) marker.openPopup();
@@ -4857,6 +4934,7 @@ function showChatSpotOnMap(payload) {
     shownAt: new Date().toISOString()
   };
   renderPmtilesPreviewUserLayers('chat point mirrored to PMTiles preview');
+  switchAppScreen('map', { scrollTop: false });
   if (!canUseMapRuntime()) {
     setChatHint(`Карта недоступна. Координаты точки из чата: ${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}.`);
     return;
@@ -5243,7 +5321,7 @@ function renderFriends(data) {
     if (loc) {
       const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
       meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
-      item.onclick = () => { if (canUseMapRuntime()) map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16)); };
+      item.onclick = () => { switchAppScreen('map'); if (canUseMapRuntime()) map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16)); };
     } else if (fromCache) {
       meta = `из кэша · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)} · кэш: ${fmtDate(cachedAt)}`;
     } else {
@@ -5354,6 +5432,7 @@ async function testSupabaseConnection() {
 }
 
 function bindUi() {
+  bindAppNavigationShell();
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveCurrentSpot);
@@ -5415,11 +5494,12 @@ function bindUi() {
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
   if ($('centerPmtilesOnMeBtn')) $('centerPmtilesOnMeBtn').onclick = withButtonDiagnostics('centerPmtilesOnMeBtn', centerPmtilesPreviewOnMe);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
-  if ($('startBboxExportBtn')) $('startBboxExportBtn').onclick = withButtonDiagnostics('startBboxExportBtn', startBboxExportSelection);
-  if ($('useVisibleBboxBtn')) $('useVisibleBboxBtn').onclick = withButtonDiagnostics('useVisibleBboxBtn', useVisibleMapBbox);
+  if ($('startBboxExportBtn')) $('startBboxExportBtn').onclick = withButtonDiagnostics('startBboxExportBtn', () => { switchAppScreen('map'); return startBboxExportSelection(); });
+  if ($('useVisibleBboxBtn')) $('useVisibleBboxBtn').onclick = withButtonDiagnostics('useVisibleBboxBtn', () => { switchAppScreen('map'); return useVisibleMapBbox(); });
   if ($('copyBboxCommandBtn')) $('copyBboxCommandBtn').onclick = withButtonDiagnostics('copyBboxCommandBtn', copyBboxCommand);
   if ($('clearBboxExportBtn')) $('clearBboxExportBtn').onclick = withButtonDiagnostics('clearBboxExportBtn', clearBboxExport);
   if ($('mapDebugBtn')) $('mapDebugBtn').onclick = withButtonDiagnostics('mapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
+  if ($('settingsMapDebugBtn')) $('settingsMapDebugBtn').onclick = withButtonDiagnostics('settingsMapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
   if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = withButtonDiagnostics('refreshMapDebugBtn', () => updateMapDebugUi(true));
   if ($('repairMapFromDebugBtn')) $('repairMapFromDebugBtn').onclick = withButtonDiagnostics('repairMapFromDebugBtn', repairMap);
   if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = withButtonDiagnostics('copyMapDebugBtn', copyMapDebug);
@@ -5456,7 +5536,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.14`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.0`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
@@ -5464,6 +5544,7 @@ async function init() {
   ensureUserId();
   initMap();
   bindUi();
+  restoreAppScreen();
   loadRememberedPmtilesMaps();
   loadOfflineMapManifest(false).catch((err) => recordMapDebug('offline map manifest startup load failed', err?.message || String(err)));
   recordMapDebug('app initialized');

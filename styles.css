@@ -433,3 +433,84 @@ dialog::backdrop { background:#0008; }
   width: 100%;
   max-width: 100%;
 }
+
+/* Sprint 5.0 app navigation shell. */
+body {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+.app-main {
+  padding-bottom: 12px;
+}
+.app-screen[hidden] {
+  display: none !important;
+}
+.app-screen-active {
+  display: block;
+}
+.screen-heading {
+  background: rgba(255, 253, 247, 0.72);
+  border: 1px solid rgba(221, 214, 199, 0.84);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+.screen-heading h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+.screen-heading .hint {
+  margin: 0;
+}
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  background: rgba(255, 253, 247, 0.96);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 22px rgba(0,0,0,.12);
+  backdrop-filter: blur(10px);
+}
+.bottom-nav-btn {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 9px 6px;
+  min-height: 46px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+.bottom-nav-btn.active {
+  background: var(--green);
+  color: #fff;
+  border-color: rgba(36,75,47,.24);
+}
+.bottom-nav-btn:active {
+  transform: translateY(1px);
+}
+.settings-summary-card .pill {
+  white-space: nowrap;
+}
+.offline-maps-card > .section-title {
+  align-items: flex-start;
+}
+@media (min-width: 860px) {
+  body {
+    padding-bottom: 88px;
+  }
+  .bottom-nav {
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(920px, calc(100% - 24px));
+    bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    padding: 8px;
+  }
+}
