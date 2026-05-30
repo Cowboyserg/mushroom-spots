@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.9 · Sprint 4.9</p>
+      <p id="appVersion">v0.6.10 · Sprint 4.10</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -245,8 +245,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.9</h2>
-      <p class="hint">Добавлен выбор локального .pmtiles файла через системный файл-пикер. Приложение читает PMTiles из File/Blob slice без GitHub CORS/Range, проверяет header/metadata и может запускать экспериментальный MapLibre preview. Файл не сохраняется в repo и после перезапуска PWA выбирается заново.</p>
+      <h2>Sprint 4.10</h2>
+      <p class="hint">Добавлен MapLibre vector-style adapter для локальных Protomaps PMTiles: preview пытается применить полноценный Protomaps style, центрируется по bounds пакета и показывает дороги, лес/landcover, воду и подписи. Основная Leaflet-карта, точки, GPS, чат и live-маркеры не мигрируются.</p>
     </section>
   </main>
 

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.9';
+const APP_VERSION = '0.6.10';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -28,6 +28,7 @@ const PMTILES_DEFAULT_URL = PMTILES_SAMPLE_URL;
 const OFFLINE_MAP_MANIFEST_URL = './offline-map-packages.json';
 const MAPLIBRE_GL_VERSION = '5.24.0';
 const PMTILES_JS_VERSION = '4.4.1';
+const PROTOMAPS_BASEMAPS_VERSION = '5';
 const MAPLIBRE_SCRIPT_URLS = [
   `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.js`,
   `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.js`
@@ -39,6 +40,10 @@ const MAPLIBRE_CSS_URLS = [
 const PMTILES_SCRIPT_URLS = [
   `https://unpkg.com/pmtiles@${PMTILES_JS_VERSION}/dist/pmtiles.js`,
   `https://cdn.jsdelivr.net/npm/pmtiles@${PMTILES_JS_VERSION}/dist/pmtiles.js`
+];
+const PROTOMAPS_BASEMAPS_SCRIPT_URLS = [
+  `https://unpkg.com/@protomaps/basemaps@${PROTOMAPS_BASEMAPS_VERSION}/dist/basemaps.js`,
+  `https://cdn.jsdelivr.net/npm/@protomaps/basemaps@${PROTOMAPS_BASEMAPS_VERSION}/dist/basemaps.js`
 ];
 
 const MAP_PROVIDER_LABELS = {
@@ -111,7 +116,11 @@ let pmtilesPreviewState = {
   styleMode: null,
   error: null,
   loadedAt: null,
-  lastEvent: null
+  lastEvent: null,
+  styleName: null,
+  appliedBounds: null,
+  appliedCenter: null,
+  vectorLayers: null
 };
 let pmtilesRuntimeProbe = {
   url: PMTILES_DEFAULT_URL,
@@ -718,6 +727,10 @@ function formatDiagnosticsText() {
   lines.push(`- packages manifest: ${provider.offlineMapManifest.status}`);
   lines.push(`- selected package: ${provider.offlineMapManifest.selectedPackageName || provider.offlineMapManifest.selectedPackageId || 'none'}`);
   lines.push(`- pmtiles preview: ${provider.pmtilesPreview.status}`);
+  if (provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode) lines.push(`- pmtiles style: ${provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode}`);
+  if (provider.pmtilesPreview.appliedBounds) lines.push(`- pmtiles bounds: ${provider.pmtilesPreview.appliedBounds.join(',')}`);
+  if (provider.pmtilesPreview.appliedCenter) lines.push(`- pmtiles center: ${provider.pmtilesPreview.appliedCenter.join(',')}`);
+  if (provider.pmtilesPreview.vectorLayers?.length) lines.push(`- pmtiles layers: ${provider.pmtilesPreview.vectorLayers.join(', ')}`);
   lines.push('');
   lines.push('КНОПКИ / API');
   lines.push('Формат: кнопка нажата — статус ответа/пендинг.');
@@ -870,7 +883,11 @@ function mapProviderSnapshot() {
       styleMode: pmtilesPreviewState.styleMode,
       error: pmtilesPreviewState.error,
       loadedAt: pmtilesPreviewState.loadedAt,
-      lastEvent: pmtilesPreviewState.lastEvent
+      lastEvent: pmtilesPreviewState.lastEvent,
+      styleName: pmtilesPreviewState.styleName,
+      appliedBounds: pmtilesPreviewState.appliedBounds,
+      appliedCenter: pmtilesPreviewState.appliedCenter,
+      vectorLayers: pmtilesPreviewState.vectorLayers
     },
     offlineMapManifest: getOfflineMapManifestSnapshot(),
     changedAt: mapProviderChangedAt,
@@ -994,11 +1011,14 @@ function updatePmtilesPreviewUi() {
   panel.hidden = !pmtilesPreviewState.visible;
 
   if (pmtilesPreviewState.status === 'loaded') {
-    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()}). Это отдельный preview, основная карта остаётся Leaflet.`;
+    const styleText = pmtilesPreviewState.styleName ? ` · style: ${pmtilesPreviewState.styleName}` : '';
+    const boundsText = pmtilesPreviewState.appliedBounds ? ` · bounds: ${pmtilesPreviewState.appliedBounds.join(',')}` : '';
+    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()})${styleText}${boundsText}. Это отдельный preview, основная карта остаётся Leaflet.`;
   } else if (pmtilesPreviewState.status === 'loading') {
     statusEl.textContent = 'PMTiles preview: загрузка MapLibre и подключение pmtiles:// source…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
-    statusEl.textContent = 'PMTiles preview: источник подключён, ждём отрисовку первого кадра…';
+    const layerText = pmtilesPreviewState.vectorLayers?.length ? ` Слои: ${pmtilesPreviewState.vectorLayers.slice(0, 8).join(', ')}.` : '';
+    statusEl.textContent = `PMTiles preview: источник подключён, применяем style/границы региона…${layerText}`;
   } else if (pmtilesPreviewState.status === 'metadata-only') {
     statusEl.textContent = `PMTiles preview: пакет ${getActivePmtilesPackageName()} читается, но это не raster-пакет для текущего preview. Нужен отдельный vector-style спринт.`;
   } else if (pmtilesPreviewState.status === 'error') {
@@ -1253,6 +1273,10 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     visible: false,
     sourceUrl: pkg.url,
     styleMode: null,
+    styleName: null,
+    appliedBounds: null,
+    appliedCenter: null,
+    vectorLayers: null,
     error: null,
     loadedAt: null,
     lastEvent: userAction ? 'selected package changed by user' : 'selected package restored'
@@ -1426,24 +1450,130 @@ function createPmtilesRasterPreviewStyle(protocolUrl) {
   };
 }
 
-function createPmtilesVectorPreviewStyle(protocolUrl) {
+function createFallbackVectorPreviewLayers(sourceName) {
+  return [
+    { id: 'pmtiles-preview-background', type: 'background', paint: { 'background-color': '#f3efe6' } },
+    { id: 'pmtiles-preview-water', type: 'fill', source: sourceName, 'source-layer': 'water', paint: { 'fill-color': '#a9cfe5', 'fill-opacity': 0.95 } },
+    { id: 'pmtiles-preview-natural-forest', type: 'fill', source: sourceName, 'source-layer': 'natural', filter: ['any', ['==', ['get', 'natural'], 'wood'], ['==', ['get', 'landuse'], 'forest'], ['==', ['get', 'boundary'], 'national_park']], paint: { 'fill-color': '#b9d6a3', 'fill-opacity': 0.72 } },
+    { id: 'pmtiles-preview-natural-other', type: 'fill', source: sourceName, 'source-layer': 'natural', filter: ['any', ['==', ['get', 'natural'], 'scrub'], ['==', ['get', 'natural'], 'wetland'], ['==', ['get', 'landuse'], 'meadow']], paint: { 'fill-color': '#cddfb2', 'fill-opacity': 0.56 } },
+    { id: 'pmtiles-preview-landuse-parks', type: 'fill', source: sourceName, 'source-layer': 'landuse', filter: ['any', ['==', ['get', 'leisure'], 'park'], ['==', ['get', 'leisure'], 'garden'], ['==', ['get', 'landuse'], 'grass'], ['==', ['get', 'landuse'], 'cemetery']], paint: { 'fill-color': '#c8e0ae', 'fill-opacity': 0.62 } },
+    { id: 'pmtiles-preview-landuse-farmland', type: 'fill', source: sourceName, 'source-layer': 'landuse', filter: ['any', ['==', ['get', 'landuse'], 'farmland'], ['==', ['get', 'landuse'], 'farmyard'], ['==', ['get', 'landuse'], 'orchard']], paint: { 'fill-color': '#e2d7ad', 'fill-opacity': 0.5 } },
+    { id: 'pmtiles-preview-landuse-urban', type: 'fill', source: sourceName, 'source-layer': 'landuse', filter: ['any', ['==', ['get', 'landuse'], 'residential'], ['==', ['get', 'landuse'], 'commercial'], ['==', ['get', 'landuse'], 'industrial']], paint: { 'fill-color': '#e0d8ca', 'fill-opacity': 0.5 } },
+    { id: 'pmtiles-preview-waterways', type: 'line', source: sourceName, 'source-layer': 'physical_line', filter: ['==', ['get', 'pmap:kind'], 'waterway'], paint: { 'line-color': '#76b7d8', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 14, 1.8, 17, 3.5] } },
+    { id: 'pmtiles-preview-boundaries', type: 'line', source: sourceName, 'source-layer': 'boundaries', paint: { 'line-color': '#b8b0a2', 'line-dasharray': [3, 2], 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.4, 10, 1.0, 14, 1.8] } },
+    { id: 'pmtiles-preview-transit', type: 'line', source: sourceName, 'source-layer': 'transit', minzoom: 8, paint: { 'line-color': '#9c8a76', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.45, 13, 1.2, 16, 2.3], 'line-dasharray': [2, 2] } },
+    { id: 'pmtiles-preview-road-casing', type: 'line', source: sourceName, 'source-layer': 'roads', minzoom: 6, paint: { 'line-color': '#c7b89d', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.6, 10, 1.1, 13, 3.0, 16, 7.0] } },
+    { id: 'pmtiles-preview-road-major', type: 'line', source: sourceName, 'source-layer': 'roads', minzoom: 6, filter: ['any', ['==', ['get', 'pmap:kind'], 'highway'], ['==', ['get', 'pmap:kind'], 'major_road'], ['in', ['get', 'highway'], ['literal', ['motorway', 'trunk', 'primary', 'secondary']]]], paint: { 'line-color': '#fff2b3', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 10, 1.8, 13, 4.0, 16, 8.0] } },
+    { id: 'pmtiles-preview-road-medium', type: 'line', source: sourceName, 'source-layer': 'roads', minzoom: 9, filter: ['any', ['==', ['get', 'pmap:kind'], 'medium_road'], ['in', ['get', 'highway'], ['literal', ['tertiary', 'unclassified', 'residential']]]], paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.6, 12, 1.5, 15, 4.0] } },
+    { id: 'pmtiles-preview-road-minor', type: 'line', source: sourceName, 'source-layer': 'roads', minzoom: 11, filter: ['any', ['==', ['get', 'pmap:kind'], 'minor_road'], ['in', ['get', 'highway'], ['literal', ['track', 'path', 'footway', 'service']]]], paint: { 'line-color': '#f7f7f3', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.4, 14, 1.1, 17, 2.2], 'line-dasharray': [1.5, 1.2] } },
+    { id: 'pmtiles-preview-buildings', type: 'fill', source: sourceName, 'source-layer': 'buildings', minzoom: 13, paint: { 'fill-color': '#d1b99a', 'fill-opacity': 0.66 } },
+    { id: 'pmtiles-preview-place-labels', type: 'symbol', source: sourceName, 'source-layer': 'places', minzoom: 4, layout: { 'text-field': ['coalesce', ['get', 'name:ru'], ['get', 'name:en'], ['get', 'name']], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 4, 10, 9, 13, 13, 16], 'text-anchor': 'center', 'text-allow-overlap': false }, paint: { 'text-color': '#4e463c', 'text-halo-color': '#f8f4ea', 'text-halo-width': 1.2 } },
+    { id: 'pmtiles-preview-road-labels', type: 'symbol', source: sourceName, 'source-layer': 'roads', minzoom: 12, layout: { 'symbol-placement': 'line', 'text-field': ['coalesce', ['get', 'name:ru'], ['get', 'name:en'], ['get', 'name'], ['get', 'ref']], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 12, 9, 16, 12], 'text-rotation-alignment': 'map' }, paint: { 'text-color': '#635946', 'text-halo-color': '#ffffff', 'text-halo-width': 1.0 } }
+  ];
+}
+
+function createFallbackVectorPreviewStyle(protocolUrl) {
+  const sourceName = 'pmtiles-preview';
   return {
     version: 8,
+    glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
     sources: {
-      'pmtiles-preview': {
+      [sourceName]: {
         type: 'vector',
-        url: protocolUrl
+        url: protocolUrl,
+        attribution: '<a href="https://protomaps.com">Protomaps</a> © <a href="https://openstreetmap.org">OpenStreetMap</a>'
       }
     },
-    layers: [
-      { id: 'pmtiles-preview-background', type: 'background', paint: { 'background-color': '#f2efe9' } },
-      { id: 'pmtiles-preview-water', type: 'fill', source: 'pmtiles-preview', 'source-layer': 'water', paint: { 'fill-color': '#b9d7ea', 'fill-opacity': 0.9 } },
-      { id: 'pmtiles-preview-landuse', type: 'fill', source: 'pmtiles-preview', 'source-layer': 'landuse', paint: { 'fill-color': '#d7e8c7', 'fill-opacity': 0.55 } },
-      { id: 'pmtiles-preview-buildings', type: 'fill', source: 'pmtiles-preview', 'source-layer': 'buildings', minzoom: 12, paint: { 'fill-color': '#d8c3a5', 'fill-opacity': 0.65 } },
-      { id: 'pmtiles-preview-roads', type: 'line', source: 'pmtiles-preview', 'source-layer': 'roads', paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.4, 12, 1.6, 16, 5] } },
-      { id: 'pmtiles-preview-roads-casing', type: 'line', source: 'pmtiles-preview', 'source-layer': 'roads', paint: { 'line-color': '#b8a98c', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.2, 12, 0.8, 16, 2] } }
-    ]
+    layers: createFallbackVectorPreviewLayers(sourceName)
   };
+}
+
+async function ensureProtomapsBasemapsRuntime() {
+  if (window.basemaps && typeof window.basemaps.layers === 'function' && typeof window.basemaps.namedFlavor === 'function') return true;
+  try {
+    await loadScriptFromCandidates(
+      PROTOMAPS_BASEMAPS_SCRIPT_URLS,
+      () => Boolean(window.basemaps && typeof window.basemaps.layers === 'function' && typeof window.basemaps.namedFlavor === 'function'),
+      'Protomaps basemaps style runtime'
+    );
+    return true;
+  } catch (err) {
+    recordMapDebug('Protomaps basemaps style runtime unavailable; using fallback vector style', err?.message || String(err));
+    return false;
+  }
+}
+
+async function createPmtilesVectorPreviewStyle(protocolUrl) {
+  const sourceName = 'protomaps';
+  const hasBasemapsRuntime = await ensureProtomapsBasemapsRuntime();
+  if (hasBasemapsRuntime) {
+    return {
+      style: {
+        version: 8,
+        glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+        sprite: 'https://protomaps.github.io/basemaps-assets/sprites/v4/light',
+        sources: {
+          [sourceName]: {
+            type: 'vector',
+            url: protocolUrl,
+            attribution: '<a href="https://protomaps.com">Protomaps</a> © <a href="https://openstreetmap.org">OpenStreetMap</a>'
+          }
+        },
+        layers: window.basemaps.layers(sourceName, window.basemaps.namedFlavor('light'), { lang: 'ru' })
+      },
+      styleName: 'protomaps-basemaps-light-v5',
+      sourceName
+    };
+  }
+  return {
+    style: createFallbackVectorPreviewStyle(protocolUrl),
+    styleName: 'fallback-protomaps-vector-basic',
+    sourceName: 'pmtiles-preview'
+  };
+}
+
+function getMainMapCenterForPreview() {
+  try {
+    if (!map || typeof map.getCenter !== 'function') return null;
+    const center = map.getCenter();
+    if (Number.isFinite(center?.lng) && Number.isFinite(center?.lat)) return [center.lng, center.lat];
+  } catch (err) {
+    recordMapDebug('main map center unavailable for PMTiles preview', err?.message || String(err));
+  }
+  return null;
+}
+
+function getPmtilesPreviewBounds(meta = {}, packageInfo = {}) {
+  const candidates = [
+    packageInfo?.bounds,
+    meta?.bbox,
+    meta?.metadata?.bounds
+  ];
+  for (const candidate of candidates) {
+    const bounds = normalizeLonLatBounds(candidate);
+    if (isUsefulRegionalBounds(bounds)) return bounds;
+  }
+  return null;
+}
+
+function getPmtilesPreviewCenter(meta = {}, bounds = null) {
+  if (bounds) {
+    return [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2];
+  }
+  if (meta?.center && Number.isFinite(meta.center.lon) && Number.isFinite(meta.center.lat)) {
+    if (Math.abs(meta.center.lon) > 0.0001 || Math.abs(meta.center.lat) > 0.0001) return [meta.center.lon, meta.center.lat];
+  }
+  if (meta?.metadata?.center && Number.isFinite(meta.metadata.center.lon) && Number.isFinite(meta.metadata.center.lat)) {
+    return [meta.metadata.center.lon, meta.metadata.center.lat];
+  }
+  return getMainMapCenterForPreview() || [37.6176, 55.7558];
+}
+
+function getPmtilesPreviewZoom(meta = {}, bounds = null, isVectorPreview = false) {
+  if (bounds) return isVectorPreview ? 11 : 0;
+  const centerZoom = meta?.center?.zoom ?? meta?.metadata?.center?.zoom;
+  if (Number.isFinite(centerZoom) && centerZoom > 0) return centerZoom;
+  return isVectorPreview ? 10 : 0;
 }
 
 async function showPmtilesPreviewMap() {
@@ -1457,6 +1587,10 @@ async function showPmtilesPreviewMap() {
     visible: true,
     sourceUrl: getActivePmtilesPackageUrl(),
     styleMode: null,
+    styleName: null,
+    appliedBounds: null,
+    appliedCenter: null,
+    vectorLayers: null,
     error: null,
     loadedAt: null
   }, 'PMTiles preview started');
@@ -1508,12 +1642,14 @@ async function showPmtilesPreviewMap() {
 
     const registration = registerPmtilesArchiveForPackage(activePackage);
     const protocolUrl = registration?.protocolUrl || `pmtiles://${getAbsolutePmtilesUrl(activeUrl)}`;
-    const center = result.meta?.center && Number.isFinite(result.meta.center.lon) && Number.isFinite(result.meta.center.lat)
-      ? [result.meta.center.lon, result.meta.center.lat]
-      : [0, 0];
-    const zoom = Number.isFinite(result.meta?.center?.zoom) ? result.meta.center.zoom : (isVectorPreview ? 10 : 0);
-    const style = isVectorPreview ? createPmtilesVectorPreviewStyle(protocolUrl) : createPmtilesRasterPreviewStyle(protocolUrl);
-    const styleMode = isVectorPreview ? 'vector-source-url' : 'raster-source-url';
+    const vectorLayers = result.meta?.metadata?.vectorLayers || [];
+    const previewBounds = getPmtilesPreviewBounds(result.meta, activePackage);
+    const center = getPmtilesPreviewCenter(result.meta, previewBounds);
+    const zoom = getPmtilesPreviewZoom(result.meta, previewBounds, isVectorPreview);
+    const vectorStyleResult = isVectorPreview ? await createPmtilesVectorPreviewStyle(protocolUrl) : null;
+    const style = isVectorPreview ? vectorStyleResult.style : createPmtilesRasterPreviewStyle(protocolUrl);
+    const styleName = isVectorPreview ? vectorStyleResult.styleName : 'raster-pmtiles-basic';
+    const styleMode = isVectorPreview ? 'vector-protomaps-style' : 'raster-source-url';
 
     await new Promise((resolve, reject) => {
       let finished = false;
@@ -1521,7 +1657,7 @@ async function showPmtilesPreviewMap() {
         if (finished) return;
         finished = true;
         reject(new Error('PMTiles preview timeout'));
-      }, 12000);
+      }, 18000);
 
       try {
         pmtilesPreviewMap = new window.maplibregl.Map({
@@ -1535,27 +1671,58 @@ async function showPmtilesPreviewMap() {
           attributionControl: false,
           fadeDuration: 0
         });
+        if (window.maplibregl.NavigationControl) {
+          pmtilesPreviewMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+        }
       } catch (err) {
         window.clearTimeout(timeout);
         reject(err);
         return;
       }
 
+      const applyViewport = () => {
+        try {
+          pmtilesPreviewMap.resize();
+          if (previewBounds) {
+            pmtilesPreviewMap.fitBounds([[previewBounds[0], previewBounds[1]], [previewBounds[2], previewBounds[3]]], {
+              padding: 26,
+              duration: 0,
+              maxZoom: Math.min(Number.isFinite(result.meta?.maxZoom) ? result.meta.maxZoom : 13, 13)
+            });
+          } else {
+            pmtilesPreviewMap.setCenter(center);
+            pmtilesPreviewMap.setZoom(zoom);
+          }
+        } catch (err) {
+          recordMapDebug('PMTiles preview viewport apply failed', err?.message || String(err));
+        }
+      };
+
       pmtilesPreviewMap.once('load', () => {
-        setPmtilesPreviewState({ status: 'source-loaded', visible: true, styleMode }, 'PMTiles preview MapLibre load event');
+        applyViewport();
+        setPmtilesPreviewState({
+          status: 'source-loaded',
+          visible: true,
+          styleMode,
+          styleName,
+          appliedBounds: previewBounds,
+          appliedCenter: center,
+          vectorLayers
+        }, 'PMTiles preview MapLibre load event');
       });
 
       pmtilesPreviewMap.once('idle', () => {
         if (finished) return;
         finished = true;
         window.clearTimeout(timeout);
+        applyViewport();
         resolve();
       });
 
       pmtilesPreviewMap.on('error', (event) => {
         const message = event?.error?.message || 'MapLibre preview error';
         recordMapDebug('PMTiles preview non-fatal MapLibre error', message);
-        // Do not reject immediately: mini test packages can emit recoverable source warnings.
+        // Do not reject immediately: style/glyph warnings must not break the primary Leaflet map.
       });
     });
 
@@ -1564,6 +1731,10 @@ async function showPmtilesPreviewMap() {
       status: 'loaded',
       visible: true,
       styleMode,
+      styleName,
+      appliedBounds: previewBounds,
+      appliedCenter: center,
+      vectorLayers,
       error: null,
       loadedAt: new Date().toISOString()
     }, 'PMTiles preview rendered');
@@ -1711,14 +1882,53 @@ function normalizePmtilesHeader(header = {}) {
   };
 }
 
+function parsePmtilesNumberList(value, expectedLength) {
+  if (Array.isArray(value)) {
+    const list = value.map((item) => Number(item));
+    return list.length >= expectedLength && list.slice(0, expectedLength).every(Number.isFinite) ? list.slice(0, expectedLength) : null;
+  }
+  if (typeof value !== 'string') return null;
+  const list = value.split(',').map((part) => Number(part.trim()));
+  return list.length >= expectedLength && list.slice(0, expectedLength).every(Number.isFinite) ? list.slice(0, expectedLength) : null;
+}
+
+function normalizeLonLatBounds(bounds) {
+  const list = parsePmtilesNumberList(bounds, 4);
+  if (!list) return null;
+  const [west, south, east, north] = list;
+  if (![west, south, east, north].every(Number.isFinite)) return null;
+  if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) return null;
+  return [west, south, east, north];
+}
+
+function isUsefulRegionalBounds(bounds) {
+  if (!Array.isArray(bounds) || bounds.length !== 4) return false;
+  const [west, south, east, north] = bounds.map(Number);
+  if (![west, south, east, north].every(Number.isFinite)) return false;
+  const width = Math.abs(east - west);
+  const height = Math.abs(north - south);
+  if (width <= 0 || height <= 0) return false;
+  // Ignore near-world bounds: extracts can still include z0 world overview tiles.
+  return width < 120 && height < 80;
+}
+
 function summarizePmtilesMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return null;
+  const bounds = normalizeLonLatBounds(metadata.bounds);
+  const centerList = parsePmtilesNumberList(metadata.center, 3) || parsePmtilesNumberList(metadata.center, 2);
+  const vectorLayers = Array.isArray(metadata.vector_layers)
+    ? metadata.vector_layers.map((layer) => layer.id || layer.name).filter(Boolean).slice(0, 32)
+    : null;
   return {
     name: metadata.name || metadata.id || null,
     description: metadata.description || null,
     attribution: metadata.attribution || null,
-    vectorLayers: Array.isArray(metadata.vector_layers) ? metadata.vector_layers.map((layer) => layer.id || layer.name).filter(Boolean).slice(0, 24) : null,
-    keys: Object.keys(metadata).slice(0, 24)
+    bounds,
+    center: centerList ? { lon: centerList[0], lat: centerList[1], zoom: Number.isFinite(centerList[2]) ? centerList[2] : null } : null,
+    minZoom: headerNumber(metadata.minzoom ?? metadata.minZoom ?? null),
+    maxZoom: headerNumber(metadata.maxzoom ?? metadata.maxZoom ?? null),
+    vectorLayers,
+    keys: Object.keys(metadata).slice(0, 32)
   };
 }
 
@@ -4279,7 +4489,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.9`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.10`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
