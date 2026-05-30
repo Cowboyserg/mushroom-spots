@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.15';
+const APP_VERSION = '0.6.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -14,6 +14,18 @@ const MEMBER_SYNC_PENDING_KEY = 'mushroom_member_sync_pending_v1';
 const GROUP_MEMBERS_CACHE_PREFIX = 'mushroom_group_members_cache_v1:';
 const MEMBER_SYNC_RETRY_MS = 15000;
 const SUPABASE_TIMEOUT_MS = 12000;
+const OFFLINE_MAP_PACKAGE_META_KEY = 'mushroom_offline_map_package_v1';
+
+const MAP_ENGINE_LEAFLET = 'leaflet';
+const MAP_PROVIDER_ONLINE_RASTER = 'online-raster';
+const MAP_PROVIDER_OFFLINE_PMTILES = 'offline-pmtiles';
+const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
+
+const MAP_PROVIDER_LABELS = {
+  [MAP_PROVIDER_ONLINE_RASTER]: 'online raster',
+  [MAP_PROVIDER_OFFLINE_PMTILES]: 'offline PMTiles',
+  [MAP_PROVIDER_NO_BASEMAP]: 'no basemap'
+};
 
 let db;
 let map;
@@ -41,8 +53,16 @@ let chatEditingMessageId = null;
 let userId = null;
 let friendMarkers = new Map();
 let baseTileLayer = null;
+let mapEngine = MAP_ENGINE_LEAFLET;
+let mapProvider = MAP_PROVIDER_ONLINE_RASTER;
+let mapSourceStatus = 'booting';
+let offlinePackageStatus = 'not-installed';
+let offlinePackageMeta = null;
+let mapFallbackActive = false;
+let mapProviderLastReason = 'startup';
+let mapProviderChangedAt = new Date().toISOString();
 let mapDebugEvents = [];
-let mapTileStats = { loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null };
+let mapTileStats = { provider: mapProvider, loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null, startedAt: new Date().toISOString() };
 let apiDebugEvents = [];
 let apiButtonStates = new Map();
 let apiRequestSeq = 0;
@@ -606,7 +626,16 @@ function getApiDebugSnapshot() {
 
 function formatDiagnosticsText() {
   const api = getApiDebugSnapshot();
+  const provider = mapProviderSnapshot();
   const lines = [];
+  lines.push('КАРТА / PROVIDER');
+  lines.push(`- engine: ${provider.mapEngine}`);
+  lines.push(`- provider: ${provider.mapProvider}`);
+  lines.push(`- source status: ${provider.mapSourceStatus}`);
+  lines.push(`- offline package: ${provider.offlinePackageStatus}`);
+  lines.push(`- fallback active: ${provider.fallbackActive}`);
+  lines.push(`- reason: ${provider.reason}`);
+  lines.push('');
   lines.push('КНОПКИ / API');
   lines.push('Формат: кнопка нажата — статус ответа/пендинг.');
   if (!api.buttons.length) {
@@ -685,6 +714,178 @@ function withButtonDiagnostics(buttonId, handler) {
   };
 }
 
+function canUseMapRuntime() {
+  return Boolean(map && window.L);
+}
+
+function resetMapTileStats(provider = mapProvider) {
+  mapTileStats = {
+    provider,
+    loading: 0,
+    load: 0,
+    error: 0,
+    lastError: null,
+    lastTileUrl: null,
+    startedAt: new Date().toISOString()
+  };
+}
+
+function readOfflinePackageMeta() {
+  offlinePackageMeta = safeJsonParse(localStorage.getItem(OFFLINE_MAP_PACKAGE_META_KEY), null);
+  offlinePackageStatus = offlinePackageMeta && offlinePackageMeta.format === 'pmtiles'
+    ? 'metadata-present-runtime-not-enabled'
+    : 'not-installed';
+  return offlinePackageMeta;
+}
+
+function mapProviderSnapshot() {
+  return {
+    mapEngine,
+    mapProvider,
+    mapProviderLabel: MAP_PROVIDER_LABELS[mapProvider] || mapProvider,
+    mapSourceStatus,
+    offlinePackageStatus,
+    offlinePackageMeta: offlinePackageMeta ? {
+      id: offlinePackageMeta.id || null,
+      name: offlinePackageMeta.name || null,
+      format: offlinePackageMeta.format || null,
+      sizeBytes: offlinePackageMeta.sizeBytes || null,
+      bbox: offlinePackageMeta.bbox || null,
+      minZoom: offlinePackageMeta.minZoom || null,
+      maxZoom: offlinePackageMeta.maxZoom || null,
+      installedAt: offlinePackageMeta.installedAt || null,
+      source: offlinePackageMeta.source || null
+    } : null,
+    fallbackActive: mapFallbackActive,
+    changedAt: mapProviderChangedAt,
+    reason: mapProviderLastReason
+  };
+}
+
+function setMapProviderState(patch = {}, reason = 'state update') {
+  if (patch.mapEngine !== undefined) mapEngine = patch.mapEngine;
+  if (patch.mapProvider !== undefined) mapProvider = patch.mapProvider;
+  if (patch.mapSourceStatus !== undefined) mapSourceStatus = patch.mapSourceStatus;
+  if (patch.offlinePackageStatus !== undefined) offlinePackageStatus = patch.offlinePackageStatus;
+  if (patch.fallbackActive !== undefined) mapFallbackActive = Boolean(patch.fallbackActive);
+  mapProviderLastReason = reason;
+  mapProviderChangedAt = new Date().toISOString();
+  recordMapDebug(`map provider: ${reason}`, mapProviderSnapshot());
+}
+
+function setOfflineMapStatus(text, mode = '') {
+  const pill = $('offlineMapStatusPill');
+  if (!pill) return;
+  pill.textContent = text;
+  pill.className = `pill ${mode}`.trim();
+}
+
+function updateOfflineMapStatusPill() {
+  if (offlinePackageStatus === 'not-installed') {
+    setOfflineMapStatus('Карта: офлайн-пакет не установлен', 'warn');
+  } else if (offlinePackageStatus === 'metadata-present-runtime-not-enabled') {
+    setOfflineMapStatus('Офлайн-пакет найден, runtime ещё не подключён', 'warn');
+  } else if (offlinePackageStatus === 'ready') {
+    setOfflineMapStatus('Карта: офлайн-пакет готов', 'on');
+  } else {
+    setOfflineMapStatus(`Офлайн-карта: ${offlinePackageStatus}`, 'warn');
+  }
+}
+
+function createOnlineRasterLayer() {
+  return L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20,
+    minZoom: 2,
+    subdomains: 'abcd',
+    tileSize: 256,
+    updateWhenIdle: false,
+    updateWhenZooming: true,
+    keepBuffer: 4,
+    detectRetina: false,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  });
+}
+
+function removeBaseTileLayer(reason = 'remove base layer') {
+  if (!baseTileLayer) return;
+  try {
+    baseTileLayer.remove();
+    recordMapDebug('base tile layer removed', reason);
+  } catch (err) {
+    recordMapDebug('base tile layer remove failed', err?.message || String(err));
+  }
+  baseTileLayer = null;
+}
+
+function activateNoBasemapFallback(reason = 'basemap unavailable') {
+  if (!canUseMapRuntime()) {
+    setMapProviderState({ mapProvider: MAP_PROVIDER_NO_BASEMAP, mapSourceStatus: 'empty-ready', fallbackActive: true }, reason);
+    return;
+  }
+  removeBaseTileLayer(reason);
+  setMapProviderState({ mapProvider: MAP_PROVIDER_NO_BASEMAP, mapSourceStatus: 'empty-ready', fallbackActive: true }, reason);
+  safeInvalidateMap(0, 'no-basemap fallback');
+}
+
+function mountOnlineRasterProvider(reason = 'mount online raster') {
+  if (!canUseMapRuntime()) return false;
+  removeBaseTileLayer('replace basemap provider');
+  resetMapTileStats(MAP_PROVIDER_ONLINE_RASTER);
+  baseTileLayer = createOnlineRasterLayer();
+  baseTileLayer
+    .on('loading', () => {
+      mapTileStats.loading += 1;
+      if (mapProvider === MAP_PROVIDER_ONLINE_RASTER) mapSourceStatus = 'online-loading';
+      recordMapDebug('tile loading', { provider: MAP_PROVIDER_ONLINE_RASTER });
+    })
+    .on('tileload', (e) => {
+      mapTileStats.load += 1;
+      mapTileStats.lastTileUrl = e.tile?.currentSrc || e.tile?.src || null;
+      if (mapProvider === MAP_PROVIDER_ONLINE_RASTER) {
+        mapSourceStatus = 'online-ready';
+        mapFallbackActive = false;
+      }
+      updateMapDebugUi(false);
+    })
+    .on('tileerror', (e) => {
+      mapTileStats.error += 1;
+      mapTileStats.lastError = e.tile?.currentSrc || e.tile?.src || 'unknown tile';
+      mapSourceStatus = 'online-error';
+      recordMapDebug('tile error', { provider: MAP_PROVIDER_ONLINE_RASTER, url: mapTileStats.lastError, errors: mapTileStats.error });
+      setMapStatus('Карта: ошибка тайлов', 'bad');
+      if (!navigator.onLine || (mapTileStats.error >= 3 && mapTileStats.load === 0)) {
+        activateNoBasemapFallback('online raster unavailable');
+      }
+    })
+    .addTo(map);
+  setMapProviderState({ mapProvider: MAP_PROVIDER_ONLINE_RASTER, mapSourceStatus: 'online-loading', fallbackActive: false }, reason);
+  return true;
+}
+
+function mountMapProvider(providerId, reason = 'provider selected') {
+  readOfflinePackageMeta();
+  if (providerId === MAP_PROVIDER_OFFLINE_PMTILES) {
+    setMapProviderState({
+      mapProvider: MAP_PROVIDER_OFFLINE_PMTILES,
+      mapSourceStatus: offlinePackageStatus === 'not-installed' ? 'offline-not-installed' : 'offline-runtime-not-enabled',
+      fallbackActive: true
+    }, reason);
+    activateNoBasemapFallback('offline PMTiles runtime not enabled');
+    return false;
+  }
+  if (providerId === MAP_PROVIDER_NO_BASEMAP) {
+    activateNoBasemapFallback(reason);
+    return true;
+  }
+  return mountOnlineRasterProvider(reason);
+}
+
+function selectInitialMapProvider() {
+  readOfflinePackageMeta();
+  if (!navigator.onLine && offlinePackageStatus !== 'ready') return MAP_PROVIDER_NO_BASEMAP;
+  return MAP_PROVIDER_ONLINE_RASTER;
+}
+
 function recordMapDebug(message, data = null) {
   const item = {
     at: new Date().toISOString(),
@@ -713,7 +914,7 @@ function safeInvalidateMap(delay = 0, reason = 'manual') {
     } catch (err) {
       console.warn('Map invalidateSize failed', err);
       recordMapDebug('invalidateSize failed', err.message);
-      setMapStatus('ошибка размера карты', 'bad');
+      setMapStatus('Карта: ошибка размера', 'bad');
     }
   }, delay);
 }
@@ -734,6 +935,7 @@ function getMapDebugSnapshot() {
     url: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine,
+    providerState: mapProviderSnapshot(),
     mapExists: Boolean(map),
     leafletLoaded: Boolean(window.L),
     mapSize: map ? map.getSize() : null,
@@ -768,16 +970,24 @@ function updateMapDebugUi(forceText = false) {
   const textEl = $('mapDebugText');
   const snapshot = getMapDebugSnapshot();
 
-  if (snapshot.tileStats.error > 0) {
-    setMapStatus('ошибки тайлов', 'bad');
+  updateOfflineMapStatusPill();
+
+  if (!snapshot.leafletLoaded) {
+    setMapStatus('Карта: движок не загружен', 'bad');
+  } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
+    setMapStatus('Карта: подложка недоступна, точки работают', 'warn');
+  } else if (snapshot.providerState.mapSourceStatus === 'online-ready' || snapshot.tileDom.loaded > 0) {
+    setMapStatus('Карта: онлайн', 'on');
+  } else if (snapshot.providerState.mapSourceStatus === 'offline-not-installed') {
+    setMapStatus('Карта: офлайн-пакет не установлен', 'warn');
+  } else if (snapshot.tileStats.error > 0) {
+    setMapStatus('Карта: ошибка тайлов', 'bad');
   } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
-    setMapStatus('тайлы не загружены', 'warn');
+    setMapStatus('Карта: тайлы не загружены', 'warn');
   } else if (snapshot.mapElementRect && snapshot.mapElementRect.height < 100) {
-    setMapStatus('малый контейнер', 'bad');
-  } else if (snapshot.tileDom.loaded > 0) {
-    setMapStatus(`тайлы: ${snapshot.tileDom.loaded}/${snapshot.tileDom.total}`, 'on');
+    setMapStatus('Карта: малый контейнер', 'bad');
   } else {
-    setMapStatus('карта ждёт тайлы', 'warn');
+    setMapStatus('Карта: онлайн загружается', 'warn');
   }
 
   if (textEl && (forceText || $('mapDebugDialog')?.open)) {
@@ -786,12 +996,16 @@ function updateMapDebugUi(forceText = false) {
 
   const hint = $('mapHint');
   if (hint) {
-    if (snapshot.tileStats.error > 0) {
+    if (!snapshot.leafletLoaded) {
+      hint.textContent = 'Движок карты Leaflet не загрузился. Локальные точки и GPS-координаты остаются в данных, но визуальная карта недоступна до загрузки app shell/CDN.';
+    } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
+      hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустой карты.';
+    } else if (snapshot.tileStats.error > 0) {
       hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
     } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
       hint.textContent = 'Тайлы созданы, но не загрузились. Проверь интернет или нажми “Починить карту”.';
     } else {
-      hint.textContent = 'Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”.';
+      hint.textContent = 'Сейчас используется online raster provider. Офлайн-пакет PMTiles ещё не установлен; точки и GPS отделены от подложки.';
     }
   }
 }
@@ -809,6 +1023,10 @@ function updatePickedMapPointUi() {
 }
 
 function setPickedMapPoint(latlng, source = 'map') {
+  if (!canUseMapRuntime()) {
+    recordMapDebug('map point pick ignored: map runtime unavailable');
+    return;
+  }
   if (!latlng || !Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) return;
   pickedMapPoint = {
     lat: latlng.lat,
@@ -890,7 +1108,9 @@ function repairMap() {
   safeInvalidateMap(200, 'repair delayed 200');
   safeInvalidateMap(800, 'repair delayed 800');
   try {
-    if (baseTileLayer && baseTileLayer.redraw) {
+    if (!baseTileLayer && navigator.onLine) {
+      mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'repair requested online provider');
+    } else if (baseTileLayer && baseTileLayer.redraw) {
       baseTileLayer.redraw();
       recordMapDebug('tile layer redraw');
     }
@@ -1008,8 +1228,13 @@ function updateGpsStatusPanel(position) {
 
 function initMap() {
   if (!window.L) {
-    setMapStatus('Leaflet не загружен', 'bad');
-    recordMapDebug('Leaflet JS is not loaded');
+    mapProvider = MAP_PROVIDER_NO_BASEMAP;
+    mapSourceStatus = 'engine-missing';
+    mapFallbackActive = true;
+    mapProviderLastReason = 'Leaflet JS is not loaded';
+    mapProviderChangedAt = new Date().toISOString();
+    setMapStatus('Карта: движок не загружен', 'bad');
+    recordMapDebug('Leaflet JS is not loaded', mapProviderSnapshot());
     return;
   }
 
@@ -1031,35 +1256,7 @@ function initMap() {
     map.attributionControl.setPrefix(false);
   }
 
-  baseTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    maxZoom: 20,
-    minZoom: 2,
-    subdomains: 'abcd',
-    tileSize: 256,
-    updateWhenIdle: false,
-    updateWhenZooming: true,
-    keepBuffer: 4,
-    detectRetina: false,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  });
-
-  baseTileLayer
-    .on('loading', () => {
-      mapTileStats.loading += 1;
-      recordMapDebug('tile loading');
-    })
-    .on('tileload', (e) => {
-      mapTileStats.load += 1;
-      mapTileStats.lastTileUrl = e.tile?.currentSrc || e.tile?.src || null;
-      updateMapDebugUi(false);
-    })
-    .on('tileerror', (e) => {
-      mapTileStats.error += 1;
-      mapTileStats.lastError = e.tile?.currentSrc || e.tile?.src || 'unknown tile';
-      recordMapDebug('tile error', mapTileStats.lastError);
-      setMapStatus('ошибка тайлов', 'bad');
-    })
-    .addTo(map);
+  mountMapProvider(selectInitialMapProvider(), 'initial provider selection');
 
   map.on('load moveend zoomend resize', () => updateMapDebugUi(false));
   setupMapPointPicking();
@@ -1067,7 +1264,11 @@ function initMap() {
   // Leaflet can render broken/offset tiles if the map is initialized while
   // the PWA layout is still settling, especially after install-to-home-screen,
   // orientation changes, or service worker updates.
-  setMapStatus('карта загружается', 'warn');
+  if (mapProvider === MAP_PROVIDER_ONLINE_RASTER) {
+    setMapStatus('Карта: онлайн загружается', 'warn');
+  } else {
+    updateMapDebugUi(false);
+  }
   safeInvalidateMap(0, 'init');
   safeInvalidateMap(250, 'init delayed 250');
   safeInvalidateMap(1000, 'init delayed 1000');
@@ -1092,15 +1293,17 @@ function updateUserPosition(pos, center=false) {
   updateActionButtonsUi();
 
   const latlng = [latitude, longitude];
-  if (!userMarker) {
-    userMarker = L.marker(latlng, { title: 'Я здесь', icon: makeMapIcon('user') }).addTo(map).bindPopup('Я здесь');
-    accuracyCircle = L.circle(latlng, { radius: accuracy || 0 }).addTo(map);
-  } else {
-    userMarker.setLatLng(latlng);
-    accuracyCircle.setLatLng(latlng).setRadius(accuracy || 0);
+  if (canUseMapRuntime()) {
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { title: 'Я здесь', icon: makeMapIcon('user') }).addTo(map).bindPopup('Я здесь');
+      accuracyCircle = L.circle(latlng, { radius: accuracy || 0 }).addTo(map);
+    } else {
+      userMarker.setLatLng(latlng);
+      accuracyCircle.setLatLng(latlng).setRadius(accuracy || 0);
+    }
+    if (center) map.setView(latlng, Math.max(map.getZoom(), 16));
+    safeInvalidateMap(0, 'render/update');
   }
-  if (center) map.setView(latlng, Math.max(map.getZoom(), 16));
-  safeInvalidateMap(0, 'render/update');
   updateSelectedDetails();
   renderList();
 }
@@ -1327,6 +1530,7 @@ function markerPopup(spot) {
 }
 
 function renderMarkers() {
+  if (!canUseMapRuntime()) return;
   for (const marker of spotMarkers.values()) marker.remove();
   spotMarkers.clear();
   for (const spot of spots) {
@@ -1370,7 +1574,7 @@ function selectSpot(id, center=false) {
   const spot = spots.find(s => s.id === id);
   if (!spot) return;
   $('selectedCard').hidden = false;
-  if (center) map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
+  if (center && canUseMapRuntime()) map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
   const marker = spotMarkers.get(id);
   if (marker) marker.openPopup();
   updateSelectedDetails();
@@ -1402,6 +1606,7 @@ function updateSelectedDetails() {
 function showNavigationLine() {
   const spot = spots.find(s => s.id === selectedSpotId);
   if (!spot || !currentPosition) return alert('Нужна выбранная точка и активный GPS.');
+  if (!canUseMapRuntime()) return alert('Карта недоступна, но координаты точки сохранены.');
   if (navLine) navLine.remove();
   navLine = L.polyline([[currentPosition.lat, currentPosition.lon], [spot.lat, spot.lon]], { weight: 4 }).addTo(map);
   map.fitBounds(navLine.getBounds(), { padding: [40, 40] });
@@ -2136,7 +2341,11 @@ async function sendSelectedSpotToChat() {
 }
 
 function showChatSpotOnMap(payload) {
-  if (!payload || !map) return;
+  if (!payload) return;
+  if (!canUseMapRuntime()) {
+    setChatHint(`Карта недоступна. Координаты точки из чата: ${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}.`);
+    return;
+  }
   const latlng = [payload.lat, payload.lng];
   const title = payload.n || 'Точка из чата';
   const popup = `<strong>${escapeHtml(title)}</strong><br>${payload.m ? `${escapeHtml(payload.m)}<br>` : ''}${payload.d ? `${escapeHtml(payload.d)}<br>` : ''}${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}<br><span class="hint">из чата группы</span>`;
@@ -2495,7 +2704,7 @@ function renderFriends(data) {
     const isPresent = Boolean(member) && memberAgeMs <= 10 * 60 * 1000;
     if (hasActiveLocation) activeLocationCount += 1;
 
-    if (loc && row.userId !== myId && hasActiveLocation) {
+    if (loc && row.userId !== myId && hasActiveLocation && canUseMapRuntime()) {
       seenMarkerIds.add(row.userId);
       const latlng = [loc.lat, loc.lon];
       let marker = friendMarkers.get(row.userId);
@@ -2515,7 +2724,7 @@ function renderFriends(data) {
     if (loc) {
       const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
       meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
-      item.onclick = () => map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16));
+      item.onclick = () => { if (canUseMapRuntime()) map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16)); };
     } else if (fromCache) {
       meta = `из кэша · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)} · кэш: ${fmtDate(cachedAt)}`;
     } else {
@@ -2625,7 +2834,7 @@ async function testSupabaseConnection() {
 
 function bindUi() {
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
-  $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
+  $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
   if ($('sharePickedMapPointToChatBtn')) $('sharePickedMapPointToChatBtn').onclick = withButtonDiagnostics('sharePickedMapPointToChatBtn', sendPickedMapPointToChat);
@@ -2674,8 +2883,8 @@ function bindUi() {
   if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = withButtonDiagnostics('copyMapDebugBtn', copyMapDebug);
   if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = withButtonDiagnostics('closeMapDebugBtn', () => $('mapDebugDialog').close());
 
-  window.addEventListener('online', () => { recordMapDebug('browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
-  window.addEventListener('offline', () => { recordMapDebug('browser offline'); updateMapDebugUi(true); });
+  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
+  window.addEventListener('offline', () => { activateNoBasemapFallback('browser offline'); updateMapDebugUi(true); });
   window.addEventListener('resize', () => safeInvalidateMap(150, 'resize'));
   window.addEventListener('orientationchange', () => safeInvalidateMap(500, 'orientationchange'));
   document.addEventListener('visibilitychange', () => {
@@ -2705,7 +2914,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.16`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

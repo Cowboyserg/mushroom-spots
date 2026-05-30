@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.15 · Sprint 3.16</p>
+      <p id="appVersion">v0.6.1 · Sprint 4.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -46,6 +46,7 @@
         <h2>Карта</h2>
         <div class="pill-row">
           <span id="mapStatusPill" class="pill">карта запускается</span>
+          <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
           <button id="repairMapBtn" class="secondary small-btn">Починить карту</button>
         </div>
       </div>
@@ -223,8 +224,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.16</h2>
-      <p class="hint">Добавлены локальные люди, быстрый вход под сохранённым именем, локальный вход в группу при плохой связи и кэш участников группы.</p>
+      <h2>Sprint 4.1</h2>
+      <p class="hint">Добавлен слой map-provider: online raster остаётся рабочей подложкой, PMTiles подготовлен как будущий режим, а при недоступной подложке точки и GPS продолжают работать.</p>
     </section>
   </main>
 
@@ -237,7 +238,7 @@
 
   <dialog id="mapDebugDialog" class="wide-dialog">
     <h2>Диагностика карты и API</h2>
-    <p class="hint">Сверху показано: какая кнопка нажата и какой статус у связанного запроса — пендинг, HTTP-статус, готово или ошибка. Ниже остаётся диагностика карты.</p>
+    <p class="hint">Сверху показано состояние map-provider слоя, затем какая кнопка нажата и какой статус у связанного запроса — пендинг, HTTP-статус, готово или ошибка. Ниже остаётся JSON-диагностика карты.</p>
     <pre id="mapDebugText" class="debug-box">Диагностика ещё не собрана.</pre>
     <div class="row">
       <button id="refreshMapDebugBtn" class="secondary">Обновить диагностику</button>

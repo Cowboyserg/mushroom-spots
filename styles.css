@@ -341,3 +341,7 @@ dialog::backdrop { background:#0008; }
 .chat-spot-note { color:var(--text); margin-top:3px; }
 .chat-spot-coords { color:var(--muted); margin-top:5px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .chat-spot-open { color:var(--green2); font-weight:800; margin-top:6px; }
+
+#offlineMapStatusPill.warn { background:#fff1c2; color:#705000; }
+#offlineMapStatusPill.bad { background:#ffd7d7; color:#7a1f1f; }
+#offlineMapStatusPill.on { background:#dff2df; color:#1f612e; }
