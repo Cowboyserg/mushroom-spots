@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mushroom-spots-v0.6.1-sprint4.1';
+const CACHE_NAME = 'mushroom-spots-v0.6.2-sprint4.2';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.
@@ -8,6 +8,7 @@ const APP_SHELL = [
   './index.html',
   './styles.css',
   './app.js',
+  './leaflet-offline-lite.js',
   './manifest.webmanifest',
   './icon.svg',
   './apple-touch-icon.svg'

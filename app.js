@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.6.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -17,6 +17,7 @@ const SUPABASE_TIMEOUT_MS = 12000;
 const OFFLINE_MAP_PACKAGE_META_KEY = 'mushroom_offline_map_package_v1';
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
+const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
 const MAP_PROVIDER_ONLINE_RASTER = 'online-raster';
 const MAP_PROVIDER_OFFLINE_PMTILES = 'offline-pmtiles';
 const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
@@ -718,6 +719,10 @@ function canUseMapRuntime() {
   return Boolean(map && window.L);
 }
 
+function isLeafletOfflineLiteRuntime() {
+  return Boolean(window.L && window.L.__mushroomOfflineLite);
+}
+
 function resetMapTileStats(provider = mapProvider) {
   mapTileStats = {
     provider,
@@ -829,6 +834,10 @@ function activateNoBasemapFallback(reason = 'basemap unavailable') {
 
 function mountOnlineRasterProvider(reason = 'mount online raster') {
   if (!canUseMapRuntime()) return false;
+  if (isLeafletOfflineLiteRuntime()) {
+    activateNoBasemapFallback('online raster requires full Leaflet runtime');
+    return false;
+  }
   removeBaseTileLayer('replace basemap provider');
   resetMapTileStats(MAP_PROVIDER_ONLINE_RASTER);
   baseTileLayer = createOnlineRasterLayer();
@@ -882,6 +891,7 @@ function mountMapProvider(providerId, reason = 'provider selected') {
 
 function selectInitialMapProvider() {
   readOfflinePackageMeta();
+  if (isLeafletOfflineLiteRuntime()) return MAP_PROVIDER_NO_BASEMAP;
   if (!navigator.onLine && offlinePackageStatus !== 'ready') return MAP_PROVIDER_NO_BASEMAP;
   return MAP_PROVIDER_ONLINE_RASTER;
 }
@@ -938,6 +948,7 @@ function getMapDebugSnapshot() {
     providerState: mapProviderSnapshot(),
     mapExists: Boolean(map),
     leafletLoaded: Boolean(window.L),
+    leafletOfflineLite: isLeafletOfflineLiteRuntime(),
     mapSize: map ? map.getSize() : null,
     mapCenter: center ? { lat: Number(center.lat.toFixed(6)), lng: Number(center.lng.toFixed(6)) } : null,
     mapZoom: map ? map.getZoom() : null,
@@ -1237,6 +1248,8 @@ function initMap() {
     recordMapDebug('Leaflet JS is not loaded', mapProviderSnapshot());
     return;
   }
+
+  setMapProviderState({ mapEngine: isLeafletOfflineLiteRuntime() ? MAP_ENGINE_LEAFLET_LITE : MAP_ENGINE_LEAFLET }, isLeafletOfflineLiteRuntime() ? 'local fallback map runtime loaded' : 'full Leaflet runtime loaded');
 
   const mapEl = $('map');
   if (!mapEl) {
@@ -2914,7 +2927,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.2`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

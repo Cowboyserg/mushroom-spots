@@ -345,3 +345,45 @@ dialog::backdrop { background:#0008; }
 #offlineMapStatusPill.warn { background:#fff1c2; color:#705000; }
 #offlineMapStatusPill.bad { background:#ffd7d7; color:#7a1f1f; }
 #offlineMapStatusPill.on { background:#dff2df; color:#1f612e; }
+
+/* Sprint 4.2 local no-basemap runtime. */
+.leaflet-offline-lite {
+  background:#d7dfd5;
+  background-image:
+    linear-gradient(rgba(36,75,47,.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36,75,47,.08) 1px, transparent 1px);
+  background-size:40px 40px;
+}
+.leaflet-offline-lite-empty {
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  color:rgba(18,43,25,.72);
+  font-weight:800;
+  pointer-events:none;
+  z-index:150;
+}
+.leaflet-offline-lite-label {
+  padding:10px 14px;
+  border-radius:16px;
+  background:rgba(255,255,255,.72);
+  box-shadow:0 8px 28px rgba(0,0,0,.12);
+}
+.leaflet-offline-lite-label span {
+  font-size:12px;
+  font-weight:650;
+}
+.leaflet-offline-lite-circle {
+  pointer-events:none;
+}
+.leaflet-offline-lite-polyline {
+  color:#244b2f;
+  opacity:.85;
+}
+.leaflet-offline-lite-popup {
+  min-width:160px;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.22));
+}
