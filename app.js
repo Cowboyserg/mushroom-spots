@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.3';
+const APP_VERSION = '0.6.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -18,9 +18,25 @@ const OFFLINE_MAP_PACKAGE_META_KEY = 'mushroom_offline_map_package_v1';
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
 const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
+const MAP_ENGINE_MAPLIBRE = 'maplibre';
 const MAP_PROVIDER_ONLINE_RASTER = 'online-raster';
 const MAP_PROVIDER_OFFLINE_PMTILES = 'offline-pmtiles';
 const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
+const PMTILES_DEFAULT_URL = './offline.pmtiles';
+const MAPLIBRE_GL_VERSION = '5.24.0';
+const PMTILES_JS_VERSION = '4.4.1';
+const MAPLIBRE_SCRIPT_URLS = [
+  `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.js`,
+  `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.js`
+];
+const MAPLIBRE_CSS_URLS = [
+  `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.css`,
+  `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.css`
+];
+const PMTILES_SCRIPT_URLS = [
+  `https://unpkg.com/pmtiles@${PMTILES_JS_VERSION}/dist/pmtiles.js`,
+  `https://cdn.jsdelivr.net/npm/pmtiles@${PMTILES_JS_VERSION}/dist/pmtiles.js`
+];
 
 const MAP_PROVIDER_LABELS = {
   [MAP_PROVIDER_ONLINE_RASTER]: 'online raster',
@@ -64,6 +80,20 @@ let mapProviderLastReason = 'startup';
 let mapProviderChangedAt = new Date().toISOString();
 let mapDebugEvents = [];
 let mapTileStats = { provider: mapProvider, loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null, startedAt: new Date().toISOString() };
+let pmtilesProtocol = null;
+let pmtilesRuntimeProbe = {
+  url: PMTILES_DEFAULT_URL,
+  status: 'not-run',
+  maplibreLoaded: false,
+  pmtilesLoaded: false,
+  webgl: null,
+  protocolRegistered: false,
+  packageFound: false,
+  header: null,
+  metadata: null,
+  error: null,
+  checkedAt: null
+};
 let apiDebugEvents = [];
 let apiButtonStates = new Map();
 let apiRequestSeq = 0;
@@ -108,6 +138,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanCurrentGroupDbBtn: 'Очистить текущую группу',
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
+  probePmtilesBtn: 'Проверить PMTiles',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -636,6 +667,9 @@ function formatDiagnosticsText() {
   lines.push(`- offline package: ${provider.offlinePackageStatus}`);
   lines.push(`- fallback active: ${provider.fallbackActive}`);
   lines.push(`- reason: ${provider.reason}`);
+  lines.push(`- pmtiles runtime: ${provider.pmtilesRuntime.status}`);
+  lines.push(`- pmtiles file: ${provider.pmtilesRuntime.packageFound ? 'found' : 'not-found/unchecked'}`);
+  lines.push(`- pmtiles url: ${provider.pmtilesRuntime.url}`);
   lines.push('');
   lines.push('КНОПКИ / API');
   lines.push('Формат: кнопка нажата — статус ответа/пендинг.');
@@ -737,9 +771,13 @@ function resetMapTileStats(provider = mapProvider) {
 
 function readOfflinePackageMeta() {
   offlinePackageMeta = safeJsonParse(localStorage.getItem(OFFLINE_MAP_PACKAGE_META_KEY), null);
-  offlinePackageStatus = offlinePackageMeta && offlinePackageMeta.format === 'pmtiles'
-    ? 'metadata-present-runtime-not-enabled'
-    : 'not-installed';
+  if (offlinePackageMeta && offlinePackageMeta.format === 'pmtiles') {
+    offlinePackageStatus = offlinePackageMeta.runtime === 'maplibre-pmtiles-probe'
+      ? 'metadata-ready-runtime-experimental'
+      : 'metadata-present-runtime-not-enabled';
+  } else {
+    offlinePackageStatus = 'not-installed';
+  }
   return offlinePackageMeta;
 }
 
@@ -762,6 +800,19 @@ function mapProviderSnapshot() {
       source: offlinePackageMeta.source || null
     } : null,
     fallbackActive: mapFallbackActive,
+    pmtilesRuntime: {
+      url: pmtilesRuntimeProbe.url,
+      status: pmtilesRuntimeProbe.status,
+      maplibreLoaded: pmtilesRuntimeProbe.maplibreLoaded,
+      pmtilesLoaded: pmtilesRuntimeProbe.pmtilesLoaded,
+      webgl: pmtilesRuntimeProbe.webgl,
+      protocolRegistered: pmtilesRuntimeProbe.protocolRegistered,
+      packageFound: pmtilesRuntimeProbe.packageFound,
+      header: pmtilesRuntimeProbe.header,
+      metadata: pmtilesRuntimeProbe.metadata,
+      error: pmtilesRuntimeProbe.error,
+      checkedAt: pmtilesRuntimeProbe.checkedAt
+    },
     changedAt: mapProviderChangedAt,
     reason: mapProviderLastReason
   };
@@ -790,10 +841,36 @@ function updateOfflineMapStatusPill() {
     setOfflineMapStatus('Карта: офлайн-пакет не установлен', 'warn');
   } else if (offlinePackageStatus === 'metadata-present-runtime-not-enabled') {
     setOfflineMapStatus('Офлайн-пакет найден, runtime ещё не подключён', 'warn');
+  } else if (offlinePackageStatus === 'metadata-ready-runtime-experimental') {
+    setOfflineMapStatus('PMTiles найден, рендер экспериментальный', 'warn');
   } else if (offlinePackageStatus === 'ready') {
     setOfflineMapStatus('Карта: офлайн-пакет готов', 'on');
   } else {
     setOfflineMapStatus(`Офлайн-карта: ${offlinePackageStatus}`, 'warn');
+  }
+}
+
+function setPmtilesRuntimeStatus(text, mode = '') {
+  const pill = $('pmtilesRuntimeStatusPill');
+  if (!pill) return;
+  pill.textContent = text;
+  pill.className = `pill ${mode}`.trim();
+}
+
+function updatePmtilesRuntimeStatusPill() {
+  const status = pmtilesRuntimeProbe.status;
+  if (status === 'ready') {
+    setPmtilesRuntimeStatus('PMTiles: пакет читается', 'on');
+  } else if (status === 'maplibre-ready-no-package') {
+    setPmtilesRuntimeStatus('PMTiles: runtime готов, файла нет', 'warn');
+  } else if (status === 'not-run') {
+    setPmtilesRuntimeStatus('PMTiles: не проверено', 'warn');
+  } else if (status === 'loading-runtime' || status === 'checking-package' || status === 'starting-maplibre') {
+    setPmtilesRuntimeStatus('PMTiles: проверка…', 'warn');
+  } else if (status === 'runtime-failed' || status === 'package-error' || status === 'maplibre-failed') {
+    setPmtilesRuntimeStatus('PMTiles: ошибка проверки', 'bad');
+  } else {
+    setPmtilesRuntimeStatus(`PMTiles: ${status}`, 'warn');
   }
 }
 
@@ -809,6 +886,348 @@ function createOnlineRasterLayer() {
     detectRetina: false,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
   });
+}
+
+function setCurrentPmtilesProbeButtonStatus(status, detail) {
+  if (activeButtonDiagnostics && activeButtonDiagnostics.buttonId === 'probePmtilesBtn') {
+    setButtonApiStatus(activeButtonDiagnostics, status, detail);
+  }
+}
+
+function setPmtilesProbeState(patch = {}, reason = 'pmtiles probe update') {
+  pmtilesRuntimeProbe = {
+    ...pmtilesRuntimeProbe,
+    ...patch,
+    checkedAt: new Date().toISOString()
+  };
+  recordMapDebug(reason, { pmtilesRuntime: pmtilesRuntimeProbe });
+  updatePmtilesRuntimeStatusPill();
+}
+
+function hasWebGLSupport() {
+  const canvas = document.createElement('canvas');
+  try {
+    return Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+  } catch (err) {
+    return false;
+  }
+}
+
+function loadScriptFromCandidates(urls, testFn, label) {
+  if (testFn()) return Promise.resolve('already-loaded');
+
+  const tryOne = (index) => new Promise((resolve, reject) => {
+    if (index >= urls.length) {
+      reject(new Error(`${label} failed to load from all candidates`));
+      return;
+    }
+
+    const url = urls[index];
+    const existing = Array.from(document.scripts).find((script) => script.src === url);
+    if (existing && testFn()) {
+      resolve(url);
+      return;
+    }
+
+    const script = existing || document.createElement('script');
+    let done = false;
+    const timeout = window.setTimeout(() => {
+      if (done) return;
+      done = true;
+      script.onerror = null;
+      script.onload = null;
+      reject(new Error(`${label} timeout: ${url}`));
+    }, 12000);
+
+    script.onload = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timeout);
+      if (testFn()) {
+        resolve(url);
+      } else {
+        tryOne(index + 1).then(resolve, reject);
+      }
+    };
+    script.onerror = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timeout);
+      tryOne(index + 1).then(resolve, reject);
+    };
+
+    if (!existing) {
+      script.src = url;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      document.head.appendChild(script);
+    }
+  });
+
+  return tryOne(0);
+}
+
+function loadCssFromCandidates(urls) {
+  for (const url of urls) {
+    const existing = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).find((link) => link.href === url);
+    if (existing) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = url;
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+    return;
+  }
+}
+
+async function ensureExperimentalMapLibreRuntime() {
+  loadCssFromCandidates(MAPLIBRE_CSS_URLS);
+  await loadScriptFromCandidates(MAPLIBRE_SCRIPT_URLS, () => Boolean(window.maplibregl && window.maplibregl.Map), 'MapLibre GL JS');
+  await loadScriptFromCandidates(PMTILES_SCRIPT_URLS, () => Boolean(window.pmtiles && window.pmtiles.PMTiles && window.pmtiles.Protocol), 'PMTiles JS');
+
+  if (!pmtilesProtocol && window.maplibregl && window.pmtiles) {
+    pmtilesProtocol = new window.pmtiles.Protocol();
+    window.maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile);
+  }
+
+  return {
+    maplibreLoaded: Boolean(window.maplibregl && window.maplibregl.Map),
+    pmtilesLoaded: Boolean(window.pmtiles && window.pmtiles.PMTiles),
+    protocolRegistered: Boolean(pmtilesProtocol)
+  };
+}
+
+function headerNumber(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePmtilesHeader(header = {}) {
+  return {
+    specVersion: header.specVersion ?? header.version ?? null,
+    rootDirectoryOffset: header.rootDirectoryOffset ?? null,
+    rootDirectoryLength: header.rootDirectoryLength ?? null,
+    jsonMetadataOffset: header.jsonMetadataOffset ?? null,
+    jsonMetadataLength: header.jsonMetadataLength ?? null,
+    leafDirectoryOffset: header.leafDirectoryOffset ?? null,
+    leafDirectoryLength: header.leafDirectoryLength ?? null,
+    tileDataOffset: header.tileDataOffset ?? null,
+    tileDataLength: header.tileDataLength ?? null,
+    addressedTilesCount: header.addressedTilesCount ?? null,
+    tileEntriesCount: header.tileEntriesCount ?? null,
+    tileContentsCount: header.tileContentsCount ?? null,
+    clustered: header.clustered ?? null,
+    internalCompression: header.internalCompression ?? null,
+    tileCompression: header.tileCompression ?? null,
+    tileType: header.tileType ?? null,
+    minZoom: header.minZoom ?? null,
+    maxZoom: header.maxZoom ?? null,
+    minLon: header.minLon ?? null,
+    minLat: header.minLat ?? null,
+    maxLon: header.maxLon ?? null,
+    maxLat: header.maxLat ?? null,
+    centerZoom: header.centerZoom ?? null,
+    centerLon: header.centerLon ?? null,
+    centerLat: header.centerLat ?? null
+  };
+}
+
+function summarizePmtilesMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  return {
+    name: metadata.name || metadata.id || null,
+    description: metadata.description || null,
+    attribution: metadata.attribution || null,
+    vectorLayers: Array.isArray(metadata.vector_layers) ? metadata.vector_layers.map((layer) => layer.id || layer.name).filter(Boolean).slice(0, 24) : null,
+    keys: Object.keys(metadata).slice(0, 24)
+  };
+}
+
+async function startMapLibreSmokeTest() {
+  if (!window.maplibregl || !window.maplibregl.Map) throw new Error('MapLibre runtime is not loaded');
+  if (!hasWebGLSupport()) throw new Error('WebGL is not available on this browser');
+
+  const probeEl = document.createElement('div');
+  probeEl.setAttribute('aria-hidden', 'true');
+  probeEl.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:96px;height:96px;overflow:hidden;pointer-events:none;';
+  document.body.appendChild(probeEl);
+
+  await new Promise((resolve, reject) => {
+    let finished = false;
+    const timeout = window.setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      reject(new Error('MapLibre smoke test timeout'));
+    }, 8000);
+
+    let probeMap = null;
+    try {
+      probeMap = new window.maplibregl.Map({
+        container: probeEl,
+        style: {
+          version: 8,
+          sources: {},
+          layers: [{ id: 'probe-background', type: 'background', paint: { 'background-color': '#eef2e8' } }]
+        },
+        center: [24.1052, 56.9496],
+        zoom: 9,
+        interactive: false,
+        attributionControl: false,
+        fadeDuration: 0
+      });
+    } catch (err) {
+      window.clearTimeout(timeout);
+      reject(err);
+      return;
+    }
+
+    probeMap.once('load', () => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timeout);
+      try { probeMap.remove(); } catch (err) { console.warn('MapLibre probe remove failed', err); }
+      probeEl.remove();
+      resolve();
+    });
+    probeMap.once('error', (event) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timeout);
+      try { probeMap.remove(); } catch (err) { console.warn('MapLibre probe remove failed', err); }
+      probeEl.remove();
+      reject(event.error || new Error('MapLibre smoke test error'));
+    });
+  });
+}
+
+async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
+  let sizeBytes = null;
+  try {
+    const head = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    if (head.status === 404) {
+      localStorage.removeItem(OFFLINE_MAP_PACKAGE_META_KEY);
+      throw Object.assign(new Error(`${url} not found`), { code: 'PMTILES_NOT_FOUND', status: 404 });
+    }
+    if (!head.ok) throw Object.assign(new Error(`HEAD ${url} failed: HTTP ${head.status}`), { status: head.status });
+    sizeBytes = headerNumber(head.headers.get('content-length'));
+  } catch (err) {
+    if (err?.code === 'PMTILES_NOT_FOUND') throw err;
+    recordMapDebug('PMTiles HEAD check failed; trying PMTiles reader', err?.message || String(err));
+  }
+
+  const archive = new window.pmtiles.PMTiles(url);
+  const header = await archive.getHeader();
+  let metadata = null;
+  try {
+    metadata = await archive.getMetadata();
+  } catch (err) {
+    recordMapDebug('PMTiles metadata read failed', err?.message || String(err));
+  }
+
+  const normalizedHeader = normalizePmtilesHeader(header);
+  const summarizedMetadata = summarizePmtilesMetadata(metadata);
+  const meta = {
+    id: `pmtiles:${url}`,
+    name: summarizedMetadata?.name || url.split('/').pop() || 'offline.pmtiles',
+    format: 'pmtiles',
+    runtime: 'maplibre-pmtiles-probe',
+    source: 'same-origin-static-file',
+    url,
+    sizeBytes,
+    bbox: [normalizedHeader.minLon, normalizedHeader.minLat, normalizedHeader.maxLon, normalizedHeader.maxLat].every((value) => value != null)
+      ? [normalizedHeader.minLon, normalizedHeader.minLat, normalizedHeader.maxLon, normalizedHeader.maxLat]
+      : null,
+    minZoom: normalizedHeader.minZoom,
+    maxZoom: normalizedHeader.maxZoom,
+    center: normalizedHeader.centerLon != null && normalizedHeader.centerLat != null
+      ? { lon: normalizedHeader.centerLon, lat: normalizedHeader.centerLat, zoom: normalizedHeader.centerZoom }
+      : null,
+    tileType: normalizedHeader.tileType,
+    tileCompression: normalizedHeader.tileCompression,
+    metadata: summarizedMetadata,
+    installedAt: new Date().toISOString()
+  };
+  localStorage.setItem(OFFLINE_MAP_PACKAGE_META_KEY, JSON.stringify(meta));
+  offlinePackageMeta = meta;
+  offlinePackageStatus = 'metadata-ready-runtime-experimental';
+  return { header: normalizedHeader, metadata: summarizedMetadata, meta };
+}
+
+async function runPmtilesRuntimeProbe() {
+  const url = PMTILES_DEFAULT_URL;
+  setPmtilesProbeState({
+    url,
+    status: 'loading-runtime',
+    maplibreLoaded: false,
+    pmtilesLoaded: false,
+    webgl: hasWebGLSupport(),
+    protocolRegistered: false,
+    packageFound: false,
+    header: null,
+    metadata: null,
+    error: null
+  }, 'PMTiles runtime probe started');
+
+  try {
+    const runtime = await ensureExperimentalMapLibreRuntime();
+    setPmtilesProbeState({
+      status: 'starting-maplibre',
+      maplibreLoaded: runtime.maplibreLoaded,
+      pmtilesLoaded: runtime.pmtilesLoaded,
+      protocolRegistered: runtime.protocolRegistered,
+      webgl: hasWebGLSupport()
+    }, 'MapLibre/PMTiles runtime loaded');
+
+    await startMapLibreSmokeTest();
+
+    setPmtilesProbeState({ status: 'checking-package' }, 'MapLibre smoke test passed; checking PMTiles package');
+    try {
+      const result = await readPmtilesPackage(url);
+      setPmtilesProbeState({
+        status: 'ready',
+        packageFound: true,
+        header: result.header,
+        metadata: result.metadata,
+        error: null
+      }, 'PMTiles package header/metadata read');
+      setMapProviderState({ offlinePackageStatus: 'metadata-ready-runtime-experimental' }, 'PMTiles package metadata ready; Leaflet remains primary');
+      setCurrentPmtilesProbeButtonStatus('готово', 'PMTiles header/metadata прочитаны');
+      updateMapDebugUi(true);
+      return true;
+    } catch (err) {
+      const notFound = err?.code === 'PMTILES_NOT_FOUND' || err?.status === 404;
+      if (notFound) {
+        offlinePackageStatus = 'not-installed';
+        offlinePackageMeta = null;
+        setPmtilesProbeState({
+          status: 'maplibre-ready-no-package',
+          packageFound: false,
+          error: `${url} not found`
+        }, 'MapLibre/PMTiles runtime ready, but offline.pmtiles is not installed');
+        setMapProviderState({ offlinePackageStatus: 'not-installed' }, 'PMTiles runtime ready; package missing');
+        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, offline.pmtiles не найден');
+        updateMapDebugUi(true);
+        return false;
+      }
+      setPmtilesProbeState({ status: 'package-error', error: err?.message || String(err) }, 'PMTiles package read failed');
+      setCurrentPmtilesProbeButtonStatus('ошибка', err?.message || String(err));
+      updateMapDebugUi(true);
+      return false;
+    }
+  } catch (err) {
+    setPmtilesProbeState({
+      status: window.maplibregl ? 'maplibre-failed' : 'runtime-failed',
+      maplibreLoaded: Boolean(window.maplibregl && window.maplibregl.Map),
+      pmtilesLoaded: Boolean(window.pmtiles && window.pmtiles.PMTiles),
+      protocolRegistered: Boolean(pmtilesProtocol),
+      webgl: hasWebGLSupport(),
+      error: err?.message || String(err)
+    }, 'PMTiles runtime probe failed');
+    setCurrentPmtilesProbeButtonStatus('ошибка', err?.message || String(err));
+    updateMapDebugUi(true);
+    return false;
+  }
 }
 
 function getRenderedTileCounts() {
@@ -1017,6 +1436,7 @@ function updateMapDebugUi(forceText = false) {
   const snapshot = getMapDebugSnapshot();
 
   updateOfflineMapStatusPill();
+  updatePmtilesRuntimeStatusPill();
 
   if (!snapshot.leafletLoaded) {
     setMapStatus('Карта: движок не загружен', 'bad');
@@ -1050,6 +1470,8 @@ function updateMapDebugUi(forceText = false) {
       hint.textContent = 'Интернет выключен. Приложение удерживает уже загруженные тайлы, чтобы карта не исчезала до перезагрузки. Новые участки подложки без офлайн-пакета не догрузятся, но точки и GPS продолжают работать.';
     } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
       hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустой карты.';
+    } else if (snapshot.providerState.offlinePackageStatus === 'metadata-ready-runtime-experimental') {
+      hint.textContent = 'Файл offline.pmtiles читается экспериментальным MapLibre/PMTiles probe, но основная карта пока остаётся на Leaflet online-raster до отдельной миграции рендера.';
     } else if (snapshot.tileStats.error > 0) {
       hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
     } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
@@ -2932,6 +3354,7 @@ function bindUi() {
   if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').onclick = withButtonDiagnostics('cleanCurrentGroupDbBtn', cleanCurrentGroupDbRows);
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
+  if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
   if ($('mapDebugBtn')) $('mapDebugBtn').onclick = withButtonDiagnostics('mapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
   if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = withButtonDiagnostics('refreshMapDebugBtn', () => updateMapDebugUi(true));
@@ -2970,7 +3393,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.4`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

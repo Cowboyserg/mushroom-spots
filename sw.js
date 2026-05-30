@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mushroom-spots-v0.6.3-sprint4.3';
+const CACHE_NAME = 'mushroom-spots-v0.6.4-sprint4.4';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.
@@ -35,10 +35,16 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
 
   // Critical rule:
-  // Let the browser handle Supabase, map tiles, CDN files, and every non-GET request.
-  // This prevents "FetchEvent.respondWith / Failed to fetch" caused by the service worker
-  // trying to cache API calls or POST bodies.
-  if (req.method !== 'GET' || url.origin !== self.location.origin) {
+  // Let the browser handle Supabase, map tiles, CDN files, PMTiles range reads,
+  // and every non-GET request. This prevents "FetchEvent.respondWith / Failed to fetch"
+  // caused by the service worker trying to cache API calls, POST bodies, or partial
+  // byte-range responses from large offline map packages.
+  if (
+    req.method !== 'GET' ||
+    url.origin !== self.location.origin ||
+    req.headers.has('range') ||
+    url.pathname.endsWith('.pmtiles')
+  ) {
     return;
   }
 

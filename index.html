@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.3 · Sprint 4.3</p>
+      <p id="appVersion">v0.6.4 · Sprint 4.4</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -47,13 +47,15 @@
         <div class="pill-row">
           <span id="mapStatusPill" class="pill">карта запускается</span>
           <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
+          <span id="pmtilesRuntimeStatusPill" class="pill warn">PMTiles: не проверено</span>
+          <button id="probePmtilesBtn" class="secondary small-btn">Проверить PMTiles</button>
           <button id="repairMapBtn" class="secondary small-btn">Починить карту</button>
         </div>
       </div>
       <div class="map-wrap">
         <div id="map"></div>
       </div>
-      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”.</p>
+      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Для эксперимента положи файл <code>offline.pmtiles</code> рядом с app.js и нажми “Проверить PMTiles”.</p>
     </section>
 
     <section class="card">
@@ -224,8 +226,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.3</h2>
-      <p class="hint">Добавлена стабильность перехода online → offline: уже загруженная карта не исчезает сразу, а точки, GPS и чат-точки продолжают работать даже без новой подгрузки тайлов.</p>
+      <h2>Sprint 4.4</h2>
+      <p class="hint">Добавлен экспериментальный MapLibre/PMTiles runtime probe: основная Leaflet-карта не заменяется, но приложение умеет проверить движок, pmtiles:// protocol и файл ./offline.pmtiles рядом с приложением.</p>
     </section>
   </main>
 
