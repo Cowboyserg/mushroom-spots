@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.8 · Sprint 4.8</p>
+      <p id="appVersion">v0.6.9 · Sprint 4.9</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -49,6 +49,7 @@
           <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
           <span id="pmtilesRuntimeStatusPill" class="pill warn">PMTiles: не проверено</span>
           <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить manifest</button>
+          <button id="chooseLocalPmtilesBtn" class="secondary small-btn">Выбрать локальный PMTiles</button>
           <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный PMTiles</button>
           <button id="previewPmtilesBtn" class="secondary small-btn">Показать PMTiles preview</button>
           <button id="repairMapBtn" class="secondary small-btn">Починить карту</button>
@@ -60,10 +61,12 @@
       <div class="offline-package-panel">
         <label for="offlinePackageSelect">PMTiles пакет</label>
         <select id="offlinePackageSelect" aria-label="Выбор PMTiles пакета"></select>
+        <input id="localPmtilesFileInput" type="file" accept=".pmtiles,application/octet-stream" hidden />
         <p class="hint" id="offlinePackageManifestStatus">Manifest: не загружен.</p>
+        <p class="hint" id="localPmtilesFileStatus">Локальный файл: не выбран.</p>
         <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
       </div>
-      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Офлайн-карты теперь описываются в <code>offline-map-packages.json</code>. В ZIP входит только маленький <code>offline-test.pmtiles</code> для диагностики; реальные большие карты добавляй как GitHub Release asset или внешний URL.</p>
+      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие PMTiles не кладём в repo: их можно скачать из Release asset и выбрать локально через системный файл-пикер. Локальный файл хранится только в текущей сессии PWA.</p>
       <div id="pmtilesPreviewPanel" class="pmtiles-preview-panel" hidden>
         <div class="section-title compact-title">
           <h3>PMTiles preview</h3>
@@ -242,8 +245,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.8</h2>
-      <p class="hint">Добавлена подробная диагностика PMTiles-пакета: приложение проверяет выбранный URL, HTTP HEAD, byte-range чтение и показывает подсказку, если remote package похож на CORS/Range/redirect проблему. Основная карта остаётся Leaflet online-raster.</p>
+      <h2>Sprint 4.9</h2>
+      <p class="hint">Добавлен выбор локального .pmtiles файла через системный файл-пикер. Приложение читает PMTiles из File/Blob slice без GitHub CORS/Range, проверяет header/metadata и может запускать экспериментальный MapLibre preview. Файл не сохраняется в repo и после перезапуска PWA выбирается заново.</p>
     </section>
   </main>
 

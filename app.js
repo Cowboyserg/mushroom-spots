@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.8';
+const APP_VERSION = '0.6.9';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -93,6 +93,17 @@ let offlineMapManifest = {
   error: null,
   loadedAt: null
 };
+let localPmtilesFileState = {
+  status: 'not-selected',
+  file: null,
+  packageId: null,
+  key: null,
+  name: null,
+  sizeBytes: null,
+  lastModified: null,
+  selectedAt: null,
+  error: null
+};
 let pmtilesPreviewState = {
   status: 'not-run',
   visible: false,
@@ -161,6 +172,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
   loadOfflineManifestBtn: 'Обновить manifest карт',
+  chooseLocalPmtilesBtn: 'Выбрать локальный PMTiles',
   probePmtilesBtn: 'Проверить выбранный PMTiles',
   previewPmtilesBtn: 'Показать PMTiles preview',
   exportAllBtn: 'Скачать backup JSON',
@@ -694,6 +706,7 @@ function formatDiagnosticsText() {
   lines.push(`- pmtiles runtime: ${provider.pmtilesRuntime.status}`);
   lines.push(`- pmtiles file: ${provider.pmtilesRuntime.packageFound ? 'found' : 'not-found/unchecked'}`);
   lines.push(`- pmtiles url: ${provider.pmtilesRuntime.url}`);
+  lines.push(`- pmtiles local file: ${provider.localPmtilesFile.status === 'selected' ? `${provider.localPmtilesFile.name} / ${formatBytes(provider.localPmtilesFile.sizeBytes)}` : provider.localPmtilesFile.status}`);
   if (provider.pmtilesRuntime.error) lines.push(`- pmtiles error: ${provider.pmtilesRuntime.error}`);
   if (provider.pmtilesRuntime.diagnostics) {
     const diag = provider.pmtilesRuntime.diagnostics;
@@ -849,6 +862,7 @@ function mapProviderSnapshot() {
       diagnostics: pmtilesRuntimeProbe.diagnostics,
       checkedAt: pmtilesRuntimeProbe.checkedAt
     },
+    localPmtilesFile: getLocalPmtilesFileSnapshot(),
     pmtilesPreview: {
       status: pmtilesPreviewState.status,
       visible: pmtilesPreviewState.visible,
@@ -980,7 +994,7 @@ function updatePmtilesPreviewUi() {
   panel.hidden = !pmtilesPreviewState.visible;
 
   if (pmtilesPreviewState.status === 'loaded') {
-    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный raster PMTiles (${getActivePmtilesPackageName()}). Это отдельный preview, основная карта остаётся Leaflet.`;
+    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()}). Это отдельный preview, основная карта остаётся Leaflet.`;
   } else if (pmtilesPreviewState.status === 'loading') {
     statusEl.textContent = 'PMTiles preview: загрузка MapLibre и подключение pmtiles:// source…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
@@ -1006,6 +1020,59 @@ function registerPmtilesArchiveForUrl(url = PMTILES_DEFAULT_URL) {
     try { pmtilesProtocol.add(archive); } catch (err) { recordMapDebug('PMTiles protocol add failed', err?.message || String(err)); }
   }
   return { archive, absoluteUrl, protocolUrl: `pmtiles://${absoluteUrl}` };
+}
+
+function isLocalPmtilesPackage(pkg = null) {
+  return Boolean(pkg && pkg.sourceType === 'local-file-session' && pkg.fileRef === true);
+}
+
+function getLocalPmtilesFileSnapshot() {
+  return {
+    status: localPmtilesFileState.status,
+    packageId: localPmtilesFileState.packageId,
+    key: localPmtilesFileState.key,
+    name: localPmtilesFileState.name,
+    sizeBytes: localPmtilesFileState.sizeBytes,
+    lastModified: localPmtilesFileState.lastModified,
+    selectedAt: localPmtilesFileState.selectedAt,
+    error: localPmtilesFileState.error
+  };
+}
+
+function createLocalPmtilesSource(file, key) {
+  return {
+    getKey() {
+      return key;
+    },
+    async getBytes(offset, length, signal) {
+      if (signal?.aborted) throw new DOMException('PMTiles local file read aborted', 'AbortError');
+      const start = Number(offset);
+      const size = Number(length);
+      if (!Number.isFinite(start) || !Number.isFinite(size) || start < 0 || size < 0) {
+        throw new Error(`Invalid PMTiles local byte range: offset=${offset}, length=${length}`);
+      }
+      const data = await file.slice(start, start + size).arrayBuffer();
+      return { data };
+    }
+  };
+}
+
+function registerPmtilesArchiveForPackage(packageInfo = getActiveOfflineMapPackage()) {
+  if (!window.pmtiles || !window.pmtiles.PMTiles || !pmtilesProtocol) return null;
+  if (isLocalPmtilesPackage(packageInfo)) {
+    const file = localPmtilesFileState.file;
+    if (!file || localPmtilesFileState.packageId !== packageInfo.id) {
+      throw new Error('Локальный PMTiles-файл не выбран в этой сессии. Выбери файл заново.');
+    }
+    const key = localPmtilesFileState.key || `local-pmtiles-${Date.now()}`;
+    const source = createLocalPmtilesSource(file, key);
+    const archive = new window.pmtiles.PMTiles(source);
+    if (typeof pmtilesProtocol.add === 'function') {
+      try { pmtilesProtocol.add(archive); } catch (err) { recordMapDebug('Local PMTiles protocol add failed', err?.message || String(err)); }
+    }
+    return { archive, absoluteUrl: key, protocolUrl: `pmtiles://${key}`, local: true };
+  }
+  return registerPmtilesArchiveForUrl(packageInfo?.url || PMTILES_DEFAULT_URL);
 }
 
 function defaultOfflineMapPackage() {
@@ -1041,7 +1108,9 @@ function normalizeOfflineMapPackage(pkg = {}, index = 0) {
     required: Boolean(pkg.required),
     description: pkg.description || null,
     releaseTag: pkg.releaseTag || null,
-    checksum: pkg.checksum || null
+    checksum: pkg.checksum || null,
+    fileRef: Boolean(pkg.fileRef),
+    localSession: Boolean(pkg.localSession)
   };
 }
 
@@ -1081,8 +1150,11 @@ function getOfflineMapManifestSnapshot() {
       version: pkg.version,
       sizeBytes: pkg.sizeBytes,
       enabled: pkg.enabled,
-      role: pkg.role
-    }))
+      role: pkg.role,
+      fileRef: Boolean(pkg.fileRef),
+      localSession: Boolean(pkg.localSession)
+    })),
+    localFile: getLocalPmtilesFileSnapshot()
   };
 }
 
@@ -1146,6 +1218,7 @@ function renderOfflineMapPackageUi() {
       status.textContent = 'Manifest: не загружен. Доступен встроенный mini sample.';
     }
   }
+  renderLocalPmtilesFileUi();
   renderPmtilesProbeDetails();
   updateMapDebugUi(false);
 }
@@ -1157,7 +1230,11 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     return null;
   }
   offlineMapManifest.selectedPackageId = pkg.id;
-  localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, pkg.id);
+  if (isLocalPmtilesPackage(pkg)) {
+    localStorage.removeItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+  } else {
+    localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, pkg.id);
+  }
   pmtilesRuntimeProbe = {
     ...pmtilesRuntimeProbe,
     url: pkg.url,
@@ -1191,6 +1268,78 @@ function selectOfflineMapPackage(packageId, userAction = false) {
   return pkg;
 }
 
+function renderLocalPmtilesFileUi() {
+  const status = $('localPmtilesFileStatus');
+  if (!status) return;
+  if (localPmtilesFileState.status === 'selected') {
+    const modified = localPmtilesFileState.lastModified ? new Date(localPmtilesFileState.lastModified).toLocaleString('ru-RU') : 'дата неизвестна';
+    status.textContent = `Локальный файл: ${localPmtilesFileState.name} · ${formatBytes(localPmtilesFileState.sizeBytes)} · выбран в этой сессии · изменён ${modified}. После перезапуска PWA файл нужно выбрать заново.`;
+  } else if (localPmtilesFileState.status === 'error') {
+    status.textContent = `Локальный файл: ошибка — ${localPmtilesFileState.error || 'неизвестно'}`;
+  } else {
+    status.textContent = 'Локальный файл: не выбран. Можно скачать .pmtiles из Release asset и выбрать его здесь, без CORS/Range-запросов к GitHub.';
+  }
+}
+
+function makeLocalPmtilesPackage(file) {
+  const safeName = String(file.name || 'local.pmtiles').trim() || 'local.pmtiles';
+  const packageId = `local-file-${Date.now()}`;
+  const key = `${packageId}-${Math.random().toString(16).slice(2)}`;
+  localPmtilesFileState = {
+    status: 'selected',
+    file,
+    packageId,
+    key,
+    name: safeName,
+    sizeBytes: file.size || null,
+    lastModified: file.lastModified || null,
+    selectedAt: new Date().toISOString(),
+    error: null
+  };
+  return {
+    id: packageId,
+    name: `Локальный файл: ${safeName}`,
+    url: `local-file://${key}/${encodeURIComponent(safeName)}`,
+    sourceType: 'local-file-session',
+    role: 'local-user-file',
+    version: null,
+    sizeBytes: file.size || null,
+    bounds: null,
+    minZoom: null,
+    maxZoom: null,
+    enabled: true,
+    required: false,
+    description: 'Локально выбранный PMTiles-файл. Хранится только в текущей сессии браузера.',
+    releaseTag: null,
+    checksum: null,
+    fileRef: true,
+    localSession: true
+  };
+}
+
+async function selectLocalPmtilesFile(file) {
+  try {
+    if (!file) return null;
+    if (!/\.pmtiles$/i.test(file.name || '')) throw new Error('Выбери файл с расширением .pmtiles');
+    const pkg = makeLocalPmtilesPackage(file);
+    offlineMapManifest.packages = [pkg, ...(offlineMapManifest.packages || []).filter((item) => !isLocalPmtilesPackage(item))];
+    offlineMapManifest.selectedPackageId = pkg.id;
+    if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-session';
+    selectOfflineMapPackage(pkg.id, true);
+    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)}`);
+    recordMapDebug('local PMTiles file selected', getLocalPmtilesFileSnapshot());
+    renderOfflineMapPackageUi();
+    updateMapDebugUi(true);
+    return pkg;
+  } catch (err) {
+    localPmtilesFileState = { ...localPmtilesFileState, status: 'error', error: err?.message || String(err) };
+    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'ошибка', localPmtilesFileState.error);
+    renderLocalPmtilesFileUi();
+    updateMapDebugUi(true);
+    return null;
+  }
+}
+
 async function loadOfflineMapManifest(userAction = false) {
   offlineMapManifest = {
     ...offlineMapManifest,
@@ -1206,8 +1355,10 @@ async function loadOfflineMapManifest(userAction = false) {
     const res = await fetch(OFFLINE_MAP_MANIFEST_URL, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
+    const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
     const packages = ensureSamplePackage(Array.isArray(json.packages) ? json.packages : []);
-    const savedSelectedId = localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+    if (localPackage && localPmtilesFileState.file) packages.unshift(localPackage);
+    const savedSelectedId = localPackage ? localPackage.id : localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
     const selectedPackage = packages.find((pkg) => pkg.id === savedSelectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled) || defaultOfflineMapPackage();
     offlineMapManifest = {
       url: OFFLINE_MAP_MANIFEST_URL,
@@ -1251,6 +1402,48 @@ async function loadOfflineMapManifest(userAction = false) {
 function isRasterPmtilesTileType(tileType) {
   const normalized = String(tileType ?? '').toLowerCase();
   return ['2', '3', '4', '5', 'png', 'jpeg', 'jpg', 'webp', 'avif'].includes(normalized);
+}
+
+function isVectorPmtilesTileType(tileType) {
+  const normalized = String(tileType ?? '').toLowerCase();
+  return ['1', 'mvt', 'pbf', 'vector', 'vector-mvt'].includes(normalized);
+}
+
+function createPmtilesRasterPreviewStyle(protocolUrl) {
+  return {
+    version: 8,
+    sources: {
+      'pmtiles-preview': {
+        type: 'raster',
+        url: protocolUrl,
+        tileSize: 256
+      }
+    },
+    layers: [
+      { id: 'pmtiles-preview-background', type: 'background', paint: { 'background-color': '#eef2e8' } },
+      { id: 'pmtiles-preview-raster', type: 'raster', source: 'pmtiles-preview', paint: { 'raster-opacity': 0.92 } }
+    ]
+  };
+}
+
+function createPmtilesVectorPreviewStyle(protocolUrl) {
+  return {
+    version: 8,
+    sources: {
+      'pmtiles-preview': {
+        type: 'vector',
+        url: protocolUrl
+      }
+    },
+    layers: [
+      { id: 'pmtiles-preview-background', type: 'background', paint: { 'background-color': '#f2efe9' } },
+      { id: 'pmtiles-preview-water', type: 'fill', source: 'pmtiles-preview', 'source-layer': 'water', paint: { 'fill-color': '#b9d7ea', 'fill-opacity': 0.9 } },
+      { id: 'pmtiles-preview-landuse', type: 'fill', source: 'pmtiles-preview', 'source-layer': 'landuse', paint: { 'fill-color': '#d7e8c7', 'fill-opacity': 0.55 } },
+      { id: 'pmtiles-preview-buildings', type: 'fill', source: 'pmtiles-preview', 'source-layer': 'buildings', minzoom: 12, paint: { 'fill-color': '#d8c3a5', 'fill-opacity': 0.65 } },
+      { id: 'pmtiles-preview-roads', type: 'line', source: 'pmtiles-preview', 'source-layer': 'roads', paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.4, 12, 1.6, 16, 5] } },
+      { id: 'pmtiles-preview-roads-casing', type: 'line', source: 'pmtiles-preview', 'source-layer': 'roads', paint: { 'line-color': '#b8a98c', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.2, 12, 0.8, 16, 2] } }
+    ]
+  };
 }
 
 async function showPmtilesPreviewMap() {
@@ -1297,7 +1490,9 @@ async function showPmtilesPreviewMap() {
     }
     container.innerHTML = '';
 
-    if (!isRasterPmtilesTileType(result.meta?.tileType)) {
+    const isRasterPreview = isRasterPmtilesTileType(result.meta?.tileType);
+    const isVectorPreview = isVectorPmtilesTileType(result.meta?.tileType);
+    if (!isRasterPreview && !isVectorPreview) {
       setPmtilesPreviewState({
         status: 'metadata-only',
         visible: true,
@@ -1305,18 +1500,20 @@ async function showPmtilesPreviewMap() {
         styleMode: 'metadata-only',
         error: null,
         loadedAt: new Date().toISOString()
-      }, 'PMTiles preview skipped for non-raster package');
-      setCurrentPmtilesPreviewButtonStatus('готово', 'пакет читается, preview для vector tiles будет отдельно');
+      }, 'PMTiles preview skipped for unknown tile type');
+      setCurrentPmtilesPreviewButtonStatus('готово', 'пакет читается, но tile type не поддержан preview');
       updateMapDebugUi(true);
       return true;
     }
 
-    const registration = registerPmtilesArchiveForUrl(activeUrl);
+    const registration = registerPmtilesArchiveForPackage(activePackage);
     const protocolUrl = registration?.protocolUrl || `pmtiles://${getAbsolutePmtilesUrl(activeUrl)}`;
     const center = result.meta?.center && Number.isFinite(result.meta.center.lon) && Number.isFinite(result.meta.center.lat)
       ? [result.meta.center.lon, result.meta.center.lat]
       : [0, 0];
-    const zoom = Number.isFinite(result.meta?.center?.zoom) ? result.meta.center.zoom : 0;
+    const zoom = Number.isFinite(result.meta?.center?.zoom) ? result.meta.center.zoom : (isVectorPreview ? 10 : 0);
+    const style = isVectorPreview ? createPmtilesVectorPreviewStyle(protocolUrl) : createPmtilesRasterPreviewStyle(protocolUrl);
+    const styleMode = isVectorPreview ? 'vector-source-url' : 'raster-source-url';
 
     await new Promise((resolve, reject) => {
       let finished = false;
@@ -1329,24 +1526,11 @@ async function showPmtilesPreviewMap() {
       try {
         pmtilesPreviewMap = new window.maplibregl.Map({
           container,
-          style: {
-            version: 8,
-            sources: {
-              'mini-pmtiles': {
-                type: 'raster',
-                url: protocolUrl,
-                tileSize: 256
-              }
-            },
-            layers: [
-              { id: 'pmtiles-preview-background', type: 'background', paint: { 'background-color': '#eef2e8' } },
-              { id: 'mini-pmtiles-raster', type: 'raster', source: 'mini-pmtiles', paint: { 'raster-opacity': 0.92 } }
-            ]
-          },
+          style,
           center,
           zoom,
           minZoom: 0,
-          maxZoom: 2,
+          maxZoom: Number.isFinite(result.meta?.maxZoom) ? result.meta.maxZoom : (isVectorPreview ? 16 : 2),
           interactive: true,
           attributionControl: false,
           fadeDuration: 0
@@ -1358,7 +1542,7 @@ async function showPmtilesPreviewMap() {
       }
 
       pmtilesPreviewMap.once('load', () => {
-        setPmtilesPreviewState({ status: 'source-loaded', visible: true, styleMode: 'raster-source-url' }, 'PMTiles preview MapLibre load event');
+        setPmtilesPreviewState({ status: 'source-loaded', visible: true, styleMode }, 'PMTiles preview MapLibre load event');
       });
 
       pmtilesPreviewMap.once('idle', () => {
@@ -1379,7 +1563,7 @@ async function showPmtilesPreviewMap() {
     setPmtilesPreviewState({
       status: 'loaded',
       visible: true,
-      styleMode: 'raster-source-url',
+      styleMode,
       error: null,
       loadedAt: new Date().toISOString()
     }, 'PMTiles preview rendered');
@@ -1635,6 +1819,51 @@ function inferPmtilesDiagnosticsHint(diag) {
   return null;
 }
 
+async function runLocalPmtilesFileDiagnostics(file, packageInfo = null) {
+  const bytes = new Uint8Array(await file.slice(0, 127).arrayBuffer());
+  const magic = bytesToAscii(bytes, 12);
+  const ok = bytes.byteLength >= 127 && /^PMTiles/.test(magic || '');
+  return {
+    url: packageInfo?.url || `local-file://${file.name}`,
+    absoluteUrl: packageInfo?.url || `local-file://${file.name}`,
+    packageId: packageInfo?.id || localPmtilesFileState.packageId,
+    packageName: packageInfo?.name || localPmtilesFileState.name,
+    sourceType: 'local-file-session',
+    sameOrigin: true,
+    status: ok ? 'local-file-ready' : 'unexpected-response',
+    summary: ok ? `local file ok, ${bytes.byteLength} bytes, ${magic}` : `local file header unexpected, ${bytes.byteLength} bytes, ${magic || 'no magic'}`,
+    checkedAt: new Date().toISOString(),
+    head: {
+      ok: true,
+      status: 'local-file',
+      statusText: 'File API',
+      redirected: false,
+      finalUrl: packageInfo?.url || `local-file://${file.name}`,
+      contentLength: file.size || null,
+      contentType: file.type || 'application/octet-stream',
+      acceptRanges: 'blob-slice',
+      accessControlAllowOrigin: 'not-needed-local-file',
+      error: null
+    },
+    range: {
+      ok,
+      status: 'local-slice',
+      statusText: 'File.slice',
+      redirected: false,
+      finalUrl: packageInfo?.url || `local-file://${file.name}`,
+      bytes: bytes.byteLength,
+      magic,
+      contentRange: `bytes 0-${Math.max(0, bytes.byteLength - 1)}/${file.size || bytes.byteLength}`,
+      contentLength: bytes.byteLength,
+      contentType: file.type || 'application/octet-stream',
+      acceptRanges: 'blob-slice',
+      accessControlAllowOrigin: 'not-needed-local-file',
+      error: null
+    },
+    hint: ok ? 'Локальный File API работает: CORS/redirect/HTTP Range не используются.' : 'Первые байты локального файла не похожи на PMTiles header.'
+  };
+}
+
 async function runPmtilesTransportDiagnostics(url = PMTILES_DEFAULT_URL, packageInfo = null) {
   const absoluteUrl = getAbsolutePmtilesUrl(url);
   const diag = {
@@ -1725,6 +1954,7 @@ function renderPmtilesProbeDetails() {
     return;
   }
   const parts = [`Проверка: ${diag.summary || diag.status}`];
+  if (diag.sourceType === 'local-file-session') parts.push('источник: локальный File API');
   if (diag.head) parts.push(`HEAD ${diag.head.status || 'n/a'}`);
   if (diag.range) parts.push(`Range ${diag.range.status || 'n/a'}${diag.range.bytes != null ? ` / ${diag.range.bytes} bytes` : ''}`);
   if (diag.hint) parts.push(`Подсказка: ${diag.hint}`);
@@ -1733,9 +1963,16 @@ function renderPmtilesProbeDetails() {
 
 async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null) {
   let sizeBytes = null;
-  const transportDiagnostics = await runPmtilesTransportDiagnostics(url, packageInfo);
+  const localFileMode = isLocalPmtilesPackage(packageInfo);
+  const localFile = localFileMode ? localPmtilesFileState.file : null;
+  if (localFileMode && !localFile) {
+    throw Object.assign(new Error('Локальный PMTiles-файл не выбран в этой сессии. Выбери файл заново.'), { code: 'PMTILES_LOCAL_FILE_MISSING' });
+  }
+  const transportDiagnostics = localFileMode
+    ? await runLocalPmtilesFileDiagnostics(localFile, packageInfo)
+    : await runPmtilesTransportDiagnostics(url, packageInfo);
   sizeBytes = transportDiagnostics.head?.contentLength || transportDiagnostics.range?.contentLength || null;
-  setPmtilesProbeState({ diagnostics: transportDiagnostics }, 'PMTiles transport diagnostics completed');
+  setPmtilesProbeState({ diagnostics: transportDiagnostics }, localFileMode ? 'Local PMTiles File diagnostics completed' : 'PMTiles transport diagnostics completed');
   renderPmtilesProbeDetails();
 
   if (transportDiagnostics.status === 'not-found') {
@@ -1743,8 +1980,8 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null)
     throw Object.assign(new Error(`${url} not found`), { code: 'PMTILES_NOT_FOUND', status: 404, diagnostics: transportDiagnostics });
   }
 
-  const absoluteUrl = getAbsolutePmtilesUrl(url);
-  const archive = new window.pmtiles.PMTiles(absoluteUrl);
+  const registration = localFileMode ? registerPmtilesArchiveForPackage(packageInfo) : null;
+  const archive = registration?.archive || new window.pmtiles.PMTiles(getAbsolutePmtilesUrl(url));
   const header = await archive.getHeader();
   let metadata = null;
   try {
@@ -1757,7 +1994,7 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null)
   const summarizedMetadata = summarizePmtilesMetadata(metadata);
   const meta = {
     id: packageInfo?.id || `pmtiles:${url}`,
-    name: summarizedMetadata?.name || packageInfo?.name || url.split('/').pop() || 'offline-test.pmtiles',
+    name: summarizedMetadata?.name || packageInfo?.name || localPmtilesFileState.name || url.split('/').pop() || 'offline-test.pmtiles',
     format: 'pmtiles',
     runtime: 'maplibre-pmtiles-probe',
     source: packageInfo?.sourceType || packageInfo?.source || inferPmtilesSourceType(url),
@@ -3992,6 +4229,15 @@ function bindUi() {
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
   if ($('loadOfflineManifestBtn')) $('loadOfflineManifestBtn').onclick = withButtonDiagnostics('loadOfflineManifestBtn', () => loadOfflineMapManifest(true));
+  if ($('chooseLocalPmtilesBtn')) $('chooseLocalPmtilesBtn').onclick = withButtonDiagnostics('chooseLocalPmtilesBtn', () => {
+    setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
+    $('localPmtilesFileInput')?.click();
+  });
+  if ($('localPmtilesFileInput')) $('localPmtilesFileInput').onchange = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    await selectLocalPmtilesFile(file);
+    event.target.value = '';
+  };
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
@@ -4033,7 +4279,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.8`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.9`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
