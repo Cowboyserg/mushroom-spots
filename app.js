@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.7.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -20,6 +20,7 @@ const REMEMBERED_PMTILES_MAPS_KEY = 'mushroom_remembered_pmtiles_maps_v1';
 const BBOX_EXPORT_OUTPUT_FILE = 'mushroom-medium-z14.pmtiles';
 const BBOX_EXPORT_MAX_ZOOM = 14;
 const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
+const MAP_ADVANCED_CONTROLS_KEY = 'mushroom_show_map_advanced_controls_v1';
 const APP_SCREENS = ['map', 'spots', 'group', 'offline', 'settings'];
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
@@ -63,6 +64,7 @@ let userMarker;
 let accuracyCircle;
 let currentPosition = null;
 let activeAppScreen = 'map';
+let showMapAdvancedControls = false;
 let watchId = null;
 let spots = [];
 let spotMarkers = new Map();
@@ -3193,10 +3195,50 @@ function restoreAppScreen() {
   switchAppScreen(saved, { persist: false, scrollTop: false });
 }
 
+function setMapAdvancedControlsVisibility(enabled, options = {}) {
+  const next = Boolean(enabled);
+  const { persist = true } = options;
+  showMapAdvancedControls = next;
+
+  const panel = $('mapAdvancedPanel');
+  if (panel) panel.hidden = !next;
+
+  const toggle = $('showMapAdvancedToggle');
+  if (toggle) toggle.checked = next;
+
+  const hint = $('mapAdvancedToggleHint');
+  if (hint) {
+    hint.textContent = next
+      ? 'Включено: на экране карты доступны ремонт, уточнение GPS и редкие действия.'
+      : 'Выключено: карта остаётся чище, инженерные действия скрыты.';
+  }
+
+  document.body.classList.toggle('map-advanced-enabled', next);
+
+  if (persist) {
+    try { localStorage.setItem(MAP_ADVANCED_CONTROLS_KEY, next ? '1' : '0'); } catch {}
+  }
+
+  if (activeAppScreen === 'map') resizeActiveScreenMaps('map advanced controls changed');
+}
+
+function restoreMapAdvancedControlsPreference() {
+  let saved = '0';
+  try { saved = localStorage.getItem(MAP_ADVANCED_CONTROLS_KEY) || '0'; } catch {}
+  setMapAdvancedControlsVisibility(saved === '1', { persist: false });
+}
+
 function bindAppNavigationShell() {
   document.querySelectorAll('[data-screen-target]').forEach((button) => {
     button.addEventListener('click', () => switchAppScreen(button.dataset.screenTarget || 'map'));
   });
+
+  if ($('showMapAdvancedToggle')) {
+    $('showMapAdvancedToggle').addEventListener('change', (event) => {
+      setMapAdvancedControlsVisibility(event.target.checked);
+      if (event.target.checked) switchAppScreen('map');
+    });
+  }
 }
 
 function safeInvalidateMap(delay = 0, reason = 'manual') {
@@ -5536,7 +5578,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.0`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
@@ -5544,6 +5586,7 @@ async function init() {
   ensureUserId();
   initMap();
   bindUi();
+  restoreMapAdvancedControlsPreference();
   restoreAppScreen();
   loadRememberedPmtilesMaps();
   loadOfflineMapManifest(false).catch((err) => recordMapDebug('offline map manifest startup load failed', err?.message || String(err)));

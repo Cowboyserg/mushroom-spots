@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.0 · Sprint 5.0</p>
+      <p id="appVersion">v0.7.1 · Sprint 5.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -24,80 +24,106 @@
 
   <main class="app-main">
     <section class="app-screen app-screen-active" id="screen-map" data-app-screen="map" aria-labelledby="screenTitleMap">
-      <div class="screen-heading">
+      <div class="screen-heading map-home-heading">
         <h2 id="screenTitleMap">Карта</h2>
-        <p class="hint">Главный экран для GPS, сохранения точки и работы с основной Leaflet-картой.</p>
+        <p class="hint">Главный экран: увидеть себя, выбрать место и быстро сохранить грибную точку.</p>
       </div>
-    <section class="card status-card">
-      <div class="status-grid gps-status-grid">
-        <div><span class="label">GPS</span><strong id="gpsStatus">не запущен</strong></div>
-        <div><span class="label">Точность</span><strong id="gpsAccuracy">—</strong></div>
-        <div><span class="label">Координаты</span><strong id="gpsCoords">—</strong></div>
-        <div><span class="label">Спутники</span><strong id="gpsSatellites">недоступно в PWA</strong></div>
-        <div><span class="label">Высота</span><strong id="gpsAltitude">—</strong></div>
-        <div><span class="label">Скорость</span><strong id="gpsSpeed">—</strong></div>
-        <div><span class="label">Курс</span><strong id="gpsHeading">—</strong></div>
-        <div><span class="label">Обновлено</span><strong id="gpsUpdatedAt">—</strong></div>
-      </div>
-      <p class="hint">Браузерная PWA не получает число спутников напрямую. Для оценки качества сигнала используй поле “Точность”: меньше метров — лучше.</p>
-      <div class="row">
-        <button id="startGpsBtn">Включить GPS</button>
-        <button id="centerMeBtn" class="secondary">Ко мне</button>
-      </div>
-    </section>
-    <section class="map-card card">
-      <div class="section-title">
-        <h2>Основная карта</h2>
-        <div class="pill-row">
-          <span id="mapStatusPill" class="pill">карта запускается</span>
-          <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
-          <span id="pmtilesRuntimeStatusPill" class="pill warn">PMTiles: не проверено</span>
-          <button id="repairMapBtn" class="secondary small-btn">Починить карту</button>
-        </div>
-      </div>
-      <div class="map-wrap">
-        <div id="map"></div>
-      </div>
-      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие PMTiles не кладём в repo: их можно скачать из Release asset и выбрать локально через системный файл-пикер. Названия локальных карт запоминаются на устройстве. Сам .pmtiles файл пока нужно выбирать заново после перезапуска PWA.</p>
-    </section>
-    <section class="card">
-      <h2>Сохранить новое место</h2>
-      <div class="field">
-        <label for="spotName">Название</label>
-        <input id="spotName" placeholder="Например: Белые у сосны" />
-      </div>
-      <div class="field">
-        <label for="mushroomType">Тип грибов</label>
-        <input id="mushroomType" placeholder="Белые, лисички, подберёзовики…" />
-      </div>
-      <div class="field">
-        <label for="spotNote">Заметка</label>
-        <textarea id="spotNote" rows="3" placeholder="Ориентиры, сезон, сколько было грибов"></textarea>
-      </div>
-      <div class="field">
-        <label for="spotPhoto">Фото места, необязательно</label>
-        <input id="spotPhoto" type="file" accept="image/*" />
-      </div>
-      <div class="row">
-        <button id="saveSpotBtn">Сохранить текущую GPS-точку</button>
-        <button id="savePickedMapPointBtn" class="secondary">Сохранить выбранную точку</button>
-        <button id="sharePickedMapPointToChatBtn" class="secondary">Отправить выбранную точку в чат</button>
-        <button id="clearPickedMapPointBtn" class="secondary">Сбросить выбор</button>
-        <button id="averageBtn" class="secondary">Уточнить GPS 30 сек</button>
-      </div>
-      <p class="hint" id="pickedMapPointHint">Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.</p>
-      <p class="hint" id="saveHint">GPS-кнопка сохраняет текущую позицию. Кнопка “Сохранить выбранную точку” сохраняет координаты, выбранные долгим нажатием на карте.</p>
-    </section>
-    <section class="card selected-card" id="selectedCard" hidden>
-      <h2>Выбранная точка</h2>
-      <div id="selectedDetails"></div>
-      <div class="row">
-        <button id="navigateBtn">Показать направление</button>
-        <button id="shareSpotBtn" class="secondary">Экспорт точки</button>
-        <button id="sendSelectedSpotToChatBtn" class="secondary">Отправить в чат</button>
-        <button id="deleteSpotBtn" class="danger">Удалить</button>
-      </div>
-    </section>
+
+      <section class="map-home-shell" aria-label="Главный экран карты">
+        <section class="map-card map-home-card card">
+          <div class="section-title map-title-row">
+            <div class="map-title-copy">
+              <h2>Основная карта</h2>
+              <p class="hint">Leaflet остаётся основной стабильной картой. Точки, GPS и live-маркеры работают даже при проблемах с подложкой.</p>
+            </div>
+            <div class="pill-row map-core-pills">
+              <span id="mapStatusPill" class="pill">карта запускается</span>
+            </div>
+          </div>
+          <div class="map-wrap map-wrap-home">
+            <div id="map"></div>
+            <div class="map-fab-stack" aria-label="Быстрые действия карты">
+              <button id="startGpsBtn" class="map-fab primary-fab">GPS</button>
+              <button id="centerMeBtn" class="map-fab secondary">Ко мне</button>
+            </div>
+          </div>
+          <div class="map-live-strip" aria-label="Краткий статус GPS">
+            <div><span class="label">GPS</span><strong id="gpsStatus">не запущен</strong></div>
+            <div><span class="label">Точность</span><strong id="gpsAccuracy">—</strong></div>
+            <div><span class="label">Координаты</span><strong id="gpsCoords">—</strong></div>
+          </div>
+        </section>
+
+        <section class="card map-action-sheet">
+          <div class="section-title compact-title">
+            <h2>Быстро сохранить место</h2>
+            <span class="pill">в лесу</span>
+          </div>
+          <p class="hint" id="pickedMapPointHint">Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.</p>
+          <div class="row map-primary-actions">
+            <button id="saveSpotBtn">Сохранить мою GPS-точку</button>
+            <button id="savePickedMapPointBtn" class="secondary">Сохранить выбранную точку</button>
+          </div>
+          <details class="map-spot-editor">
+            <summary>Название, тип, заметка и фото</summary>
+            <div class="field">
+              <label for="spotName">Название</label>
+              <input id="spotName" placeholder="Например: Белые у сосны" />
+            </div>
+            <div class="field">
+              <label for="mushroomType">Тип грибов</label>
+              <input id="mushroomType" placeholder="Белые, лисички, подберёзовики…" />
+            </div>
+            <div class="field">
+              <label for="spotNote">Заметка</label>
+              <textarea id="spotNote" rows="3" placeholder="Ориентиры, сезон, сколько было грибов"></textarea>
+            </div>
+            <div class="field">
+              <label for="spotPhoto">Фото места, необязательно</label>
+              <input id="spotPhoto" type="file" accept="image/*" />
+            </div>
+          </details>
+        </section>
+
+        <section class="card selected-card" id="selectedCard" hidden>
+          <h2>Выбранная точка</h2>
+          <div id="selectedDetails"></div>
+          <div class="row">
+            <button id="navigateBtn">Показать направление</button>
+            <button id="shareSpotBtn" class="secondary">Экспорт точки</button>
+            <button id="sendSelectedSpotToChatBtn" class="secondary">Отправить в чат</button>
+            <button id="deleteSpotBtn" class="danger">Удалить</button>
+          </div>
+        </section>
+
+        <section class="card status-card map-advanced-card" id="mapAdvancedPanel" hidden>
+          <div class="section-title compact-title">
+            <h2>Расширенные кнопки карты</h2>
+            <span class="pill warn">инженерный режим</span>
+          </div>
+          <p class="hint">Эти действия не удалены: их можно включить в настройках, если нужна диагностика, ремонт карты или редкие операции с выбранной точкой.</p>
+          <div class="status-grid gps-status-grid map-secondary-gps-grid">
+            <div><span class="label">Спутники</span><strong id="gpsSatellites">недоступно в PWA</strong></div>
+            <div><span class="label">Высота</span><strong id="gpsAltitude">—</strong></div>
+            <div><span class="label">Скорость</span><strong id="gpsSpeed">—</strong></div>
+            <div><span class="label">Курс</span><strong id="gpsHeading">—</strong></div>
+            <div><span class="label">Обновлено</span><strong id="gpsUpdatedAt">—</strong></div>
+          </div>
+          <p class="hint">Браузерная PWA не получает число спутников напрямую. Для оценки качества сигнала используй поле “Точность”: меньше метров — лучше.</p>
+          <div class="pill-row map-provider-pills">
+            <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
+            <span id="pmtilesRuntimeStatusPill" class="pill warn">PMTiles: не проверено</span>
+          </div>
+          <div class="row map-secondary-actions">
+            <button id="sharePickedMapPointToChatBtn" class="secondary">Отправить выбранную точку в чат</button>
+            <button id="clearPickedMapPointBtn" class="secondary">Сбросить выбор</button>
+            <button id="averageBtn" class="secondary">Уточнить GPS 30 сек</button>
+            <button id="repairMapBtn" class="secondary">Починить карту</button>
+          </div>
+          <p class="hint" id="saveHint">GPS-кнопка сохраняет текущую позицию. Кнопка “Сохранить выбранную точку” сохраняет координаты, выбранные долгим нажатием на карте.</p>
+          <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие PMTiles не кладём в repo: их можно скачать из Release asset и выбрать локально через системный файл-пикер. Названия локальных карт запоминаются на устройстве. Сам .pmtiles файл пока нужно выбирать заново после перезапуска PWA.</p>
+        </section>
+      </section>
     </section>
 
     <section class="app-screen" id="screen-spots" data-app-screen="spots" aria-labelledby="screenTitleSpots" hidden>
@@ -265,9 +291,16 @@
     <section class="card settings-summary-card">
       <div class="section-title">
         <h2>Настройки</h2>
-        <span class="pill">v0.7.0 · Sprint 5.0</span>
+        <span class="pill">v0.7.1 · Sprint 5.1</span>
       </div>
       <p class="hint">Здесь собраны обслуживание, диагностика, версия и backup. Быстрый debug также остаётся доступен через кнопку “!” в верхней панели.</p>
+      <label class="settings-toggle-row" for="showMapAdvancedToggle">
+        <input id="showMapAdvancedToggle" type="checkbox" />
+        <span>
+          <strong>Показывать расширенные кнопки на карте</strong>
+          <small id="mapAdvancedToggleHint">Выключено: карта остаётся чище, инженерные действия скрыты.</small>
+        </span>
+      </label>
       <div class="row">
         <button id="settingsMapDebugBtn" class="secondary">Открыть диагностику “!”</button>
       </div>
@@ -318,8 +351,8 @@
       <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
     </section>
     <section class="card">
-      <h2>Sprint 5.0</h2>
-      <p class="hint">Добавлена навигационная оболочка приложения: экраны “Карта”, “Точки”, “Группа”, “Офлайн-карты” и “Настройки”. Логика карты, GPS, точек, чата, live-маркеров и PMTiles preview не мигрировалась.</p>
+      <h2>Sprint 5.1</h2>
+      <p class="hint">Главный экран карты очищен: карта занимает центральное место, быстрые GPS/сохранение доступны сразу, а расширенные кнопки карты можно включить ниже в настройках.</p>
     </section>
     </section>
   </main>
