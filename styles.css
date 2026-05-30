@@ -387,3 +387,30 @@ dialog::backdrop { background:#0008; }
   min-width:160px;
   filter:drop-shadow(0 8px 18px rgba(0,0,0,.22));
 }
+
+/* Sprint 4.6 experimental PMTiles preview.
+   This is intentionally isolated from the primary Leaflet map. */
+.pmtiles-preview-panel {
+  margin-top:12px;
+  padding:10px;
+  border:1px dashed var(--border);
+  border-radius:16px;
+  background:#faf8ef;
+}
+.compact-title {
+  margin-bottom:8px;
+}
+.compact-title h3 {
+  margin:0;
+  font-size:15px;
+}
+.pmtiles-preview-map {
+  height:220px;
+  min-height:220px;
+  width:100%;
+  border-radius:14px;
+  border:1px solid var(--border);
+  overflow:hidden;
+  background:#eef2e8;
+  position:relative;
+}
