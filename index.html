@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.11 · Sprint 4.11</p>
+      <p id="appVersion">v0.6.12 · Sprint 4.12</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -57,6 +57,21 @@
       </div>
       <div class="map-wrap">
         <div id="map"></div>
+      </div>
+      <div class="offline-package-panel bbox-export-panel">
+        <div class="section-title compact-title">
+          <h3>Экспорт региона PMTiles</h3>
+          <span class="pill warn">bbox</span>
+        </div>
+        <p class="hint" id="bboxExportStatus">BBox: не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.</p>
+        <div class="row">
+          <button id="startBboxExportBtn" class="secondary small-btn">Выбрать прямоугольник</button>
+          <button id="useVisibleBboxBtn" class="secondary small-btn">Взять видимую область</button>
+          <button id="copyBboxCommandBtn" class="secondary small-btn">Скопировать команду</button>
+          <button id="clearBboxExportBtn" class="secondary small-btn">Сбросить bbox</button>
+        </div>
+        <textarea id="bboxCommandOutput" rows="3" readonly spellcheck="false" placeholder="Команда появится после выбора региона"></textarea>
+        <p class="hint">Формат: <code>WEST,SOUTH,EAST,NORTH</code>, то есть долгота/широта в порядке запад, юг, восток, север. Точность координат — 6 знаков после запятой.</p>
       </div>
       <div class="offline-package-panel">
         <label for="offlinePackageSelect">PMTiles пакет</label>
@@ -245,8 +260,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.11</h2>
-      <p class="hint">Добавлены read-only пользовательские слои на PMTiles preview: сохранённые грибные точки, GPS, выбранная точка, точка из чата и live-позиции друзей отображаются поверх локальной MapLibre-карты. Основная Leaflet-карта и все write-flow пока остаются неизменными.</p>
+      <h2>Sprint 4.12</h2>
+      <p class="hint">Добавлен экспорт bbox для PMTiles: на основной карте можно выбрать прямоугольник двумя нажатиями и получить готовую команду <code>pmtiles extract</code> с координатами WEST,SOUTH,EAST,NORTH до 6 знаков. Основная карта, точки, GPS, чат и PMTiles preview остаются неизменными.</p>
     </section>
   </main>
 

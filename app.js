@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.11';
+const APP_VERSION = '0.6.12';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -16,6 +16,8 @@ const MEMBER_SYNC_RETRY_MS = 15000;
 const SUPABASE_TIMEOUT_MS = 12000;
 const OFFLINE_MAP_PACKAGE_META_KEY = 'mushroom_offline_map_package_v1';
 const OFFLINE_MAP_SELECTED_PACKAGE_KEY = 'mushroom_offline_map_selected_package_v1';
+const BBOX_EXPORT_OUTPUT_FILE = 'mushroom-medium-z14.pmtiles';
+const BBOX_EXPORT_MAX_ZOOM = 14;
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
 const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
@@ -67,6 +69,16 @@ let chatPreviewPointMarker = null;
 let chatPreviewPoint = null;
 let mapLongPressTimer = null;
 let mapLongPressStart = null;
+let bboxExportState = {
+  mode: 'idle',
+  firstCorner: null,
+  bounds: null,
+  command: '',
+  updatedAt: null,
+  source: null,
+  error: null
+};
+let bboxExportLayer = null;
 let navLine = null;
 let folderHandle = null;
 let groupJoined = false;
@@ -157,6 +169,10 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   startGpsBtn: 'Включить GPS',
   centerMeBtn: 'Ко мне',
   repairMapBtn: 'Починить карту',
+  startBboxExportBtn: 'Выбрать прямоугольник PMTiles bbox',
+  useVisibleBboxBtn: 'Взять видимую область как PMTiles bbox',
+  copyBboxCommandBtn: 'Скопировать команду PMTiles extract',
+  clearBboxExportBtn: 'Сбросить PMTiles bbox',
   saveSpotBtn: 'Сохранить текущую GPS-точку',
   savePickedMapPointBtn: 'Сохранить выбранную точку на карте',
   sharePickedMapPointToChatBtn: 'Отправить выбранную точку в чат',
@@ -644,6 +660,8 @@ function updateActionButtonsUi() {
   setDisabled('shareSpotBtn', !hasSelected);
   setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
   setDisabled('deleteSpotBtn', !hasSelected);
+  setDisabled('copyBboxCommandBtn', !bboxExportState.command);
+  setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
 
   if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : (currentChatName() !== 'Без имени' ? `Войти как ${currentChatName()}` : 'Войти в группу');
   setDisabled('copyInviteBtn', !hasGroup);
@@ -720,6 +738,12 @@ function formatDiagnosticsText() {
   lines.push(`- offline package: ${provider.offlinePackageStatus}`);
   lines.push(`- fallback active: ${provider.fallbackActive}`);
   lines.push(`- reason: ${provider.reason}`);
+  if (provider.bboxExport) {
+    lines.push(`- bbox export: ${provider.bboxExport.mode}`);
+    if (provider.bboxExport.bounds) lines.push(`- bbox bounds: ${provider.bboxExport.bounds.join(',')}`);
+    if (provider.bboxExport.command) lines.push(`- bbox command: ${provider.bboxExport.command.replace(/\n/g, ' ')}`);
+    if (provider.bboxExport.error) lines.push(`- bbox error: ${provider.bboxExport.error}`);
+  }
   lines.push(`- pmtiles runtime: ${provider.pmtilesRuntime.status}`);
   lines.push(`- pmtiles file: ${provider.pmtilesRuntime.packageFound ? 'found' : 'not-found/unchecked'}`);
   lines.push(`- pmtiles url: ${provider.pmtilesRuntime.url}`);
@@ -876,6 +900,7 @@ function mapProviderSnapshot() {
       source: offlinePackageMeta.source || null
     } : null,
     fallbackActive: mapFallbackActive,
+    bboxExport: getBboxExportSnapshot(),
     pmtilesRuntime: {
       url: pmtilesRuntimeProbe.url,
       status: pmtilesRuntimeProbe.status,
@@ -2825,6 +2850,266 @@ function updateMapDebugUi(forceText = false) {
 }
 
 
+function fmtBboxCoord(value) {
+  return Number(value).toFixed(6);
+}
+
+function normalizeBboxBoundsFromCorners(a, b) {
+  const lat1 = Number(a?.lat);
+  const lon1 = Number(a?.lng ?? a?.lon);
+  const lat2 = Number(b?.lat);
+  const lon2 = Number(b?.lng ?? b?.lon);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return null;
+  const west = Math.min(lon1, lon2);
+  const south = Math.min(lat1, lat2);
+  const east = Math.max(lon1, lon2);
+  const north = Math.max(lat1, lat2);
+  if (west === east || south === north) return null;
+  return { west, south, east, north };
+}
+
+function bboxArray(bounds) {
+  if (!bounds) return null;
+  return [bounds.west, bounds.south, bounds.east, bounds.north].map(fmtBboxCoord);
+}
+
+function buildPmtilesExtractCommand(bounds) {
+  const parts = bboxArray(bounds);
+  if (!parts) return '';
+  return `./pmtiles extract "$SOURCE" ${BBOX_EXPORT_OUTPUT_FILE} \\\n  --bbox=${parts.join(',')} \\\n  --maxzoom=${BBOX_EXPORT_MAX_ZOOM}`;
+}
+
+function getBboxExportSnapshot() {
+  return {
+    mode: bboxExportState.mode,
+    firstCorner: bboxExportState.firstCorner ? {
+      lat: Number(bboxExportState.firstCorner.lat),
+      lon: Number(bboxExportState.firstCorner.lng ?? bboxExportState.firstCorner.lon)
+    } : null,
+    bounds: bboxArray(bboxExportState.bounds),
+    command: bboxExportState.command || '',
+    source: bboxExportState.source || null,
+    updatedAt: bboxExportState.updatedAt || null,
+    error: bboxExportState.error || null
+  };
+}
+
+function removeBboxExportLayer() {
+  if (bboxExportLayer) {
+    try { bboxExportLayer.remove(); } catch {}
+    bboxExportLayer = null;
+  }
+}
+
+function drawBboxExportLayer(bounds, tentative = false) {
+  if (!canUseMapRuntime() || !bounds) return;
+  removeBboxExportLayer();
+  const latLngs = [
+    [bounds.south, bounds.west],
+    [bounds.south, bounds.east],
+    [bounds.north, bounds.east],
+    [bounds.north, bounds.west],
+    [bounds.south, bounds.west]
+  ];
+  const options = {
+    color: tentative ? '#f59e0b' : '#dc2626',
+    weight: tentative ? 2 : 3,
+    opacity: 0.95,
+    fill: true,
+    fillOpacity: tentative ? 0.04 : 0.08,
+    dashArray: tentative ? '6 6' : null
+  };
+  try {
+    if (window.L.rectangle && window.L.latLngBounds) {
+      const leafletBounds = window.L.latLngBounds([[bounds.south, bounds.west], [bounds.north, bounds.east]]);
+      bboxExportLayer = window.L.rectangle(leafletBounds, options).addTo(map);
+    } else if (window.L.polyline) {
+      bboxExportLayer = window.L.polyline(latLngs, options).addTo(map);
+    }
+  } catch (err) {
+    bboxExportState.error = err?.message || String(err);
+    recordMapDebug('bbox export layer draw failed', bboxExportState.error);
+  }
+}
+
+function updateBboxExportUi() {
+  const status = $('bboxExportStatus');
+  const output = $('bboxCommandOutput');
+  const snapshot = getBboxExportSnapshot();
+
+  if (output) output.value = bboxExportState.command || '';
+
+  if (status) {
+    if (bboxExportState.mode === 'selecting' && !bboxExportState.firstCorner) {
+      status.textContent = 'BBox: режим выбора включён. Нажми первый угол прямоугольника на основной карте.';
+    } else if (bboxExportState.mode === 'selecting' && bboxExportState.firstCorner) {
+      const c = bboxExportState.firstCorner;
+      status.textContent = `BBox: первый угол выбран (${fmtBboxCoord(c.lng ?? c.lon)}, ${fmtBboxCoord(c.lat)}). Нажми противоположный угол.`;
+    } else if (bboxExportState.command && snapshot.bounds) {
+      status.textContent = `BBox готов: ${snapshot.bounds.join(',')}. Команда ниже уже содержит координаты с точностью 6 знаков.`;
+    } else if (bboxExportState.error) {
+      status.textContent = `BBox: ошибка — ${bboxExportState.error}`;
+    } else {
+      status.textContent = 'BBox: не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.';
+    }
+  }
+
+  setDisabled('copyBboxCommandBtn', !bboxExportState.command);
+  setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
+  updateMapDebugUi(false);
+}
+
+function setBboxExportBounds(bounds, source = 'manual') {
+  if (!bounds) {
+    bboxExportState = {
+      ...bboxExportState,
+      mode: 'idle',
+      firstCorner: null,
+      bounds: null,
+      command: '',
+      updatedAt: new Date().toISOString(),
+      source,
+      error: 'некорректный прямоугольник'
+    };
+    removeBboxExportLayer();
+    updateBboxExportUi();
+    return false;
+  }
+  bboxExportState = {
+    mode: 'ready',
+    firstCorner: null,
+    bounds,
+    command: buildPmtilesExtractCommand(bounds),
+    updatedAt: new Date().toISOString(),
+    source,
+    error: null
+  };
+  drawBboxExportLayer(bounds, false);
+  recordMapDebug('bbox export ready', getBboxExportSnapshot());
+  updateBboxExportUi();
+  return true;
+}
+
+function startBboxExportSelection() {
+  if (!canUseMapRuntime()) {
+    markButtonBlocked('карта недоступна');
+    bboxExportState = { ...bboxExportState, mode: 'idle', error: 'карта недоступна' };
+    updateBboxExportUi();
+    return false;
+  }
+  bboxExportState = {
+    mode: 'selecting',
+    firstCorner: null,
+    bounds: null,
+    command: '',
+    updatedAt: new Date().toISOString(),
+    source: 'manual-two-corners',
+    error: null
+  };
+  removeBboxExportLayer();
+  updateBboxExportUi();
+  setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'startBboxExportBtn', label: getButtonDiagnosticLabel('startBboxExportBtn') }, 'готово', 'режим выбора bbox включён');
+  return true;
+}
+
+function handleBboxExportMapClick(event) {
+  if (bboxExportState.mode !== 'selecting') return;
+  const latlng = event?.latlng;
+  if (!latlng || !Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) return;
+
+  if (!bboxExportState.firstCorner) {
+    bboxExportState = {
+      ...bboxExportState,
+      firstCorner: { lat: latlng.lat, lng: latlng.lng },
+      updatedAt: new Date().toISOString(),
+      error: null
+    };
+    recordMapDebug('bbox export first corner selected', getBboxExportSnapshot());
+    updateBboxExportUi();
+    return;
+  }
+
+  const bounds = normalizeBboxBoundsFromCorners(bboxExportState.firstCorner, latlng);
+  if (!bounds) {
+    bboxExportState = { ...bboxExportState, error: 'второй угол совпадает с первым или координаты некорректны' };
+    updateBboxExportUi();
+    return;
+  }
+  setBboxExportBounds(bounds, 'manual-two-corners');
+}
+
+function handleBboxExportMouseMove(event) {
+  if (bboxExportState.mode !== 'selecting' || !bboxExportState.firstCorner || !event?.latlng) return;
+  const bounds = normalizeBboxBoundsFromCorners(bboxExportState.firstCorner, event.latlng);
+  if (bounds) drawBboxExportLayer(bounds, true);
+}
+
+function useVisibleMapBbox() {
+  if (!canUseMapRuntime() || !map.getBounds) {
+    markButtonBlocked('границы видимой области недоступны');
+    bboxExportState = { ...bboxExportState, error: 'границы видимой области недоступны' };
+    updateBboxExportUi();
+    return false;
+  }
+  const b = map.getBounds();
+  const bounds = {
+    west: b.getWest(),
+    south: b.getSouth(),
+    east: b.getEast(),
+    north: b.getNorth()
+  };
+  const ok = setBboxExportBounds(bounds, 'visible-map-bounds');
+  if (ok) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'useVisibleBboxBtn', label: getButtonDiagnosticLabel('useVisibleBboxBtn') }, 'готово', bboxArray(bounds).join(','));
+  return ok;
+}
+
+function clearBboxExport() {
+  bboxExportState = {
+    mode: 'idle',
+    firstCorner: null,
+    bounds: null,
+    command: '',
+    updatedAt: new Date().toISOString(),
+    source: null,
+    error: null
+  };
+  removeBboxExportLayer();
+  updateBboxExportUi();
+  setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearBboxExportBtn', label: getButtonDiagnosticLabel('clearBboxExportBtn') }, 'готово', 'bbox сброшен');
+}
+
+async function copyBboxCommand() {
+  if (!bboxExportState.command) {
+    markButtonBlocked('bbox не выбран');
+    alert('Сначала выбери прямоугольник или возьми видимую область карты.');
+    return false;
+  }
+  const text = bboxExportState.command;
+  const requestId = beginApiRequest('Clipboard.writeText', 'BROWSER', 'pmtiles extract command');
+  try {
+    await navigator.clipboard.writeText(text);
+    finishApiRequest(requestId, 'готово', 'команда скопирована');
+    return true;
+  } catch (err) {
+    finishApiRequest(requestId, 'ошибка', err?.message || 'clipboard недоступен');
+    const output = $('bboxCommandOutput');
+    if (output) {
+      output.focus();
+      output.select();
+    }
+    alert('Не удалось скопировать автоматически. Команда выделена в поле ниже.');
+    return false;
+  }
+}
+
+function setupBboxExportSelection() {
+  if (!map) return;
+  map.on('click', handleBboxExportMapClick);
+  map.on('mousemove', handleBboxExportMouseMove);
+  updateBboxExportUi();
+}
+
+
 function updatePickedMapPointUi() {
   const hint = $('pickedMapPointHint');
   if (!hint) return;
@@ -2886,11 +3171,13 @@ function setupMapPointPicking() {
   if (!map) return;
 
   map.on('contextmenu', (event) => {
+    if (bboxExportState.mode === 'selecting') return;
     // Desktop right-click and some mobile long-tap implementations land here.
     setPickedMapPoint(event.latlng, 'map-contextmenu');
   });
 
   map.on('mousedown touchstart', (event) => {
+    if (bboxExportState.mode === 'selecting') return;
     const latlng = event.latlng;
     if (!latlng) return;
     mapLongPressStart = { latlng, containerPoint: event.containerPoint || null };
@@ -3082,6 +3369,7 @@ function initMap() {
 
   map.on('load moveend zoomend resize', () => updateMapDebugUi(false));
   setupMapPointPicking();
+  setupBboxExportSelection();
 
   // Leaflet can render broken/offset tiles if the map is initialized while
   // the PWA layout is still settling, especially after install-to-home-screen,
@@ -4732,6 +5020,10 @@ function bindUi() {
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
+  if ($('startBboxExportBtn')) $('startBboxExportBtn').onclick = withButtonDiagnostics('startBboxExportBtn', startBboxExportSelection);
+  if ($('useVisibleBboxBtn')) $('useVisibleBboxBtn').onclick = withButtonDiagnostics('useVisibleBboxBtn', useVisibleMapBbox);
+  if ($('copyBboxCommandBtn')) $('copyBboxCommandBtn').onclick = withButtonDiagnostics('copyBboxCommandBtn', copyBboxCommand);
+  if ($('clearBboxExportBtn')) $('clearBboxExportBtn').onclick = withButtonDiagnostics('clearBboxExportBtn', clearBboxExport);
   if ($('mapDebugBtn')) $('mapDebugBtn').onclick = withButtonDiagnostics('mapDebugBtn', () => { updateMapDebugUi(true); $('mapDebugDialog').showModal(); });
   if ($('refreshMapDebugBtn')) $('refreshMapDebugBtn').onclick = withButtonDiagnostics('refreshMapDebugBtn', () => updateMapDebugUi(true));
   if ($('repairMapFromDebugBtn')) $('repairMapFromDebugBtn').onclick = withButtonDiagnostics('repairMapFromDebugBtn', repairMap);
@@ -4769,7 +5061,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.11`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.12`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
