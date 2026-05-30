@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.4';
+const APP_VERSION = '0.6.5';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -22,7 +22,7 @@ const MAP_ENGINE_MAPLIBRE = 'maplibre';
 const MAP_PROVIDER_ONLINE_RASTER = 'online-raster';
 const MAP_PROVIDER_OFFLINE_PMTILES = 'offline-pmtiles';
 const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
-const PMTILES_DEFAULT_URL = './offline.pmtiles';
+const PMTILES_DEFAULT_URL = './offline-test.pmtiles';
 const MAPLIBRE_GL_VERSION = '5.24.0';
 const PMTILES_JS_VERSION = '4.4.1';
 const MAPLIBRE_SCRIPT_URLS = [
@@ -138,7 +138,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanCurrentGroupDbBtn: 'Очистить текущую группу',
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
-  probePmtilesBtn: 'Проверить PMTiles',
+  probePmtilesBtn: 'Проверить mini PMTiles',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -1129,7 +1129,7 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
   const summarizedMetadata = summarizePmtilesMetadata(metadata);
   const meta = {
     id: `pmtiles:${url}`,
-    name: summarizedMetadata?.name || url.split('/').pop() || 'offline.pmtiles',
+    name: summarizedMetadata?.name || url.split('/').pop() || 'offline-test.pmtiles',
     format: 'pmtiles',
     runtime: 'maplibre-pmtiles-probe',
     source: 'same-origin-static-file',
@@ -1204,9 +1204,9 @@ async function runPmtilesRuntimeProbe() {
           status: 'maplibre-ready-no-package',
           packageFound: false,
           error: `${url} not found`
-        }, 'MapLibre/PMTiles runtime ready, but offline.pmtiles is not installed');
+        }, 'MapLibre/PMTiles runtime ready, but offline-test.pmtiles is not installed');
         setMapProviderState({ offlinePackageStatus: 'not-installed' }, 'PMTiles runtime ready; package missing');
-        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, offline.pmtiles не найден');
+        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, offline-test.pmtiles не найден');
         updateMapDebugUi(true);
         return false;
       }
@@ -1471,7 +1471,7 @@ function updateMapDebugUi(forceText = false) {
     } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
       hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустой карты.';
     } else if (snapshot.providerState.offlinePackageStatus === 'metadata-ready-runtime-experimental') {
-      hint.textContent = 'Файл offline.pmtiles читается экспериментальным MapLibre/PMTiles probe, но основная карта пока остаётся на Leaflet online-raster до отдельной миграции рендера.';
+      hint.textContent = 'Мини-файл offline-test.pmtiles читается экспериментальным MapLibre/PMTiles probe. Это проверка формата/доступа, а не настоящая офлайн-подложка; основная карта пока остаётся на Leaflet online-raster.';
     } else if (snapshot.tileStats.error > 0) {
       hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
     } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
@@ -3393,7 +3393,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.5`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
