@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.13 · Sprint 4.13</p>
+      <p id="appVersion">v0.6.14 · Sprint 4.14</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -79,9 +79,22 @@
         <input id="localPmtilesFileInput" type="file" accept=".pmtiles,application/octet-stream" hidden />
         <p class="hint" id="offlinePackageManifestStatus">Manifest: не загружен.</p>
         <p class="hint" id="localPmtilesFileStatus">Локальный файл: не выбран.</p>
+        <div class="field">
+          <label for="rememberedPmtilesMapSelect">Запомненные карты</label>
+          <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные PMTiles карты"></select>
+        </div>
+        <div class="field">
+          <label for="rememberedPmtilesMapNameInput">Название карты</label>
+          <input id="rememberedPmtilesMapNameInput" placeholder="Например: Лес у станции" />
+        </div>
+        <div class="row">
+          <button id="renameRememberedPmtilesMapBtn" class="secondary small-btn">Переименовать карту</button>
+          <button id="forgetRememberedPmtilesMapBtn" class="secondary small-btn">Забыть запись</button>
+        </div>
+        <p class="hint" id="rememberedPmtilesMapStatus">Запомненные карты: пока нет.</p>
         <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
       </div>
-      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие PMTiles не кладём в repo: их можно скачать из Release asset и выбрать локально через системный файл-пикер. Локальный файл хранится только в текущей сессии PWA.</p>
+      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие PMTiles не кладём в repo: их можно скачать из Release asset и выбрать локально через системный файл-пикер. Названия локальных карт запоминаются на устройстве. Сам .pmtiles файл пока нужно выбирать заново после перезапуска PWA.</p>
       <div id="pmtilesPreviewPanel" class="pmtiles-preview-panel" hidden>
         <div class="section-title compact-title">
           <h3>PMTiles preview</h3>
@@ -264,8 +277,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.13</h2>
-      <p class="hint">Добавлена кнопка “Показать меня на офлайн-карте”: PMTiles preview может запуститься, запросить GPS при необходимости и центрироваться на текущей позиции. Основная Leaflet-карта, точки, чат, live-маркеры и bbox export остаются рабочими.</p>
+      <h2>Sprint 4.14</h2>
+      <p class="hint">Добавлен список запомненных PMTiles-карт и кастомные названия. Приложение запоминает метаданные карты на устройстве, но сам .pmtiles файл пока остаётся session-only и после перезапуска выбирается заново.</p>
     </section>
   </main>
 
