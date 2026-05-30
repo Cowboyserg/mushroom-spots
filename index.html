@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.2 · Sprint 4.2</p>
+      <p id="appVersion">v0.6.3 · Sprint 4.3</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -224,8 +224,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.2</h2>
-      <p class="hint">Добавлен локальный fallback-движок карты: если внешний Leaflet CDN недоступен, приложение открывает пустую карту без подложки, но GPS, точки, долгий тап, чат-точки и live-маркеры продолжают работать.</p>
+      <h2>Sprint 4.3</h2>
+      <p class="hint">Добавлена стабильность перехода online → offline: уже загруженная карта не исчезает сразу, а точки, GPS и чат-точки продолжают работать даже без новой подгрузки тайлов.</p>
     </section>
   </main>
 
@@ -249,7 +249,11 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="leaflet-offline-lite.js"></script>
+  <script>
+    if (!window.L) {
+      document.write('<script src="./leaflet-offline-lite.js"><\/script>');
+    }
+  </script>
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

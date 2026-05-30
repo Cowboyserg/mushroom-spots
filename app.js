@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.6.3';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -811,6 +811,34 @@ function createOnlineRasterLayer() {
   });
 }
 
+function getRenderedTileCounts() {
+  const tiles = Array.from(document.querySelectorAll('.leaflet-tile'));
+  const loaded = tiles.filter((tile) => tile.classList.contains('leaflet-tile-loaded') && tile.naturalWidth !== 0).length;
+  const broken = tiles.filter((tile) => tile.complete && tile.naturalWidth === 0).length;
+  return { total: tiles.length, loaded, broken };
+}
+
+function keepOnlineRasterLayerForOfflineTransition(reason = 'browser offline') {
+  if (!canUseMapRuntime() || isLeafletOfflineLiteRuntime() || !baseTileLayer) return false;
+
+  const tiles = getRenderedTileCounts();
+  if (tiles.loaded <= 0) {
+    recordMapDebug('offline transition has no loaded tiles to keep', { reason, tiles });
+    return false;
+  }
+
+  setMapProviderState({
+    mapProvider: MAP_PROVIDER_ONLINE_RASTER,
+    mapSourceStatus: 'online-stale-offline',
+    fallbackActive: false
+  }, reason);
+  recordMapDebug('offline transition kept already rendered raster tiles', { reason, tiles });
+  setMapStatus('Карта: офлайн, показаны загруженные тайлы', 'warn');
+  safeInvalidateMap(0, 'offline transition keep raster');
+  safeInvalidateMap(350, 'offline transition keep raster delayed');
+  return true;
+}
+
 function removeBaseTileLayer(reason = 'remove base layer') {
   if (!baseTileLayer) return;
   try {
@@ -844,14 +872,16 @@ function mountOnlineRasterProvider(reason = 'mount online raster') {
   baseTileLayer
     .on('loading', () => {
       mapTileStats.loading += 1;
-      if (mapProvider === MAP_PROVIDER_ONLINE_RASTER) mapSourceStatus = 'online-loading';
+      if (mapProvider === MAP_PROVIDER_ONLINE_RASTER && !(mapSourceStatus === 'online-stale-offline' && !navigator.onLine)) {
+        mapSourceStatus = 'online-loading';
+      }
       recordMapDebug('tile loading', { provider: MAP_PROVIDER_ONLINE_RASTER });
     })
     .on('tileload', (e) => {
       mapTileStats.load += 1;
       mapTileStats.lastTileUrl = e.tile?.currentSrc || e.tile?.src || null;
       if (mapProvider === MAP_PROVIDER_ONLINE_RASTER) {
-        mapSourceStatus = 'online-ready';
+        mapSourceStatus = navigator.onLine ? 'online-ready' : 'online-stale-offline';
         mapFallbackActive = false;
       }
       updateMapDebugUi(false);
@@ -862,7 +892,12 @@ function mountOnlineRasterProvider(reason = 'mount online raster') {
       mapSourceStatus = 'online-error';
       recordMapDebug('tile error', { provider: MAP_PROVIDER_ONLINE_RASTER, url: mapTileStats.lastError, errors: mapTileStats.error });
       setMapStatus('Карта: ошибка тайлов', 'bad');
-      if (!navigator.onLine || (mapTileStats.error >= 3 && mapTileStats.load === 0)) {
+      if (!navigator.onLine) {
+        if (keepOnlineRasterLayerForOfflineTransition('browser offline during tile load')) return;
+        activateNoBasemapFallback('online raster unavailable offline');
+        return;
+      }
+      if (mapTileStats.error >= 3 && mapTileStats.load === 0) {
         activateNoBasemapFallback('online raster unavailable');
       }
     })
@@ -985,6 +1020,8 @@ function updateMapDebugUi(forceText = false) {
 
   if (!snapshot.leafletLoaded) {
     setMapStatus('Карта: движок не загружен', 'bad');
+  } else if (snapshot.providerState.mapSourceStatus === 'online-stale-offline') {
+    setMapStatus('Карта: офлайн, показаны загруженные тайлы', 'warn');
   } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
     setMapStatus('Карта: подложка недоступна, точки работают', 'warn');
   } else if (snapshot.providerState.mapSourceStatus === 'online-ready' || snapshot.tileDom.loaded > 0) {
@@ -1009,6 +1046,8 @@ function updateMapDebugUi(forceText = false) {
   if (hint) {
     if (!snapshot.leafletLoaded) {
       hint.textContent = 'Движок карты Leaflet не загрузился. Локальные точки и GPS-координаты остаются в данных, но визуальная карта недоступна до загрузки app shell/CDN.';
+    } else if (snapshot.providerState.mapSourceStatus === 'online-stale-offline') {
+      hint.textContent = 'Интернет выключен. Приложение удерживает уже загруженные тайлы, чтобы карта не исчезала до перезагрузки. Новые участки подложки без офлайн-пакета не догрузятся, но точки и GPS продолжают работать.';
     } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
       hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустой карты.';
     } else if (snapshot.tileStats.error > 0) {
@@ -1119,9 +1158,13 @@ function repairMap() {
   safeInvalidateMap(200, 'repair delayed 200');
   safeInvalidateMap(800, 'repair delayed 800');
   try {
-    if (!baseTileLayer && navigator.onLine) {
+    if (!navigator.onLine) {
+      if (!keepOnlineRasterLayerForOfflineTransition('repair requested while browser offline')) {
+        activateNoBasemapFallback('repair requested offline without loaded raster tiles');
+      }
+    } else if (!baseTileLayer) {
       mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'repair requested online provider');
-    } else if (baseTileLayer && baseTileLayer.redraw) {
+    } else if (baseTileLayer.redraw) {
       baseTileLayer.redraw();
       recordMapDebug('tile layer redraw');
     }
@@ -2897,7 +2940,7 @@ function bindUi() {
   if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = withButtonDiagnostics('closeMapDebugBtn', () => $('mapDebugDialog').close());
 
   window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
-  window.addEventListener('offline', () => { activateNoBasemapFallback('browser offline'); updateMapDebugUi(true); });
+  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateMapDebugUi(true); });
   window.addEventListener('resize', () => safeInvalidateMap(150, 'resize'));
   window.addEventListener('orientationchange', () => safeInvalidateMap(500, 'orientationchange'));
   document.addEventListener('visibilitychange', () => {
@@ -2927,7 +2970,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.3`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
