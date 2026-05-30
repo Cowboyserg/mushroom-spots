@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.1';
+const APP_VERSION = '0.7.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -69,6 +69,7 @@ let watchId = null;
 let spots = [];
 let spotMarkers = new Map();
 let selectedSpotId = null;
+let lastSavedSpotId = null;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
@@ -198,7 +199,8 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   useVisibleBboxBtn: 'Взять видимую область как PMTiles bbox',
   copyBboxCommandBtn: 'Скопировать команду PMTiles extract',
   clearBboxExportBtn: 'Сбросить PMTiles bbox',
-  saveSpotBtn: 'Сохранить текущую GPS-точку',
+  saveSpotBtn: 'Сохранить место',
+  saveCurrentGpsOnlyBtn: 'Сохранить только GPS',
   savePickedMapPointBtn: 'Сохранить выбранную точку на карте',
   sharePickedMapPointToChatBtn: 'Отправить выбранную точку в чат',
   clearPickedMapPointBtn: 'Сбросить выбранную точку на карте',
@@ -670,6 +672,78 @@ function setDisabled(id, disabled) {
   if (el) el.disabled = Boolean(disabled);
 }
 
+function setText(id, text) {
+  const el = $(id);
+  if (el) el.textContent = text;
+}
+
+function setPillState(id, state) {
+  const el = $(id);
+  if (!el) return;
+  el.classList.remove('warn', 'bad', 'on');
+  if (state) el.classList.add(state);
+}
+
+function getSaveSpotTarget() {
+  if (pickedMapPoint) {
+    return {
+      kind: 'picked',
+      source: 'map-picked',
+      position: pickedMapPoint,
+      title: 'Будет сохранена выбранная точка',
+      description: 'Ты выбрал место на карте. Нажми “Сохранить выбранную точку” и оно появится в списке “Точки”.',
+      pill: 'выбранная точка',
+      pillState: 'on',
+      button: 'Сохранить выбранную точку'
+    };
+  }
+  if (currentPosition) {
+    return {
+      kind: 'gps',
+      source: 'current-gps',
+      position: currentPosition,
+      title: 'Будет сохранено моё текущее место',
+      description: 'GPS уже активен. Можно добавить название, тип, заметку или фото и сохранить точку.',
+      pill: 'GPS готов',
+      pillState: 'on',
+      button: 'Сохранить моё место'
+    };
+  }
+  return {
+    kind: 'none',
+    source: null,
+    position: null,
+    title: navigator.geolocation ? 'Сначала включи GPS' : 'GPS недоступен',
+    description: navigator.geolocation
+      ? 'Нажми “GPS” или “Сохранить место” — приложение запросит координаты. Для другой точки зажми место на карте.'
+      : 'Этот браузер не даёт доступ к геолокации. Точку можно будет сохранить после выбора места на карте.',
+    pill: navigator.geolocation ? 'ждём GPS' : 'GPS недоступен',
+    pillState: 'warn',
+    button: navigator.geolocation ? 'Включить GPS для сохранения' : 'Сохранить место'
+  };
+}
+
+function updateSaveSpotFlowUi() {
+  const target = getSaveSpotTarget();
+  setText('saveFlowTitle', target.title);
+  setText('saveFlowDescription', target.description);
+  setText('saveTargetPill', target.pill);
+  setText('saveSpotBtn', target.button);
+  setPillState('saveTargetPill', target.pillState);
+
+  const coords = target.position
+    ? `Координаты: ${fmtCoord(target.position.lat)}, ${fmtCoord(target.position.lon)}${target.position.accuracy != null ? ` · точность ${meters(target.position.accuracy)}` : ''}`
+    : 'Координаты: —';
+  setText('saveFlowCoords', coords);
+
+  const state = $('saveFlowState');
+  if (state) {
+    state.classList.toggle('save-flow-ready', target.kind !== 'none');
+    state.classList.toggle('save-flow-picked', target.kind === 'picked');
+    state.classList.toggle('save-flow-waiting', target.kind === 'none');
+  }
+}
+
 function updateActionButtonsUi() {
   const hasSupabase = Boolean(getSupabaseConfig());
   const hasGroup = Boolean(currentGroupId());
@@ -677,8 +751,10 @@ function updateActionButtonsUi() {
   const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
   const canUseChat = hasSupabase && hasGroup && groupJoined;
+  const canRequestGps = Boolean(navigator.geolocation);
 
-  setDisabled('saveSpotBtn', !hasPosition);
+  setDisabled('saveSpotBtn', !hasPickedMapPoint && !hasPosition && !canRequestGps);
+  setDisabled('saveCurrentGpsOnlyBtn', !hasPosition);
   setDisabled('savePickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('sharePickedMapPointToChatBtn', !hasPickedMapPoint || !canUseChat);
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
@@ -691,6 +767,7 @@ function updateActionButtonsUi() {
   setDisabled('deleteSpotBtn', !hasSelected);
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
+  updateSaveSpotFlowUi();
 
   if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : (currentChatName() !== 'Без имени' ? `Войти как ${currentChatName()}` : 'Войти в группу');
   setDisabled('copyInviteBtn', !hasGroup);
@@ -3623,7 +3700,7 @@ function updatePickedMapPointUi() {
   const hint = $('pickedMapPointHint');
   if (!hint) return;
   if (pickedMapPoint) {
-    hint.textContent = `Выбрана точка на карте: ${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}. Заполни название/тип/заметку и нажми “Сохранить выбранную точку” или “Отправить выбранную точку в чат”.`;
+    hint.textContent = `Выбрана точка на карте: ${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}. Большая кнопка ниже сохранит именно эту точку. Если нужно сохранить своё GPS-место, сбрось выбор или используй “Другие способы сохранения”.`;
   } else {
     hint.textContent = 'Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.';
   }
@@ -3652,6 +3729,8 @@ function setPickedMapPoint(latlng, source = 'map') {
     pickedMapPointMarker.setLatLng([pickedMapPoint.lat, pickedMapPoint.lon]);
   }
   pickedMapPointMarker.openPopup();
+  const details = $('saveSpotDetails');
+  if (details) details.open = true;
   recordMapDebug('picked map point', pickedMapPoint);
   updatePickedMapPointUi();
   renderPmtilesPreviewUserLayers('picked point mirrored to PMTiles preview');
@@ -4054,7 +4133,7 @@ async function afterDataChanged() {
 }
 
 async function saveSpotFromPosition(position, source) {
-  if (!position) return;
+  if (!position) return null;
   const name = $('spotName').value.trim() || `Точка ${spots.length + 1}`;
   const photo = await fileToDataUrl($('spotPhoto').files[0]);
   const spot = {
@@ -4072,6 +4151,7 @@ async function saveSpotFromPosition(position, source) {
     appVersion: APP_VERSION
   };
   await putSpot(spot);
+  lastSavedSpotId = spot.id;
   $('spotName').value = '';
   $('mushroomType').value = '';
   $('spotNote').value = '';
@@ -4079,9 +4159,54 @@ async function saveSpotFromPosition(position, source) {
   if (source === 'map-picked') clearPickedMapPoint(false);
   await afterDataChanged();
   selectSpot(spot.id, true);
-  $('saveHint').textContent = source === 'map-picked'
+  showSaveResult(spot, source);
+  const saveHint = $('saveHint');
+  if (saveHint) saveHint.textContent = source === 'map-picked'
     ? 'Сохранена выбранная точка на карте.'
     : 'Сохранена текущая GPS-точка.';
+  updateSaveSpotFlowUi();
+  return spot;
+}
+
+function showSaveResult(spot, source) {
+  const card = $('saveResultCard');
+  if (!card || !spot) return;
+  const sourceText = source === 'map-picked' ? 'выбранная точка на карте' : 'текущая GPS-позиция';
+  setText('saveResultTitle', 'Точка сохранена');
+  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText}. Теперь её можно открыть на карте или найти во вкладке “Точки”.`);
+  card.hidden = false;
+}
+
+function hideSaveResult() {
+  const card = $('saveResultCard');
+  if (card) card.hidden = true;
+}
+
+function showLastSavedSpotOnMap() {
+  if (!lastSavedSpotId) return;
+  selectSpot(lastSavedSpotId, true);
+}
+
+function showLastSavedSpotInList() {
+  if (lastSavedSpotId) selectSpot(lastSavedSpotId, false);
+  switchAppScreen('spots');
+}
+
+function prepareNextSpotSave() {
+  hideSaveResult();
+  const input = $('spotName');
+  if (input) input.focus();
+}
+
+async function saveSmartSpot() {
+  const target = getSaveSpotTarget();
+  if (target.kind === 'none') {
+    markButtonBlocked('GPS ещё не готов');
+    setText('saveFlowDescription', 'Запрашиваю GPS. Когда появятся координаты, нажми “Сохранить моё место”.');
+    startGps(true);
+    return false;
+  }
+  return saveSpotFromPosition(target.position, target.source);
 }
 
 async function saveCurrentSpot() {
@@ -4090,7 +4215,7 @@ async function saveCurrentSpot() {
     alert('Сначала включи GPS и дождись координат.');
     return;
   }
-  await saveSpotFromPosition(currentPosition, 'current-gps');
+  return saveSpotFromPosition(currentPosition, 'current-gps');
 }
 
 async function savePickedMapPoint() {
@@ -4099,7 +4224,7 @@ async function savePickedMapPoint() {
     alert('Сначала зажми место на карте пальцем примерно на секунду.');
     return;
   }
-  await saveSpotFromPosition(pickedMapPoint, 'map-picked');
+  return saveSpotFromPosition(pickedMapPoint, 'map-picked');
 }
 
 async function averageAndSave() {
@@ -4169,7 +4294,7 @@ function renderList() {
   const list = $('spotsList');
   list.innerHTML = '';
   if (!filtered.length) {
-    list.innerHTML = '<p class="hint">Пока нет сохранённых мест.</p>';
+    list.innerHTML = '<p class="hint">Пока нет сохранённых мест. Открой “Карта” и нажми “Сохранить место”.</p>';
     return;
   }
   for (const spot of filtered) {
@@ -5477,9 +5602,13 @@ function bindUi() {
   bindAppNavigationShell();
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
-  $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveCurrentSpot);
+  $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveSmartSpot);
+  if ($('saveCurrentGpsOnlyBtn')) $('saveCurrentGpsOnlyBtn').onclick = withButtonDiagnostics('saveCurrentGpsOnlyBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
   if ($('sharePickedMapPointToChatBtn')) $('sharePickedMapPointToChatBtn').onclick = withButtonDiagnostics('sharePickedMapPointToChatBtn', sendPickedMapPointToChat);
+  if ($('saveResultMapBtn')) $('saveResultMapBtn').onclick = withButtonDiagnostics('saveResultMapBtn', showLastSavedSpotOnMap);
+  if ($('saveResultListBtn')) $('saveResultListBtn').onclick = withButtonDiagnostics('saveResultListBtn', showLastSavedSpotInList);
+  if ($('saveResultNewBtn')) $('saveResultNewBtn').onclick = withButtonDiagnostics('saveResultNewBtn', prepareNextSpotSave);
   if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
@@ -5578,7 +5707,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.2`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

@@ -694,3 +694,107 @@ body {
     border-radius: 20px;
   }
 }
+
+/* Sprint 5.2 — Save Spot Flow UX */
+.save-spot-flow-card {
+  border-color: rgba(36,75,47,.22);
+  box-shadow: 0 12px 34px rgba(36,75,47,.12);
+}
+.save-flow-header {
+  align-items: flex-start;
+}
+.save-flow-subtitle {
+  margin: -4px 0 0;
+}
+.save-flow-state {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  margin: 10px 0;
+  border: 1px solid rgba(36,75,47,.14);
+  border-radius: 18px;
+  background: #fff8e1;
+}
+.save-flow-state.save-flow-ready {
+  background: #eff8ed;
+  border-color: rgba(36,75,47,.22);
+}
+.save-flow-state.save-flow-picked {
+  background: #fff3df;
+  border-color: rgba(112,80,0,.22);
+}
+.save-flow-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 4px 14px rgba(0,0,0,.08);
+  font-size: 22px;
+}
+.save-flow-coords {
+  margin: 6px 0 0;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.save-main-btn {
+  width: 100%;
+  min-height: 56px;
+  font-size: 17px;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(36,75,47,.18);
+}
+.legacy-save-actions {
+  margin-top: 10px;
+  border: 1px solid rgba(36,75,47,.12);
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.58);
+}
+.legacy-save-actions summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 750;
+}
+.legacy-save-actions summary::-webkit-details-marker {
+  display: none;
+}
+.legacy-save-actions summary::before {
+  content: '▸';
+  margin-right: 6px;
+}
+.legacy-save-actions[open] summary::before {
+  content: '▾';
+}
+.legacy-save-actions .row {
+  margin-top: 10px;
+}
+.save-result-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(31,97,46,.22);
+  border-radius: 18px;
+  background: #eff8ed;
+}
+.save-result-card > strong {
+  display: block;
+  color: #1f612e;
+  margin-bottom: 4px;
+}
+.save-result-actions {
+  margin-top: 8px;
+}
+@media (max-width: 560px) {
+  .save-flow-state {
+    grid-template-columns: 1fr;
+  }
+  .save-flow-icon {
+    width: 38px;
+    height: 38px;
+  }
+}
