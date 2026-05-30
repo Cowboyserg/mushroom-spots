@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.10';
+const APP_VERSION = '0.6.11';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -64,6 +64,7 @@ let selectedSpotId = null;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
+let chatPreviewPoint = null;
 let mapLongPressTimer = null;
 let mapLongPressStart = null;
 let navLine = null;
@@ -90,6 +91,7 @@ let mapDebugEvents = [];
 let mapTileStats = { provider: mapProvider, loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null, startedAt: new Date().toISOString() };
 let pmtilesProtocol = null;
 let pmtilesPreviewMap = null;
+let pmtilesPreviewLiveRows = [];
 let offlineMapManifest = {
   url: OFFLINE_MAP_MANIFEST_URL,
   status: 'not-loaded',
@@ -121,6 +123,12 @@ let pmtilesPreviewState = {
   appliedBounds: null,
   appliedCenter: null,
   vectorLayers: null
+};
+let pmtilesPreviewUserLayerState = {
+  status: 'not-rendered',
+  counts: { spots: 0, selectedSpot: 0, gps: 0, picked: 0, chat: 0, live: 0, accuracy: 0 },
+  updatedAt: null,
+  error: null
 };
 let pmtilesRuntimeProbe = {
   url: PMTILES_DEFAULT_URL,
@@ -727,6 +735,13 @@ function formatDiagnosticsText() {
   lines.push(`- packages manifest: ${provider.offlineMapManifest.status}`);
   lines.push(`- selected package: ${provider.offlineMapManifest.selectedPackageName || provider.offlineMapManifest.selectedPackageId || 'none'}`);
   lines.push(`- pmtiles preview: ${provider.pmtilesPreview.status}`);
+  if (provider.pmtilesPreview.userLayers) {
+    const userLayers = provider.pmtilesPreview.userLayers;
+    const c = userLayers.counts || {};
+    lines.push(`- pmtiles user layers: ${userLayers.status}`);
+    lines.push(`- pmtiles user counts: spots=${c.spots || 0}, selected=${c.selectedSpot || 0}, gps=${c.gps || 0}, picked=${c.picked || 0}, chat=${c.chat || 0}, live=${c.live || 0}`);
+    if (userLayers.error) lines.push(`- pmtiles user layers error: ${userLayers.error}`);
+  }
   if (provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode) lines.push(`- pmtiles style: ${provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode}`);
   if (provider.pmtilesPreview.appliedBounds) lines.push(`- pmtiles bounds: ${provider.pmtilesPreview.appliedBounds.join(',')}`);
   if (provider.pmtilesPreview.appliedCenter) lines.push(`- pmtiles center: ${provider.pmtilesPreview.appliedCenter.join(',')}`);
@@ -887,7 +902,13 @@ function mapProviderSnapshot() {
       styleName: pmtilesPreviewState.styleName,
       appliedBounds: pmtilesPreviewState.appliedBounds,
       appliedCenter: pmtilesPreviewState.appliedCenter,
-      vectorLayers: pmtilesPreviewState.vectorLayers
+      vectorLayers: pmtilesPreviewState.vectorLayers,
+      userLayers: {
+        status: pmtilesPreviewUserLayerState.status,
+        counts: pmtilesPreviewUserLayerState.counts,
+        updatedAt: pmtilesPreviewUserLayerState.updatedAt,
+        error: pmtilesPreviewUserLayerState.error
+      }
     },
     offlineMapManifest: getOfflineMapManifestSnapshot(),
     changedAt: mapProviderChangedAt,
@@ -997,6 +1018,16 @@ function setPmtilesPreviewState(patch = {}, reason = 'pmtiles preview update') {
   updatePmtilesPreviewUi();
 }
 
+function setPmtilesPreviewUserLayerState(patch = {}, reason = 'pmtiles preview user layers update') {
+  pmtilesPreviewUserLayerState = {
+    ...pmtilesPreviewUserLayerState,
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
+  recordMapDebug(reason, { pmtilesPreviewUserLayers: pmtilesPreviewUserLayerState });
+  updatePmtilesPreviewUi();
+}
+
 function setCurrentPmtilesPreviewButtonStatus(status, detail) {
   if (activeButtonDiagnostics && activeButtonDiagnostics.buttonId === 'previewPmtilesBtn') {
     setButtonApiStatus(activeButtonDiagnostics, status, detail);
@@ -1013,7 +1044,11 @@ function updatePmtilesPreviewUi() {
   if (pmtilesPreviewState.status === 'loaded') {
     const styleText = pmtilesPreviewState.styleName ? ` · style: ${pmtilesPreviewState.styleName}` : '';
     const boundsText = pmtilesPreviewState.appliedBounds ? ` · bounds: ${pmtilesPreviewState.appliedBounds.join(',')}` : '';
-    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()})${styleText}${boundsText}. Это отдельный preview, основная карта остаётся Leaflet.`;
+    const c = pmtilesPreviewUserLayerState.counts || {};
+    const userText = pmtilesPreviewUserLayerState.status === 'rendered'
+      ? ` · слои: точки ${c.spots || 0}, GPS ${c.gps || 0}, выбор ${c.picked || 0}, чат ${c.chat || 0}, друзья ${c.live || 0}`
+      : '';
+    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}. Это отдельный preview, основная карта остаётся Leaflet.`;
   } else if (pmtilesPreviewState.status === 'loading') {
     statusEl.textContent = 'PMTiles preview: загрузка MapLibre и подключение pmtiles:// source…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
@@ -1285,6 +1320,12 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('PMTiles preview map remove failed', err); }
     pmtilesPreviewMap = null;
   }
+  pmtilesPreviewUserLayerState = {
+    status: 'not-rendered',
+    counts: { spots: 0, selectedSpot: 0, gps: 0, picked: 0, chat: 0, live: 0, accuracy: 0 },
+    updatedAt: null,
+    error: null
+  };
   setMapProviderState({ offlinePackageStatus: 'not-installed' }, `selected PMTiles package: ${pkg.id}`);
   updatePmtilesRuntimeStatusPill();
   updatePmtilesPreviewUi();
@@ -1582,6 +1623,12 @@ async function showPmtilesPreviewMap() {
   if (!panel || !container) throw new Error('PMTiles preview container is missing');
 
   panel.hidden = false;
+  pmtilesPreviewUserLayerState = {
+    status: 'not-rendered',
+    counts: { spots: 0, selectedSpot: 0, gps: 0, picked: 0, chat: 0, live: 0, accuracy: 0 },
+    updatedAt: null,
+    error: null
+  };
   setPmtilesPreviewState({
     status: 'loading',
     visible: true,
@@ -1700,6 +1747,7 @@ async function showPmtilesPreviewMap() {
 
       pmtilesPreviewMap.once('load', () => {
         applyViewport();
+        renderPmtilesPreviewUserLayers('PMTiles preview user layers initial load');
         setPmtilesPreviewState({
           status: 'source-loaded',
           visible: true,
@@ -1738,6 +1786,7 @@ async function showPmtilesPreviewMap() {
       error: null,
       loadedAt: new Date().toISOString()
     }, 'PMTiles preview rendered');
+    renderPmtilesPreviewUserLayers('PMTiles preview user layers rendered');
     setCurrentPmtilesPreviewButtonStatus('готово', 'PMTiles preview отрисован отдельно от основной карты');
     updateMapDebugUi(true);
     return true;
@@ -1749,6 +1798,215 @@ async function showPmtilesPreviewMap() {
     }, 'PMTiles preview failed');
     setCurrentPmtilesPreviewButtonStatus('ошибка', err?.message || String(err));
     updateMapDebugUi(true);
+    return false;
+  }
+}
+
+
+function normalizePreviewPoint(lat, lon) {
+  const latNum = Number(lat);
+  const lonNum = Number(lon);
+  if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return null;
+  if (latNum < -90 || latNum > 90 || lonNum < -180 || lonNum > 180) return null;
+  return { lat: latNum, lon: lonNum };
+}
+
+function previewPointFeature(kind, lat, lon, properties = {}) {
+  const point = normalizePreviewPoint(lat, lon);
+  if (!point) return null;
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [point.lon, point.lat] },
+    properties: { kind, ...properties }
+  };
+}
+
+function previewCirclePolygon(lon, lat, radiusMeters, steps = 48) {
+  const r = Number(radiusMeters);
+  if (!Number.isFinite(r) || r <= 0) return null;
+  const center = normalizePreviewPoint(lat, lon);
+  if (!center) return null;
+  const safeRadius = Math.min(Math.max(r, 3), 5000);
+  const latRad = center.lat * Math.PI / 180;
+  const metersPerDegLat = 111320;
+  const metersPerDegLon = Math.max(1, 111320 * Math.cos(latRad));
+  const coords = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const angle = (i / steps) * Math.PI * 2;
+    coords.push([
+      center.lon + (Math.cos(angle) * safeRadius) / metersPerDegLon,
+      center.lat + (Math.sin(angle) * safeRadius) / metersPerDegLat
+    ]);
+  }
+  return {
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [coords] },
+    properties: { kind: 'gps-accuracy', radiusMeters: safeRadius }
+  };
+}
+
+function emptyFeatureCollection() {
+  return { type: 'FeatureCollection', features: [] };
+}
+
+function buildPmtilesPreviewUserLayerData() {
+  const pointFeatures = [];
+  const accuracyFeatures = [];
+  const counts = { spots: 0, selectedSpot: 0, gps: 0, picked: 0, chat: 0, live: 0, accuracy: 0 };
+
+  for (const spot of spots || []) {
+    const isSelected = spot.id === selectedSpotId;
+    const feature = previewPointFeature(isSelected ? 'selected-spot' : 'spot', spot.lat, spot.lon, {
+      id: spot.id || '',
+      label: spot.name || 'Грибная точка',
+      type: spot.mushroomType || '',
+      note: spot.note || ''
+    });
+    if (feature) {
+      pointFeatures.push(feature);
+      counts.spots += 1;
+      if (isSelected) counts.selectedSpot += 1;
+    }
+  }
+
+  if (currentPosition) {
+    const gpsFeature = previewPointFeature('gps', currentPosition.lat, currentPosition.lon, {
+      label: 'Я',
+      accuracy: currentPosition.accuracy || null
+    });
+    if (gpsFeature) {
+      pointFeatures.push(gpsFeature);
+      counts.gps = 1;
+      const accuracy = previewCirclePolygon(currentPosition.lon, currentPosition.lat, currentPosition.accuracy || 0);
+      if (accuracy) {
+        accuracyFeatures.push(accuracy);
+        counts.accuracy = 1;
+      }
+    }
+  }
+
+  if (pickedMapPoint) {
+    const pickedFeature = previewPointFeature('picked', pickedMapPoint.lat, pickedMapPoint.lon, { label: 'Выбрано' });
+    if (pickedFeature) {
+      pointFeatures.push(pickedFeature);
+      counts.picked = 1;
+    }
+  }
+
+  if (chatPreviewPoint) {
+    const chatFeature = previewPointFeature('chat', chatPreviewPoint.lat, chatPreviewPoint.lon, {
+      label: chatPreviewPoint.title || chatPreviewPoint.name || 'Точка из чата'
+    });
+    if (chatFeature) {
+      pointFeatures.push(chatFeature);
+      counts.chat = 1;
+    }
+  }
+
+  for (const row of pmtilesPreviewLiveRows || []) {
+    const loc = row.location || row;
+    const liveFeature = previewPointFeature('live', loc.lat, loc.lon, {
+      userId: row.userId || loc.user_id || '',
+      label: row.name || loc.user_name || 'Друг',
+      accuracy: loc.accuracy || null,
+      updatedAt: loc.updated_at || row.updatedAt || ''
+    });
+    if (liveFeature) {
+      pointFeatures.push(liveFeature);
+      counts.live += 1;
+    }
+  }
+
+  return {
+    points: { type: 'FeatureCollection', features: pointFeatures },
+    accuracy: { type: 'FeatureCollection', features: accuracyFeatures },
+    counts
+  };
+}
+
+function addPreviewLayerIfMissing(layer) {
+  if (!pmtilesPreviewMap || !layer?.id || pmtilesPreviewMap.getLayer(layer.id)) return;
+  pmtilesPreviewMap.addLayer(layer);
+}
+
+function ensurePmtilesPreviewUserLayerSources() {
+  if (!pmtilesPreviewMap || typeof pmtilesPreviewMap.getSource !== 'function') return false;
+  if (!pmtilesPreviewMap.getSource('pmtiles-preview-user-points')) {
+    pmtilesPreviewMap.addSource('pmtiles-preview-user-points', { type: 'geojson', data: emptyFeatureCollection() });
+  }
+  if (!pmtilesPreviewMap.getSource('pmtiles-preview-user-accuracy')) {
+    pmtilesPreviewMap.addSource('pmtiles-preview-user-accuracy', { type: 'geojson', data: emptyFeatureCollection() });
+  }
+
+  addPreviewLayerIfMissing({
+    id: 'pmtiles-preview-user-accuracy-fill',
+    type: 'fill',
+    source: 'pmtiles-preview-user-accuracy',
+    paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.12 }
+  });
+  addPreviewLayerIfMissing({
+    id: 'pmtiles-preview-user-accuracy-line',
+    type: 'line',
+    source: 'pmtiles-preview-user-accuracy',
+    paint: { 'line-color': '#2563eb', 'line-width': 1.2, 'line-opacity': 0.45 }
+  });
+  addPreviewLayerIfMissing({
+    id: 'pmtiles-preview-user-points-halo',
+    type: 'circle',
+    source: 'pmtiles-preview-user-points',
+    paint: {
+      'circle-radius': ['match', ['get', 'kind'], 'gps', 11, 'live', 10, 'selected-spot', 10, 'picked', 10, 'chat', 10, 8],
+      'circle-color': '#ffffff',
+      'circle-opacity': 0.9
+    }
+  });
+  addPreviewLayerIfMissing({
+    id: 'pmtiles-preview-user-points',
+    type: 'circle',
+    source: 'pmtiles-preview-user-points',
+    paint: {
+      'circle-radius': ['match', ['get', 'kind'], 'gps', 7, 'live', 7, 'selected-spot', 7, 'picked', 7, 'chat', 7, 5.5],
+      'circle-color': ['match', ['get', 'kind'], 'gps', '#2563eb', 'live', '#dc2626', 'selected-spot', '#f59e0b', 'picked', '#f97316', 'chat', '#8b5cf6', 'spot', '#2f7d32', '#444444'],
+      'circle-stroke-color': ['match', ['get', 'kind'], 'spot', '#174a1d', 'selected-spot', '#7c2d12', '#ffffff'],
+      'circle-stroke-width': 1.5,
+      'circle-opacity': 0.96
+    }
+  });
+  addPreviewLayerIfMissing({
+    id: 'pmtiles-preview-user-labels',
+    type: 'symbol',
+    source: 'pmtiles-preview-user-points',
+    minzoom: 11,
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 11,
+      'text-offset': [0, 1.25],
+      'text-anchor': 'top',
+      'text-allow-overlap': false
+    },
+    paint: {
+      'text-color': '#243126',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 1.3
+    }
+  });
+  return true;
+}
+
+function renderPmtilesPreviewUserLayers(reason = 'PMTiles preview user layers update') {
+  if (!pmtilesPreviewMap || pmtilesPreviewState.status === 'error') return false;
+  try {
+    if (typeof pmtilesPreviewMap.isStyleLoaded === 'function' && !pmtilesPreviewMap.isStyleLoaded()) return false;
+    if (!ensurePmtilesPreviewUserLayerSources()) return false;
+    const data = buildPmtilesPreviewUserLayerData();
+    pmtilesPreviewMap.getSource('pmtiles-preview-user-points')?.setData(data.points);
+    pmtilesPreviewMap.getSource('pmtiles-preview-user-accuracy')?.setData(data.accuracy);
+    setPmtilesPreviewUserLayerState({ status: 'rendered', counts: data.counts, error: null }, reason);
+    if (typeof pmtilesPreviewMap.triggerRepaint === 'function') pmtilesPreviewMap.triggerRepaint();
+    return true;
+  } catch (err) {
+    setPmtilesPreviewUserLayerState({ status: 'error', error: err?.message || String(err) }, 'PMTiles preview user layers failed');
     return false;
   }
 }
@@ -2602,6 +2860,7 @@ function setPickedMapPoint(latlng, source = 'map') {
   pickedMapPointMarker.openPopup();
   recordMapDebug('picked map point', pickedMapPoint);
   updatePickedMapPointUi();
+  renderPmtilesPreviewUserLayers('picked point mirrored to PMTiles preview');
 }
 
 function clearPickedMapPoint(showStatus = false) {
@@ -2612,6 +2871,7 @@ function clearPickedMapPoint(showStatus = false) {
   pickedMapPoint = null;
   updatePickedMapPointUi();
   if (showStatus) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearPickedMapPointBtn', label: getButtonDiagnosticLabel('clearPickedMapPointBtn') }, 'готово', 'выбранная точка сброшена');
+  renderPmtilesPreviewUserLayers('picked point cleared from PMTiles preview');
 }
 
 function cancelMapLongPress() {
@@ -2868,6 +3128,7 @@ function updateUserPosition(pos, center=false) {
   }
   updateSelectedDetails();
   renderList();
+  renderPmtilesPreviewUserLayers('GPS mirrored to PMTiles preview');
 }
 
 function startGps(center=true) {
@@ -3101,6 +3362,7 @@ function renderMarkers() {
     spotMarkers.set(spot.id, marker);
   }
   safeInvalidateMap(0, 'render/update');
+  renderPmtilesPreviewUserLayers('saved spots mirrored to PMTiles preview');
 }
 
 function renderList() {
@@ -3142,6 +3404,7 @@ function selectSpot(id, center=false) {
   updateSelectedDetails();
   renderList();
   updateActionButtonsUi();
+  renderPmtilesPreviewUserLayers('selected spot mirrored to PMTiles preview');
 }
 window.selectSpotFromPopup = (id) => selectSpot(id, false);
 
@@ -3437,6 +3700,8 @@ function loadLiveInputs() {
 function clearFriendMarkers() {
   for (const marker of friendMarkers.values()) marker.remove();
   friendMarkers.clear();
+  pmtilesPreviewLiveRows = [];
+  renderPmtilesPreviewUserLayers('live friends cleared from PMTiles preview');
 }
 
 async function joinGroup(silent = false) {
@@ -3904,6 +4169,15 @@ async function sendSelectedSpotToChat() {
 
 function showChatSpotOnMap(payload) {
   if (!payload) return;
+  chatPreviewPoint = {
+    lat: payload.lat,
+    lon: payload.lng,
+    title: payload.n || 'Точка из чата',
+    mushroomType: payload.m || '',
+    note: payload.d || '',
+    shownAt: new Date().toISOString()
+  };
+  renderPmtilesPreviewUserLayers('chat point mirrored to PMTiles preview');
   if (!canUseMapRuntime()) {
     setChatHint(`Карта недоступна. Координаты точки из чата: ${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}.`);
     return;
@@ -4232,6 +4506,7 @@ function renderFriends(data) {
   const now = Date.now();
   const myId = ensureUserId();
   const seenMarkerIds = new Set();
+  const previewLiveRows = [];
   let activeLocationCount = 0;
 
   const people = new Map();
@@ -4264,7 +4539,10 @@ function renderFriends(data) {
     const memberAgeMs = member ? now - new Date(member.last_seen_at || member.updated_at).getTime() : Infinity;
     const hasActiveLocation = Boolean(loc) && locAgeMs <= 5 * 60 * 1000;
     const isPresent = Boolean(member) && memberAgeMs <= 10 * 60 * 1000;
-    if (hasActiveLocation) activeLocationCount += 1;
+    if (hasActiveLocation) {
+      activeLocationCount += 1;
+      if (row.userId !== myId && loc) previewLiveRows.push(row);
+    }
 
     if (loc && row.userId !== myId && hasActiveLocation && canUseMapRuntime()) {
       seenMarkerIds.add(row.userId);
@@ -4307,6 +4585,8 @@ function renderFriends(data) {
     list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет участников. Если связи нет, список появится из кэша после первого успешного обновления.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
   }
   safeInvalidateMap(0, 'render/update');
+  pmtilesPreviewLiveRows = previewLiveRows;
+  renderPmtilesPreviewUserLayers('live friends mirrored to PMTiles preview');
 
   if (rows.length && fromCache) {
     const cacheNote = document.createElement('p');
@@ -4489,7 +4769,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.10`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.11`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
