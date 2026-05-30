@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.12';
+const APP_VERSION = '0.5.14';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -7,6 +7,7 @@ const BACKUP_FILE_NAME = 'mushroom-spots-backup.json';
 const CHAT_MAX_LENGTH = 300;
 const CHAT_FETCH_LIMIT = 50;
 const CHAT_REFRESH_MS = 10000;
+const CHAT_SPOT_PREFIX = '::spot::';
 
 let db;
 let map;
@@ -19,6 +20,7 @@ let spotMarkers = new Map();
 let selectedSpotId = null;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
+let chatPreviewPointMarker = null;
 let mapLongPressTimer = null;
 let mapLongPressStart = null;
 let navLine = null;
@@ -46,10 +48,12 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   repairMapBtn: 'Починить карту',
   saveSpotBtn: 'Сохранить текущую GPS-точку',
   savePickedMapPointBtn: 'Сохранить выбранную точку на карте',
+  sharePickedMapPointToChatBtn: 'Отправить выбранную точку в чат',
   clearPickedMapPointBtn: 'Сбросить выбранную точку на карте',
   averageBtn: 'Уточнить GPS 30 сек',
   navigateBtn: 'Показать направление',
   shareSpotBtn: 'Экспорт точки',
+  sendSelectedSpotToChatBtn: 'Отправить сохранённую точку в чат',
   deleteSpotBtn: 'Удалить',
   createGroupBtn: 'Создать группу',
   copyInviteBtn: 'Скопировать приглашение',
@@ -64,6 +68,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   chatCancelEditBtn: 'Отменить правку сообщения',
   chatEditMessageBtn: 'Править сообщение',
   chatDeleteMessageBtn: 'Удалить сообщение',
+  chatShowSpotBtn: 'Показать точку из чата на карте',
   cleanMyDbBtn: 'Удалить меня из БД',
   cleanMyEverywhereDbBtn: 'Удалить меня из всех групп',
   cleanCurrentGroupDbBtn: 'Очистить текущую группу',
@@ -211,14 +216,17 @@ function updateActionButtonsUi() {
   const hasPosition = Boolean(currentPosition);
   const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
+  const canUseChat = hasSupabase && hasGroup && groupJoined;
 
   setDisabled('saveSpotBtn', !hasPosition);
   setDisabled('savePickedMapPointBtn', !hasPickedMapPoint);
+  setDisabled('sharePickedMapPointToChatBtn', !hasPickedMapPoint || !canUseChat);
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('navigateBtn', !hasSelected || !hasPosition);
   setDisabled('shareSpotBtn', !hasSelected);
+  setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
   setDisabled('deleteSpotBtn', !hasSelected);
 
   setDisabled('copyInviteBtn', !hasGroup);
@@ -481,7 +489,7 @@ function updatePickedMapPointUi() {
   const hint = $('pickedMapPointHint');
   if (!hint) return;
   if (pickedMapPoint) {
-    hint.textContent = `Выбрана точка на карте: ${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}. Заполни название/тип/заметку и нажми “Сохранить выбранную точку”.`;
+    hint.textContent = `Выбрана точка на карте: ${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}. Заполни название/тип/заметку и нажми “Сохранить выбранную точку” или “Отправить выбранную точку в чат”.`;
   } else {
     hint.textContent = 'Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.';
   }
@@ -602,7 +610,7 @@ async function copyMapDebug() {
 }
 
 function makeMapIcon(kind) {
-  const label = kind === 'user' ? 'Я' : kind === 'friend' ? 'Д' : '';
+  const label = kind === 'user' ? 'Я' : kind === 'friend' ? 'Д' : kind === 'chat' ? 'Ч' : '';
   const labelHtml = label ? `<span>${label}</span>` : '';
   return L.divIcon({
     className: '',
@@ -1660,6 +1668,155 @@ function sanitizeChatBody(value) {
   return String(value || '').trim().slice(0, CHAT_MAX_LENGTH);
 }
 
+function trimTextForSpotMessage(value, maxLength) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength);
+}
+
+function roundCoord(value) {
+  return Number(Number(value).toFixed(6));
+}
+
+function buildSpotChatPayloadFromSpot(spot) {
+  return {
+    v: 1,
+    t: 'spot',
+    lat: roundCoord(spot.lat),
+    lng: roundCoord(spot.lon ?? spot.lng),
+    n: trimTextForSpotMessage(spot.name || 'Грибная точка', 42),
+    m: trimTextForSpotMessage(spot.mushroomType || '', 32),
+    d: trimTextForSpotMessage(spot.note || '', 90),
+    s: 'saved'
+  };
+}
+
+function buildSpotChatPayloadFromPickedPoint() {
+  if (!pickedMapPoint) return null;
+  return {
+    v: 1,
+    t: 'spot',
+    lat: roundCoord(pickedMapPoint.lat),
+    lng: roundCoord(pickedMapPoint.lon),
+    n: trimTextForSpotMessage($('spotName')?.value || 'Выбранная точка', 42),
+    m: trimTextForSpotMessage($('mushroomType')?.value || '', 32),
+    d: trimTextForSpotMessage($('spotNote')?.value || '', 90),
+    s: 'picked'
+  };
+}
+
+function encodeSpotChatBody(payload) {
+  const normalized = {
+    v: 1,
+    t: 'spot',
+    lat: roundCoord(payload.lat),
+    lng: roundCoord(payload.lng ?? payload.lon),
+    n: trimTextForSpotMessage(payload.n || payload.name || 'Грибная точка', 42),
+    m: trimTextForSpotMessage(payload.m || payload.mushroomType || '', 32),
+    d: trimTextForSpotMessage(payload.d || payload.note || '', 90),
+    s: trimTextForSpotMessage(payload.s || payload.source || 'spot', 12)
+  };
+  let body = `${CHAT_SPOT_PREFIX}${JSON.stringify(normalized)}`;
+  while (body.length > CHAT_MAX_LENGTH && normalized.d.length > 0) {
+    normalized.d = normalized.d.slice(0, Math.max(0, normalized.d.length - 12));
+    body = `${CHAT_SPOT_PREFIX}${JSON.stringify(normalized)}`;
+  }
+  while (body.length > CHAT_MAX_LENGTH && normalized.n.length > 12) {
+    normalized.n = normalized.n.slice(0, Math.max(12, normalized.n.length - 8));
+    body = `${CHAT_SPOT_PREFIX}${JSON.stringify(normalized)}`;
+  }
+  if (body.length > CHAT_MAX_LENGTH) throw new Error('Точка слишком длинная для сообщения чата.');
+  return body;
+}
+
+function parseSpotChatBody(body) {
+  const text = String(body || '');
+  if (!text.startsWith(CHAT_SPOT_PREFIX)) return null;
+  try {
+    const payload = JSON.parse(text.slice(CHAT_SPOT_PREFIX.length));
+    const lat = Number(payload.lat);
+    const lng = Number(payload.lng ?? payload.lon);
+    if (payload.t !== 'spot' || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return {
+      v: 1,
+      t: 'spot',
+      lat,
+      lng,
+      n: trimTextForSpotMessage(payload.n || 'Грибная точка', 80),
+      m: trimTextForSpotMessage(payload.m || '', 60),
+      d: trimTextForSpotMessage(payload.d || '', 160),
+      s: trimTextForSpotMessage(payload.s || 'spot', 20)
+    };
+  } catch (err) {
+    console.warn('Invalid spot chat payload', err);
+    return null;
+  }
+}
+
+function requireGroupChatReady(actionLabel = 'Отправка точки в чат') {
+  if (!getSupabaseConfig()) { markButtonBlocked('Supabase не настроен'); alert('Для отправки точки в чат нужен Supabase в config.js.'); return false; }
+  if (!currentGroupId()) { markButtonBlocked('нет ID группы'); alert('Сначала создай группу или открой приглашение.'); return false; }
+  if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); alert('Сначала войди в группу.'); return false; }
+  return true;
+}
+
+async function sendSpotPayloadToChat(payload, sourceLabel) {
+  if (!requireGroupChatReady()) return false;
+  const body = encodeSpotChatBody(payload);
+  const name = currentChatName();
+  if ($('liveName') && !$('liveName').value.trim()) {
+    $('liveName').value = name;
+    saveLiveInputs();
+  }
+  await createChatMessage(body, name);
+  setChatHint(`${sourceLabel} отправлена в чат как кликабельная карточка.`);
+  await refreshGroupChat(false);
+  startChatAutoRefresh();
+  return true;
+}
+
+async function sendPickedMapPointToChat() {
+  if (!pickedMapPoint) { markButtonBlocked('точка на карте не выбрана'); alert('Сначала зажми место на карте пальцем примерно на секунду.'); return false; }
+  return sendSpotPayloadToChat(buildSpotChatPayloadFromPickedPoint(), 'Выбранная точка');
+}
+
+async function sendSelectedSpotToChat() {
+  const spot = spots.find(s => s.id === selectedSpotId);
+  if (!spot) { markButtonBlocked('сохранённая точка не выбрана'); alert('Сначала выбери сохранённую точку.'); return false; }
+  return sendSpotPayloadToChat(buildSpotChatPayloadFromSpot(spot), 'Сохранённая точка');
+}
+
+function showChatSpotOnMap(payload) {
+  if (!payload || !map) return;
+  const latlng = [payload.lat, payload.lng];
+  const title = payload.n || 'Точка из чата';
+  const popup = `<strong>${escapeHtml(title)}</strong><br>${payload.m ? `${escapeHtml(payload.m)}<br>` : ''}${payload.d ? `${escapeHtml(payload.d)}<br>` : ''}${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}<br><span class="hint">из чата группы</span>`;
+  if (!chatPreviewPointMarker) {
+    chatPreviewPointMarker = L.marker(latlng, { title: 'Точка из чата', icon: makeMapIcon('chat') }).addTo(map).bindPopup(popup);
+  } else {
+    chatPreviewPointMarker.setLatLng(latlng).setPopupContent(popup);
+  }
+  chatPreviewPointMarker.openPopup();
+  map.setView(latlng, Math.max(map.getZoom(), 16));
+  $('map')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  safeInvalidateMap(250, 'chat spot preview');
+  setChatHint(`Открыта точка из чата: ${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}.`);
+}
+
+function renderChatSpotCard(payload) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'chat-spot-card';
+  card.innerHTML = `
+    <div class="chat-spot-title">📍 ${escapeHtml(payload.n || 'Грибная точка')}</div>
+    ${payload.m ? `<div class="chat-spot-meta">${escapeHtml(payload.m)}</div>` : ''}
+    ${payload.d ? `<div class="chat-spot-note">${escapeHtml(payload.d)}</div>` : ''}
+    <div class="chat-spot-coords">${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}</div>
+    <div class="chat-spot-open">Нажми, чтобы показать на карте</div>
+  `;
+  card.onclick = withButtonDiagnostics('chatShowSpotBtn', () => showChatSpotOnMap(payload));
+  return card;
+}
+
 async function fetchGroupMessages() {
   const group = currentGroupId();
   if (!group) return [];
@@ -1697,27 +1854,39 @@ function renderGroupChat(rows = chatMessages) {
     const item = document.createElement('div');
     item.className = `chat-message ${isMine ? 'chat-message-own' : ''}`;
     item.dataset.messageId = row.id;
+    const spotPayload = parseSpotChatBody(row.body);
     item.innerHTML = `
       <div class="chat-message-head">
         <strong>${escapeHtml(row.display_name || 'Без имени')}${isMine ? ' · я' : ''}</strong>
-        <span>${fmtDate(row.created_at)}${edited ? ' · изменено' : ''}</span>
+        <span>${fmtDate(row.created_at)}${edited && !spotPayload ? ' · изменено' : ''}</span>
       </div>
-      <div class="chat-message-body">${escapeHtml(row.body || '')}</div>
     `;
+    if (spotPayload) {
+      item.classList.add('chat-message-spot');
+      item.appendChild(renderChatSpotCard(spotPayload));
+    } else {
+      const body = document.createElement('div');
+      body.className = 'chat-message-body';
+      body.textContent = row.body || '';
+      item.appendChild(body);
+    }
     if (isMine) {
       const actions = document.createElement('div');
       actions.className = 'row chat-message-actions';
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'secondary small-btn';
-      editBtn.textContent = 'Править';
-      editBtn.onclick = withButtonDiagnostics('chatEditMessageBtn', () => startEditChatMessage(row.id));
+      if (!spotPayload) {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'secondary small-btn';
+        editBtn.textContent = 'Править';
+        editBtn.onclick = withButtonDiagnostics('chatEditMessageBtn', () => startEditChatMessage(row.id));
+        actions.appendChild(editBtn);
+      }
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'danger small-btn';
       deleteBtn.textContent = 'Удалить';
       deleteBtn.onclick = withButtonDiagnostics('chatDeleteMessageBtn', () => deleteChatMessage(row.id));
-      actions.append(editBtn, deleteBtn);
+      actions.appendChild(deleteBtn);
       item.appendChild(actions);
     }
     list.appendChild(item);
@@ -1800,6 +1969,7 @@ function startEditChatMessage(messageId) {
   const row = chatMessages.find(item => item.id === messageId);
   if (!row) return;
   if (row.user_id !== ensureUserId()) return alert('В этом MVP можно редактировать только сообщения этого браузера.');
+  if (parseSpotChatBody(row.body)) { markButtonBlocked('точка в чате не редактируется'); return alert('Точку в чате пока нельзя редактировать. Можно удалить сообщение и отправить точку заново.'); }
   chatEditingMessageId = messageId;
   $('chatMessageInput').value = row.body || '';
   $('chatMessageInput').focus();
@@ -2061,11 +2231,13 @@ function bindUi() {
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
+  if ($('sharePickedMapPointToChatBtn')) $('sharePickedMapPointToChatBtn').onclick = withButtonDiagnostics('sharePickedMapPointToChatBtn', sendPickedMapPointToChat);
   if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
   $('navigateBtn').onclick = withButtonDiagnostics('navigateBtn', showNavigationLine);
   $('shareSpotBtn').onclick = withButtonDiagnostics('shareSpotBtn', exportSelected);
+  if ($('sendSelectedSpotToChatBtn')) $('sendSelectedSpotToChatBtn').onclick = withButtonDiagnostics('sendSelectedSpotToChatBtn', sendSelectedSpotToChat);
   $('deleteSpotBtn').onclick = withButtonDiagnostics('deleteSpotBtn', deleteSelected);
   $('exportAllBtn').onclick = withButtonDiagnostics('exportAllBtn', exportAll);
   $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { alert(`Ошибка импорта: ${err.message}`); } finally { e.target.value = ''; } };
@@ -2132,7 +2304,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.13`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.15`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();

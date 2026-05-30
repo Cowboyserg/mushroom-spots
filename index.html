@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.12 · Sprint 3.13</p>
+      <p id="appVersion">v0.5.14 · Sprint 3.15</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -76,6 +76,7 @@
       <div class="row">
         <button id="saveSpotBtn">Сохранить текущую GPS-точку</button>
         <button id="savePickedMapPointBtn" class="secondary">Сохранить выбранную точку</button>
+        <button id="sharePickedMapPointToChatBtn" class="secondary">Отправить выбранную точку в чат</button>
         <button id="clearPickedMapPointBtn" class="secondary">Сбросить выбор</button>
         <button id="averageBtn" class="secondary">Уточнить GPS 30 сек</button>
       </div>
@@ -89,6 +90,7 @@
       <div class="row">
         <button id="navigateBtn">Показать направление</button>
         <button id="shareSpotBtn" class="secondary">Экспорт точки</button>
+        <button id="sendSelectedSpotToChatBtn" class="secondary">Отправить в чат</button>
         <button id="deleteSpotBtn" class="danger">Удалить</button>
       </div>
     </section>
@@ -144,7 +146,7 @@
           <span class="pill">последние 50</span>
         </div>
       </div>
-      <p class="hint">Сообщения видны всем, кто знает ID группы. В этом MVP правка и удаление своих сообщений определяются по локальному user_id этого браузера.</p>
+      <p class="hint">Сообщения видны всем, кто знает ID группы. Точки из чата показываются кликабельными карточками: нажми карточку, чтобы перейти к точке на карте. В этом MVP правка и удаление своих сообщений определяются по локальному user_id этого браузера.</p>
       <div id="groupChatList" class="chat-list">
         <p class="hint">Чат появится после входа в группу.</p>
       </div>
@@ -213,8 +215,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.13</h2>
-      <p class="hint">Добавлен выбор точки на карте долгим нажатием: GPS-сохранение и сохранение выбранной на карте координаты теперь разделены.</p>
+      <h2>Sprint 3.15</h2>
+      <p class="hint">Добавлены кликабельные точки в чате: можно отправить сохранённую или выбранную на карте точку, а затем открыть её из чата на карте.</p>
     </section>
   </main>
 
