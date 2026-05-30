@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.5.11 · Sprint 3.12</p>
+      <p id="appVersion">v0.5.12 · Sprint 3.13</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -74,10 +74,13 @@
         <input id="spotPhoto" type="file" accept="image/*" />
       </div>
       <div class="row">
-        <button id="saveSpotBtn">Сохранить текущую точку</button>
+        <button id="saveSpotBtn">Сохранить текущую GPS-точку</button>
+        <button id="savePickedMapPointBtn" class="secondary">Сохранить выбранную точку</button>
+        <button id="clearPickedMapPointBtn" class="secondary">Сбросить выбор</button>
         <button id="averageBtn" class="secondary">Уточнить GPS 30 сек</button>
       </div>
-      <p class="hint" id="saveHint">Сначала включи GPS. Чем меньше точность в метрах, тем лучше.</p>
+      <p class="hint" id="pickedMapPointHint">Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.</p>
+      <p class="hint" id="saveHint">GPS-кнопка сохраняет текущую позицию. Кнопка “Сохранить выбранную точку” сохраняет координаты, выбранные долгим нажатием на карте.</p>
     </section>
 
     <section class="card selected-card" id="selectedCard" hidden>
@@ -210,8 +213,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 3.12</h2>
-      <p class="hint">Уточнена логика кнопок: группа, чат и показ моей позиции разделены. Участники могут быть видны по имени даже без точки на карте.</p>
+      <h2>Sprint 3.13</h2>
+      <p class="hint">Добавлен выбор точки на карте долгим нажатием: GPS-сохранение и сохранение выбранной на карте координаты теперь разделены.</p>
     </section>
   </main>
 

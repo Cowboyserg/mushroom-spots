@@ -309,3 +309,6 @@ dialog::backdrop { background:#0008; }
 .maintenance-card details[open] summary::before {
   content: '▾';
 }
+
+/* Sprint 3.13 map-picked draft point. */
+.map-dot-picked { background:#7b3fb2; }

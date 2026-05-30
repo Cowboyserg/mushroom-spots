@@ -1,4 +1,4 @@
-const APP_VERSION = '0.5.11';
+const APP_VERSION = '0.5.12';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -17,6 +17,10 @@ let watchId = null;
 let spots = [];
 let spotMarkers = new Map();
 let selectedSpotId = null;
+let pickedMapPoint = null;
+let pickedMapPointMarker = null;
+let mapLongPressTimer = null;
+let mapLongPressStart = null;
 let navLine = null;
 let folderHandle = null;
 let groupJoined = false;
@@ -40,7 +44,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   startGpsBtn: 'Включить GPS',
   centerMeBtn: 'Ко мне',
   repairMapBtn: 'Починить карту',
-  saveSpotBtn: 'Сохранить текущую точку',
+  saveSpotBtn: 'Сохранить текущую GPS-точку',
+  savePickedMapPointBtn: 'Сохранить выбранную точку на карте',
+  clearPickedMapPointBtn: 'Сбросить выбранную точку на карте',
   averageBtn: 'Уточнить GPS 30 сек',
   navigateBtn: 'Показать направление',
   shareSpotBtn: 'Экспорт точки',
@@ -203,9 +209,12 @@ function updateActionButtonsUi() {
   const hasSupabase = Boolean(getSupabaseConfig());
   const hasGroup = Boolean(currentGroupId());
   const hasPosition = Boolean(currentPosition);
+  const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
 
   setDisabled('saveSpotBtn', !hasPosition);
+  setDisabled('savePickedMapPointBtn', !hasPickedMapPoint);
+  setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('navigateBtn', !hasSelected || !hasPosition);
@@ -467,6 +476,93 @@ function updateMapDebugUi(forceText = false) {
   }
 }
 
+
+function updatePickedMapPointUi() {
+  const hint = $('pickedMapPointHint');
+  if (!hint) return;
+  if (pickedMapPoint) {
+    hint.textContent = `Выбрана точка на карте: ${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}. Заполни название/тип/заметку и нажми “Сохранить выбранную точку”.`;
+  } else {
+    hint.textContent = 'Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.';
+  }
+  updateActionButtonsUi();
+}
+
+function setPickedMapPoint(latlng, source = 'map') {
+  if (!latlng || !Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) return;
+  pickedMapPoint = {
+    lat: latlng.lat,
+    lon: latlng.lng,
+    accuracy: null,
+    source,
+    timestamp: new Date().toISOString()
+  };
+  if (!pickedMapPointMarker) {
+    pickedMapPointMarker = L.marker([pickedMapPoint.lat, pickedMapPoint.lon], {
+      title: 'Выбранная точка для сохранения',
+      icon: makeMapIcon('picked')
+    }).addTo(map).bindPopup('Выбранная точка для сохранения');
+  } else {
+    pickedMapPointMarker.setLatLng([pickedMapPoint.lat, pickedMapPoint.lon]);
+  }
+  pickedMapPointMarker.openPopup();
+  recordMapDebug('picked map point', pickedMapPoint);
+  updatePickedMapPointUi();
+}
+
+function clearPickedMapPoint(showStatus = false) {
+  if (pickedMapPointMarker) {
+    pickedMapPointMarker.remove();
+    pickedMapPointMarker = null;
+  }
+  pickedMapPoint = null;
+  updatePickedMapPointUi();
+  if (showStatus) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearPickedMapPointBtn', label: getButtonDiagnosticLabel('clearPickedMapPointBtn') }, 'готово', 'выбранная точка сброшена');
+}
+
+function cancelMapLongPress() {
+  if (mapLongPressTimer) {
+    window.clearTimeout(mapLongPressTimer);
+    mapLongPressTimer = null;
+  }
+  mapLongPressStart = null;
+}
+
+function setupMapPointPicking() {
+  if (!map) return;
+
+  map.on('contextmenu', (event) => {
+    // Desktop right-click and some mobile long-tap implementations land here.
+    setPickedMapPoint(event.latlng, 'map-contextmenu');
+  });
+
+  map.on('mousedown touchstart', (event) => {
+    const latlng = event.latlng;
+    if (!latlng) return;
+    mapLongPressStart = { latlng, containerPoint: event.containerPoint || null };
+    if (mapLongPressTimer) window.clearTimeout(mapLongPressTimer);
+    mapLongPressTimer = window.setTimeout(() => {
+      if (!mapLongPressStart) return;
+      setPickedMapPoint(mapLongPressStart.latlng, 'map-long-press');
+      mapLongPressTimer = null;
+      mapLongPressStart = null;
+    }, 850);
+  });
+
+  map.on('mousemove touchmove dragstart zoomstart popupopen', (event) => {
+    if (!mapLongPressStart) return;
+    if (!event.containerPoint || !mapLongPressStart.containerPoint) {
+      cancelMapLongPress();
+      return;
+    }
+    const dx = Math.abs(event.containerPoint.x - mapLongPressStart.containerPoint.x);
+    const dy = Math.abs(event.containerPoint.y - mapLongPressStart.containerPoint.y);
+    if (dx > 10 || dy > 10) cancelMapLongPress();
+  });
+
+  map.on('mouseup touchend touchcancel mouseout', cancelMapLongPress);
+}
+
 function repairMap() {
   if (!map) return;
   recordMapDebug('repairMap started');
@@ -646,6 +742,7 @@ function initMap() {
     .addTo(map);
 
   map.on('load moveend zoomend resize', () => updateMapDebugUi(false));
+  setupMapPointPicking();
 
   // Leaflet can render broken/offset tiles if the map is initialized while
   // the PWA layout is still settling, especially after install-to-home-screen,
@@ -813,11 +910,8 @@ async function afterDataChanged() {
   }
 }
 
-async function saveCurrentSpot() {
-  if (!currentPosition) {
-    alert('Сначала включи GPS и дождись координат.');
-    return;
-  }
+async function saveSpotFromPosition(position, source) {
+  if (!position) return;
   const name = $('spotName').value.trim() || `Точка ${spots.length + 1}`;
   const photo = await fileToDataUrl($('spotPhoto').files[0]);
   const spot = {
@@ -825,10 +919,10 @@ async function saveCurrentSpot() {
     name,
     mushroomType: $('mushroomType').value.trim(),
     note: $('spotNote').value.trim(),
-    lat: currentPosition.lat,
-    lon: currentPosition.lon,
-    accuracy: currentPosition.accuracy,
-    source: 'current-gps',
+    lat: position.lat,
+    lon: position.lon,
+    accuracy: position.accuracy ?? null,
+    source,
     photo,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -839,8 +933,30 @@ async function saveCurrentSpot() {
   $('mushroomType').value = '';
   $('spotNote').value = '';
   $('spotPhoto').value = '';
+  if (source === 'map-picked') clearPickedMapPoint(false);
   await afterDataChanged();
   selectSpot(spot.id, true);
+  $('saveHint').textContent = source === 'map-picked'
+    ? 'Сохранена выбранная точка на карте.'
+    : 'Сохранена текущая GPS-точка.';
+}
+
+async function saveCurrentSpot() {
+  if (!currentPosition) {
+    markButtonBlocked('нет GPS-координат');
+    alert('Сначала включи GPS и дождись координат.');
+    return;
+  }
+  await saveSpotFromPosition(currentPosition, 'current-gps');
+}
+
+async function savePickedMapPoint() {
+  if (!pickedMapPoint) {
+    markButtonBlocked('точка на карте не выбрана');
+    alert('Сначала зажми место на карте пальцем примерно на секунду.');
+    return;
+  }
+  await saveSpotFromPosition(pickedMapPoint, 'map-picked');
 }
 
 async function averageAndSave() {
@@ -1944,6 +2060,8 @@ function bindUi() {
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveCurrentSpot);
+  if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
+  if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
   $('navigateBtn').onclick = withButtonDiagnostics('navigateBtn', showNavigationLine);
@@ -2014,7 +2132,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.12`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 3.13`;
   db = await openDb();
   await restoreFolderHandle();
   ensureUserId();
