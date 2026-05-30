@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.6 · Sprint 4.6</p>
+      <p id="appVersion">v0.6.7 · Sprint 4.7</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -48,7 +48,8 @@
           <span id="mapStatusPill" class="pill">карта запускается</span>
           <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
           <span id="pmtilesRuntimeStatusPill" class="pill warn">PMTiles: не проверено</span>
-          <button id="probePmtilesBtn" class="secondary small-btn">Проверить mini PMTiles</button>
+          <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить manifest</button>
+          <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный PMTiles</button>
           <button id="previewPmtilesBtn" class="secondary small-btn">Показать PMTiles preview</button>
           <button id="repairMapBtn" class="secondary small-btn">Починить карту</button>
         </div>
@@ -56,7 +57,12 @@
       <div class="map-wrap">
         <div id="map"></div>
       </div>
-      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. В ZIP входит мини-файл <code>offline-test.pmtiles</code>: он нужен для проверки чтения и отдельного MapLibre preview, не как настоящая карта.</p>
+      <div class="offline-package-panel">
+        <label for="offlinePackageSelect">PMTiles пакет</label>
+        <select id="offlinePackageSelect" aria-label="Выбор PMTiles пакета"></select>
+        <p class="hint" id="offlinePackageManifestStatus">Manifest: не загружен.</p>
+      </div>
+      <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Офлайн-карты теперь описываются в <code>offline-map-packages.json</code>. В ZIP входит только маленький <code>offline-test.pmtiles</code> для диагностики; реальные большие карты добавляй как GitHub Release asset или внешний URL.</p>
       <div id="pmtilesPreviewPanel" class="pmtiles-preview-panel" hidden>
         <div class="section-title compact-title">
           <h3>PMTiles preview</h3>
@@ -235,8 +241,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.6</h2>
-      <p class="hint">Добавлен экспериментальный PMTiles preview: MapLibre пытается отрисовать отдельный мини-контейнер из ./offline-test.pmtiles. Основная Leaflet-карта, GPS, точки и чат не мигрируют в этом спринте.</p>
+      <h2>Sprint 4.7</h2>
+      <p class="hint">Добавлен manifest-адаптер офлайн-карт: приложение читает <code>offline-map-packages.json</code>, даёт выбрать PMTiles-пакет и проверяет выбранный URL. Реальные большие <code>.pmtiles</code> не входят в обычный ZIP/репозиторий; их можно подключать через GitHub Release asset.</p>
     </section>
   </main>
 

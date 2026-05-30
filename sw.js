@@ -1,8 +1,9 @@
-const CACHE_NAME = 'mushroom-spots-v0.6.6-sprint4.6';
+const CACHE_NAME = 'mushroom-spots-v0.6.7-sprint4.7';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.
-// config.js is intentionally not pre-cached, so key/URL fixes are picked up quickly.
+// config.js and large .pmtiles packages are intentionally not pre-cached.
+// offline-map-packages.json is small app metadata and is safe to cache.
 const APP_SHELL = [
   './',
   './index.html',
@@ -10,6 +11,7 @@ const APP_SHELL = [
   './app.js',
   './leaflet-offline-lite.js',
   './manifest.webmanifest',
+  './offline-map-packages.json',
   './icon.svg',
   './apple-touch-icon.svg'
 ];

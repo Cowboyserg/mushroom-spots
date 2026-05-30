@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.6';
+const APP_VERSION = '0.6.7';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -15,6 +15,7 @@ const GROUP_MEMBERS_CACHE_PREFIX = 'mushroom_group_members_cache_v1:';
 const MEMBER_SYNC_RETRY_MS = 15000;
 const SUPABASE_TIMEOUT_MS = 12000;
 const OFFLINE_MAP_PACKAGE_META_KEY = 'mushroom_offline_map_package_v1';
+const OFFLINE_MAP_SELECTED_PACKAGE_KEY = 'mushroom_offline_map_selected_package_v1';
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
 const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
@@ -22,7 +23,9 @@ const MAP_ENGINE_MAPLIBRE = 'maplibre';
 const MAP_PROVIDER_ONLINE_RASTER = 'online-raster';
 const MAP_PROVIDER_OFFLINE_PMTILES = 'offline-pmtiles';
 const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
-const PMTILES_DEFAULT_URL = './offline-test.pmtiles';
+const PMTILES_SAMPLE_URL = './offline-test.pmtiles';
+const PMTILES_DEFAULT_URL = PMTILES_SAMPLE_URL;
+const OFFLINE_MAP_MANIFEST_URL = './offline-map-packages.json';
 const MAPLIBRE_GL_VERSION = '5.24.0';
 const PMTILES_JS_VERSION = '4.4.1';
 const MAPLIBRE_SCRIPT_URLS = [
@@ -82,6 +85,14 @@ let mapDebugEvents = [];
 let mapTileStats = { provider: mapProvider, loading: 0, load: 0, error: 0, lastError: null, lastTileUrl: null, startedAt: new Date().toISOString() };
 let pmtilesProtocol = null;
 let pmtilesPreviewMap = null;
+let offlineMapManifest = {
+  url: OFFLINE_MAP_MANIFEST_URL,
+  status: 'not-loaded',
+  packages: [],
+  selectedPackageId: null,
+  error: null,
+  loadedAt: null
+};
 let pmtilesPreviewState = {
   status: 'not-run',
   visible: false,
@@ -148,7 +159,8 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanCurrentGroupDbBtn: 'Очистить текущую группу',
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
-  probePmtilesBtn: 'Проверить mini PMTiles',
+  loadOfflineManifestBtn: 'Обновить manifest карт',
+  probePmtilesBtn: 'Проверить выбранный PMTiles',
   previewPmtilesBtn: 'Показать PMTiles preview',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
@@ -681,6 +693,8 @@ function formatDiagnosticsText() {
   lines.push(`- pmtiles runtime: ${provider.pmtilesRuntime.status}`);
   lines.push(`- pmtiles file: ${provider.pmtilesRuntime.packageFound ? 'found' : 'not-found/unchecked'}`);
   lines.push(`- pmtiles url: ${provider.pmtilesRuntime.url}`);
+  lines.push(`- packages manifest: ${provider.offlineMapManifest.status}`);
+  lines.push(`- selected package: ${provider.offlineMapManifest.selectedPackageName || provider.offlineMapManifest.selectedPackageId || 'none'}`);
   lines.push(`- pmtiles preview: ${provider.pmtilesPreview.status}`);
   lines.push('');
   lines.push('КНОПКИ / API');
@@ -834,6 +848,7 @@ function mapProviderSnapshot() {
       loadedAt: pmtilesPreviewState.loadedAt,
       lastEvent: pmtilesPreviewState.lastEvent
     },
+    offlineMapManifest: getOfflineMapManifestSnapshot(),
     changedAt: mapProviderChangedAt,
     reason: mapProviderLastReason
   };
@@ -954,11 +969,13 @@ function updatePmtilesPreviewUi() {
   panel.hidden = !pmtilesPreviewState.visible;
 
   if (pmtilesPreviewState.status === 'loaded') {
-    statusEl.textContent = 'PMTiles preview: MapLibre отрисовал тестовую карту из offline-test.pmtiles. Это отдельный preview, основная карта остаётся Leaflet.';
+    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный raster PMTiles (${getActivePmtilesPackageName()}). Это отдельный preview, основная карта остаётся Leaflet.`;
   } else if (pmtilesPreviewState.status === 'loading') {
     statusEl.textContent = 'PMTiles preview: загрузка MapLibre и подключение pmtiles:// source…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
     statusEl.textContent = 'PMTiles preview: источник подключён, ждём отрисовку первого кадра…';
+  } else if (pmtilesPreviewState.status === 'metadata-only') {
+    statusEl.textContent = `PMTiles preview: пакет ${getActivePmtilesPackageName()} читается, но это не raster-пакет для текущего preview. Нужен отдельный vector-style спринт.`;
   } else if (pmtilesPreviewState.status === 'error') {
     statusEl.textContent = `PMTiles preview: ошибка — ${pmtilesPreviewState.error || 'неизвестная ошибка'}`;
   } else {
@@ -980,6 +997,249 @@ function registerPmtilesArchiveForUrl(url = PMTILES_DEFAULT_URL) {
   return { archive, absoluteUrl, protocolUrl: `pmtiles://${absoluteUrl}` };
 }
 
+function defaultOfflineMapPackage() {
+  return {
+    id: 'mini-sample',
+    name: 'Мини PMTiles sample',
+    url: PMTILES_SAMPLE_URL,
+    sourceType: 'same-origin-sample',
+    role: 'diagnostic',
+    enabled: true,
+    sizeBytes: null,
+    description: 'Маленький встроенный диагностический пакет для проверки PMTiles runtime.'
+  };
+}
+
+function normalizeOfflineMapPackage(pkg = {}, index = 0) {
+  const fallback = defaultOfflineMapPackage();
+  const id = String(pkg.id || pkg.name || `package-${index + 1}`).trim();
+  const url = String(pkg.url || '').trim();
+  const enabled = pkg.enabled !== false && Boolean(url);
+  return {
+    id,
+    name: String(pkg.name || id || fallback.name).trim(),
+    url,
+    sourceType: String(pkg.sourceType || pkg.source || inferPmtilesSourceType(url)).trim(),
+    role: pkg.role || null,
+    version: pkg.version || null,
+    sizeBytes: headerNumber(pkg.sizeBytes ?? pkg.size ?? null),
+    bounds: Array.isArray(pkg.bounds) ? pkg.bounds : null,
+    minZoom: pkg.minZoom ?? null,
+    maxZoom: pkg.maxZoom ?? null,
+    enabled,
+    required: Boolean(pkg.required),
+    description: pkg.description || null,
+    releaseTag: pkg.releaseTag || null,
+    checksum: pkg.checksum || null
+  };
+}
+
+function ensureSamplePackage(packages = []) {
+  const sample = defaultOfflineMapPackage();
+  const normalized = packages.map((pkg, index) => normalizeOfflineMapPackage(pkg, index));
+  if (!normalized.some((pkg) => pkg.id === sample.id)) normalized.unshift(sample);
+  return normalized;
+}
+
+function inferPmtilesSourceType(url = '') {
+  const value = String(url || '');
+  if (!value) return 'not-configured';
+  if (value.startsWith('./') || value.startsWith('/')) return 'same-origin-static-file';
+  if (/github\.com\/[^/]+\/[^/]+\/releases\/download\//i.test(value)) return 'github-release-asset';
+  if (/objects\.githubusercontent\.com/i.test(value)) return 'github-release-redirect';
+  return 'remote-url';
+}
+
+function getOfflineMapManifestSnapshot() {
+  const selected = getSelectedOfflineMapPackage(false);
+  return {
+    url: offlineMapManifest.url,
+    status: offlineMapManifest.status,
+    packageCount: offlineMapManifest.packages.length,
+    selectedPackageId: offlineMapManifest.selectedPackageId,
+    selectedPackageName: selected?.name || null,
+    selectedPackageUrl: selected?.url || null,
+    selectedPackageSource: selected?.sourceType || null,
+    error: offlineMapManifest.error,
+    loadedAt: offlineMapManifest.loadedAt,
+    packages: offlineMapManifest.packages.map((pkg) => ({
+      id: pkg.id,
+      name: pkg.name,
+      url: pkg.url,
+      sourceType: pkg.sourceType,
+      version: pkg.version,
+      sizeBytes: pkg.sizeBytes,
+      enabled: pkg.enabled,
+      role: pkg.role
+    }))
+  };
+}
+
+function getSelectedOfflineMapPackage(allowFallback = true) {
+  const packages = offlineMapManifest.packages || [];
+  const selectedId = offlineMapManifest.selectedPackageId || localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+  const found = packages.find((pkg) => pkg.id === selectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled);
+  if (found) return found;
+  return allowFallback ? defaultOfflineMapPackage() : null;
+}
+
+function getActiveOfflineMapPackage() {
+  const selected = getSelectedOfflineMapPackage(true);
+  if (!selected.url) throw new Error('У выбранного PMTiles-пакета нет URL в manifest');
+  return selected;
+}
+
+function getActivePmtilesPackageUrl() {
+  return getSelectedOfflineMapPackage(true).url || PMTILES_DEFAULT_URL;
+}
+
+function getActivePmtilesPackageName() {
+  return getSelectedOfflineMapPackage(true).name || 'PMTiles package';
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return 'размер неизвестен';
+  if (value < 1024) return `${Math.round(value)} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${Math.round(value / 1024 / 1024)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function renderOfflineMapPackageUi() {
+  const select = $('offlinePackageSelect');
+  const status = $('offlinePackageManifestStatus');
+  if (select) {
+    const selectedId = offlineMapManifest.selectedPackageId || localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY) || '';
+    select.innerHTML = '';
+    for (const pkg of offlineMapManifest.packages) {
+      const option = document.createElement('option');
+      option.value = pkg.id;
+      option.textContent = `${pkg.name} · ${pkg.sourceType}${pkg.sizeBytes ? ` · ${formatBytes(pkg.sizeBytes)}` : ''}`;
+      option.disabled = !pkg.enabled;
+      select.appendChild(option);
+    }
+    const active = getSelectedOfflineMapPackage(true);
+    select.value = active.id || selectedId;
+  }
+
+  if (status) {
+    const active = getSelectedOfflineMapPackage(true);
+    if (offlineMapManifest.status === 'loaded') {
+      status.textContent = `Manifest: загружен. Выбран пакет: ${active.name} (${active.sourceType}). ${active.url ? active.url : 'URL не задан.'}`;
+    } else if (offlineMapManifest.status === 'loading') {
+      status.textContent = 'Manifest: загружается…';
+    } else if (offlineMapManifest.status === 'error') {
+      status.textContent = `Manifest: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Доступен встроенный mini sample.`;
+    } else {
+      status.textContent = 'Manifest: не загружен. Доступен встроенный mini sample.';
+    }
+  }
+  updateMapDebugUi(false);
+}
+
+function selectOfflineMapPackage(packageId, userAction = false) {
+  const pkg = (offlineMapManifest.packages || []).find((item) => item.id === packageId);
+  if (!pkg || !pkg.enabled) {
+    renderOfflineMapPackageUi();
+    return null;
+  }
+  offlineMapManifest.selectedPackageId = pkg.id;
+  localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, pkg.id);
+  pmtilesRuntimeProbe = {
+    ...pmtilesRuntimeProbe,
+    url: pkg.url,
+    status: 'not-run',
+    packageFound: false,
+    header: null,
+    metadata: null,
+    error: null,
+    packageId: pkg.id,
+    packageName: pkg.name
+  };
+  pmtilesPreviewState = {
+    ...pmtilesPreviewState,
+    status: 'not-run',
+    visible: false,
+    sourceUrl: pkg.url,
+    styleMode: null,
+    error: null,
+    loadedAt: null,
+    lastEvent: userAction ? 'selected package changed by user' : 'selected package restored'
+  };
+  if (pmtilesPreviewMap) {
+    try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('PMTiles preview map remove failed', err); }
+    pmtilesPreviewMap = null;
+  }
+  setMapProviderState({ offlinePackageStatus: 'not-installed' }, `selected PMTiles package: ${pkg.id}`);
+  updatePmtilesRuntimeStatusPill();
+  updatePmtilesPreviewUi();
+  renderOfflineMapPackageUi();
+  return pkg;
+}
+
+async function loadOfflineMapManifest(userAction = false) {
+  offlineMapManifest = {
+    ...offlineMapManifest,
+    status: 'loading',
+    error: null
+  };
+  renderOfflineMapPackageUi();
+  if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
+    setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'загрузка offline-map-packages.json');
+  }
+
+  try {
+    const res = await fetch(OFFLINE_MAP_MANIFEST_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const packages = ensureSamplePackage(Array.isArray(json.packages) ? json.packages : []);
+    const savedSelectedId = localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+    const selectedPackage = packages.find((pkg) => pkg.id === savedSelectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled) || defaultOfflineMapPackage();
+    offlineMapManifest = {
+      url: OFFLINE_MAP_MANIFEST_URL,
+      status: 'loaded',
+      schemaVersion: json.schemaVersion || null,
+      packages,
+      selectedPackageId: selectedPackage.id,
+      error: null,
+      loadedAt: new Date().toISOString()
+    };
+    localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, selectedPackage.id);
+    pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: selectedPackage.url, packageId: selectedPackage.id, packageName: selectedPackage.name };
+    pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
+    renderOfflineMapPackageUi();
+    recordMapDebug('offline map manifest loaded', getOfflineMapManifestSnapshot());
+    if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
+      setButtonApiStatus(activeButtonDiagnostics, 'готово', `найдено пакетов: ${packages.length}`);
+    }
+    return offlineMapManifest;
+  } catch (err) {
+    const sample = defaultOfflineMapPackage();
+    offlineMapManifest = {
+      url: OFFLINE_MAP_MANIFEST_URL,
+      status: 'error',
+      packages: [sample],
+      selectedPackageId: sample.id,
+      error: err?.message || String(err),
+      loadedAt: null
+    };
+    pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: sample.url, packageId: sample.id, packageName: sample.name };
+    pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: sample.url };
+    renderOfflineMapPackageUi();
+    recordMapDebug('offline map manifest load failed; sample fallback active', offlineMapManifest.error);
+    if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
+      setButtonApiStatus(activeButtonDiagnostics, 'ошибка', offlineMapManifest.error);
+    }
+    return offlineMapManifest;
+  }
+}
+
+function isRasterPmtilesTileType(tileType) {
+  const normalized = String(tileType ?? '').toLowerCase();
+  return ['2', '3', '4', '5', 'png', 'jpeg', 'jpg', 'webp', 'avif'].includes(normalized);
+}
+
 async function showPmtilesPreviewMap() {
   const panel = $('pmtilesPreviewPanel');
   const container = $('pmtilesPreviewMap');
@@ -989,7 +1249,7 @@ async function showPmtilesPreviewMap() {
   setPmtilesPreviewState({
     status: 'loading',
     visible: true,
-    sourceUrl: PMTILES_DEFAULT_URL,
+    sourceUrl: getActivePmtilesPackageUrl(),
     styleMode: null,
     error: null,
     loadedAt: null
@@ -1006,7 +1266,9 @@ async function showPmtilesPreviewMap() {
       webgl: hasWebGLSupport()
     }, 'MapLibre/PMTiles runtime loaded for preview');
 
-    const result = await readPmtilesPackage(PMTILES_DEFAULT_URL);
+    const activePackage = getActiveOfflineMapPackage();
+    const activeUrl = activePackage.url;
+    const result = await readPmtilesPackage(activeUrl, activePackage);
     setPmtilesProbeState({
       status: 'ready',
       packageFound: true,
@@ -1014,7 +1276,7 @@ async function showPmtilesPreviewMap() {
       metadata: result.metadata,
       error: null
     }, 'PMTiles preview package metadata read');
-    setMapProviderState({ offlinePackageStatus: 'preview-ready-runtime-experimental' }, 'PMTiles preview metadata ready; Leaflet remains primary');
+    setMapProviderState({ offlinePackageStatus: 'metadata-ready-runtime-experimental' }, 'PMTiles preview metadata ready; Leaflet remains primary');
 
     if (pmtilesPreviewMap) {
       try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('PMTiles preview map remove failed', err); }
@@ -1022,8 +1284,22 @@ async function showPmtilesPreviewMap() {
     }
     container.innerHTML = '';
 
-    const registration = registerPmtilesArchiveForUrl(PMTILES_DEFAULT_URL);
-    const protocolUrl = registration?.protocolUrl || `pmtiles://${getAbsolutePmtilesUrl(PMTILES_DEFAULT_URL)}`;
+    if (!isRasterPmtilesTileType(result.meta?.tileType)) {
+      setPmtilesPreviewState({
+        status: 'metadata-only',
+        visible: true,
+        sourceUrl: activeUrl,
+        styleMode: 'metadata-only',
+        error: null,
+        loadedAt: new Date().toISOString()
+      }, 'PMTiles preview skipped for non-raster package');
+      setCurrentPmtilesPreviewButtonStatus('готово', 'пакет читается, preview для vector tiles будет отдельно');
+      updateMapDebugUi(true);
+      return true;
+    }
+
+    const registration = registerPmtilesArchiveForUrl(activeUrl);
+    const protocolUrl = registration?.protocolUrl || `pmtiles://${getAbsolutePmtilesUrl(activeUrl)}`;
     const center = result.meta?.center && Number.isFinite(result.meta.center.lon) && Number.isFinite(result.meta.center.lat)
       ? [result.meta.center.lon, result.meta.center.lat]
       : [0, 0];
@@ -1086,6 +1362,7 @@ async function showPmtilesPreviewMap() {
       });
     });
 
+    setMapProviderState({ offlinePackageStatus: 'preview-ready-runtime-experimental' }, 'PMTiles preview rendered; Leaflet remains primary');
     setPmtilesPreviewState({
       status: 'loaded',
       visible: true,
@@ -1305,7 +1582,7 @@ async function startMapLibreSmokeTest() {
   });
 }
 
-async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
+async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null) {
   let sizeBytes = null;
   try {
     const head = await fetch(url, { method: 'HEAD', cache: 'no-store' });
@@ -1320,7 +1597,8 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
     recordMapDebug('PMTiles HEAD check failed; trying PMTiles reader', err?.message || String(err));
   }
 
-  const archive = new window.pmtiles.PMTiles(url);
+  const absoluteUrl = getAbsolutePmtilesUrl(url);
+  const archive = new window.pmtiles.PMTiles(absoluteUrl);
   const header = await archive.getHeader();
   let metadata = null;
   try {
@@ -1332,11 +1610,11 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
   const normalizedHeader = normalizePmtilesHeader(header);
   const summarizedMetadata = summarizePmtilesMetadata(metadata);
   const meta = {
-    id: `pmtiles:${url}`,
-    name: summarizedMetadata?.name || url.split('/').pop() || 'offline-test.pmtiles',
+    id: packageInfo?.id || `pmtiles:${url}`,
+    name: summarizedMetadata?.name || packageInfo?.name || url.split('/').pop() || 'offline-test.pmtiles',
     format: 'pmtiles',
     runtime: 'maplibre-pmtiles-probe',
-    source: 'same-origin-static-file',
+    source: packageInfo?.sourceType || packageInfo?.source || inferPmtilesSourceType(url),
     url,
     sizeBytes,
     bbox: [normalizedHeader.minLon, normalizedHeader.minLat, normalizedHeader.maxLon, normalizedHeader.maxLat].every((value) => value != null)
@@ -1350,6 +1628,9 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
     tileType: normalizedHeader.tileType,
     tileCompression: normalizedHeader.tileCompression,
     metadata: summarizedMetadata,
+    packageVersion: packageInfo?.version || null,
+    manifestId: offlineMapManifest.selectedPackageId || null,
+    checkedAt: new Date().toISOString(),
     installedAt: new Date().toISOString()
   };
   localStorage.setItem(OFFLINE_MAP_PACKAGE_META_KEY, JSON.stringify(meta));
@@ -1359,7 +1640,8 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL) {
 }
 
 async function runPmtilesRuntimeProbe() {
-  const url = PMTILES_DEFAULT_URL;
+  const activePackage = getActiveOfflineMapPackage();
+  const url = activePackage.url;
   setPmtilesProbeState({
     url,
     status: 'loading-runtime',
@@ -1370,7 +1652,9 @@ async function runPmtilesRuntimeProbe() {
     packageFound: false,
     header: null,
     metadata: null,
-    error: null
+    error: null,
+    packageId: activePackage.id || null,
+    packageName: activePackage.name || null
   }, 'PMTiles runtime probe started');
 
   try {
@@ -1387,7 +1671,7 @@ async function runPmtilesRuntimeProbe() {
 
     setPmtilesProbeState({ status: 'checking-package' }, 'MapLibre smoke test passed; checking PMTiles package');
     try {
-      const result = await readPmtilesPackage(url);
+      const result = await readPmtilesPackage(url, activePackage);
       setPmtilesProbeState({
         status: 'ready',
         packageFound: true,
@@ -1408,9 +1692,9 @@ async function runPmtilesRuntimeProbe() {
           status: 'maplibre-ready-no-package',
           packageFound: false,
           error: `${url} not found`
-        }, 'MapLibre/PMTiles runtime ready, but offline-test.pmtiles is not installed');
-        setMapProviderState({ offlinePackageStatus: 'not-installed' }, 'PMTiles runtime ready; package missing');
-        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, offline-test.pmtiles не найден');
+        }, 'MapLibre/PMTiles runtime ready, but selected PMTiles package is not available');
+        setMapProviderState({ offlinePackageStatus: 'not-installed' }, 'PMTiles runtime ready; selected package missing');
+        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, выбранный PMTiles не найден');
         updateMapDebugUi(true);
         return false;
       }
@@ -1675,9 +1959,9 @@ function updateMapDebugUi(forceText = false) {
     } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
       hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустой карты.';
     } else if (snapshot.providerState.offlinePackageStatus === 'preview-ready-runtime-experimental') {
-      hint.textContent = 'PMTiles preview отрисован отдельным MapLibre-контейнером из offline-test.pmtiles. Это не замена основной карты: Leaflet online-raster, точки, GPS и чат остаются рабочим слоем.';
+      hint.textContent = 'PMTiles preview отрисован отдельным MapLibre-контейнером из выбранного manifest-пакета. Это не замена основной карты: Leaflet online-raster, точки, GPS и чат остаются рабочим слоем.';
     } else if (snapshot.providerState.offlinePackageStatus === 'metadata-ready-runtime-experimental') {
-      hint.textContent = 'Мини-файл offline-test.pmtiles читается экспериментальным MapLibre/PMTiles probe. Это проверка формата/доступа, а не настоящая офлайн-подложка; основная карта пока остаётся на Leaflet online-raster.';
+      hint.textContent = 'Выбранный PMTiles-пакет читается экспериментальным MapLibre/PMTiles probe. Если это GitHub Release asset, приложение проверяет URL из manifest без автоскачивания большой карты; основная карта пока остаётся на Leaflet online-raster.';
     } else if (snapshot.tileStats.error > 0) {
       hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
     } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
@@ -3560,6 +3844,8 @@ function bindUi() {
   if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').onclick = withButtonDiagnostics('cleanCurrentGroupDbBtn', cleanCurrentGroupDbRows);
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
+  if ($('loadOfflineManifestBtn')) $('loadOfflineManifestBtn').onclick = withButtonDiagnostics('loadOfflineManifestBtn', () => loadOfflineMapManifest(true));
+  if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
@@ -3600,7 +3886,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.6`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.7`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
@@ -3608,6 +3894,7 @@ async function init() {
   ensureUserId();
   initMap();
   bindUi();
+  loadOfflineMapManifest(false).catch((err) => recordMapDebug('offline map manifest startup load failed', err?.message || String(err)));
   recordMapDebug('app initialized');
   const groupFromUrl = loadLiveInputs();
   renderPeopleProfiles();

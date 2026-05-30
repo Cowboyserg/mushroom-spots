@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-05-30",
+  "notes": "Real large .pmtiles packages must not be committed into the normal GitHub Pages repository. Put them into GitHub Release assets or external object storage, then add their URL here.",
+  "packages": [
+    {
+      "id": "mini-sample",
+      "name": "Mini diagnostic PMTiles",
+      "version": "2026.05.30-test",
+      "url": "./offline-test.pmtiles",
+      "sourceType": "same-origin-sample",
+      "role": "diagnostic",
+      "sizeBytes": 510,
+      "enabled": true,
+      "required": false,
+      "description": "Tiny built-in PMTiles file used only to verify PMTiles runtime, metadata reading, and preview rendering. Not a real basemap."
+    },
+    {
+      "id": "github-release-template",
+      "name": "GitHub Release asset template",
+      "version": "replace-after-upload",
+      "url": "",
+      "sourceType": "github-release-asset",
+      "role": "template",
+      "enabled": false,
+      "required": false,
+      "description": "After uploading a real .pmtiles file to a GitHub Release, paste its release download URL here and set enabled=true. Example URL shape: https://github.com/OWNER/REPO/releases/download/maps-2026-05/region.pmtiles"
+    }
+  ]
+}

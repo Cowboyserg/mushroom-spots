@@ -414,3 +414,22 @@ dialog::backdrop { background:#0008; }
   background:#eef2e8;
   position:relative;
 }
+
+/* Sprint 4.7 offline map package manifest controls. */
+.offline-package-panel {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(36, 75, 47, 0.16);
+  border-radius: 14px;
+  background: rgba(244, 248, 241, 0.72);
+}
+.offline-package-panel label {
+  display: block;
+  font-size: 0.82rem;
+  color: #42614a;
+  margin-bottom: 0.35rem;
+}
+.offline-package-panel select {
+  width: 100%;
+  max-width: 100%;
+}
