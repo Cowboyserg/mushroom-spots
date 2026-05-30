@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.6.12 · Sprint 4.12</p>
+      <p id="appVersion">v0.6.13 · Sprint 4.13</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -87,7 +87,11 @@
           <h3>PMTiles preview</h3>
           <span class="pill warn">эксперимент</span>
         </div>
+        <div class="row">
+          <button id="centerPmtilesOnMeBtn" class="secondary small-btn">Показать меня на офлайн-карте</button>
+        </div>
         <div id="pmtilesPreviewMap" class="pmtiles-preview-map" aria-label="Экспериментальный preview PMTiles"></div>
+        <p id="pmtilesPreviewFocusStatus" class="hint">Фокус PMTiles: не выполнялся.</p>
         <p id="pmtilesPreviewStatus" class="hint">PMTiles preview: не запускался.</p>
       </div>
     </section>
@@ -260,8 +264,8 @@
     </section>
 
     <section class="card">
-      <h2>Sprint 4.12</h2>
-      <p class="hint">Добавлен экспорт bbox для PMTiles: на основной карте можно выбрать прямоугольник двумя нажатиями и получить готовую команду <code>pmtiles extract</code> с координатами WEST,SOUTH,EAST,NORTH до 6 знаков. Основная карта, точки, GPS, чат и PMTiles preview остаются неизменными.</p>
+      <h2>Sprint 4.13</h2>
+      <p class="hint">Добавлена кнопка “Показать меня на офлайн-карте”: PMTiles preview может запуститься, запросить GPS при необходимости и центрироваться на текущей позиции. Основная Leaflet-карта, точки, чат, live-маркеры и bbox export остаются рабочими.</p>
     </section>
   </main>
 

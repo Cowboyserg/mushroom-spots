@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.12';
+const APP_VERSION = '0.6.13';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -142,6 +142,15 @@ let pmtilesPreviewUserLayerState = {
   updatedAt: null,
   error: null
 };
+let pmtilesPreviewFocusState = {
+  status: 'not-run',
+  target: null,
+  coords: null,
+  zoom: null,
+  updatedAt: null,
+  error: null,
+  reason: null
+};
 let pmtilesRuntimeProbe = {
   url: PMTILES_DEFAULT_URL,
   status: 'not-run',
@@ -208,6 +217,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   chooseLocalPmtilesBtn: 'Выбрать локальный PMTiles',
   probePmtilesBtn: 'Проверить выбранный PMTiles',
   previewPmtilesBtn: 'Показать PMTiles preview',
+  centerPmtilesOnMeBtn: 'Показать меня на офлайн-карте',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -656,6 +666,7 @@ function updateActionButtonsUi() {
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
+  setDisabled('centerPmtilesOnMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('navigateBtn', !hasSelected || !hasPosition);
   setDisabled('shareSpotBtn', !hasSelected);
   setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
@@ -769,6 +780,11 @@ function formatDiagnosticsText() {
   if (provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode) lines.push(`- pmtiles style: ${provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode}`);
   if (provider.pmtilesPreview.appliedBounds) lines.push(`- pmtiles bounds: ${provider.pmtilesPreview.appliedBounds.join(',')}`);
   if (provider.pmtilesPreview.appliedCenter) lines.push(`- pmtiles center: ${provider.pmtilesPreview.appliedCenter.join(',')}`);
+  if (provider.pmtilesPreview.focus) {
+    lines.push(`- pmtiles focus: ${provider.pmtilesPreview.focus.status}${provider.pmtilesPreview.focus.target ? ` / ${provider.pmtilesPreview.focus.target}` : ''}`);
+    if (provider.pmtilesPreview.focus.coords) lines.push(`- pmtiles focus coords: ${provider.pmtilesPreview.focus.coords.join(',')}`);
+    if (provider.pmtilesPreview.focus.error) lines.push(`- pmtiles focus error: ${provider.pmtilesPreview.focus.error}`);
+  }
   if (provider.pmtilesPreview.vectorLayers?.length) lines.push(`- pmtiles layers: ${provider.pmtilesPreview.vectorLayers.join(', ')}`);
   lines.push('');
   lines.push('КНОПКИ / API');
@@ -933,6 +949,15 @@ function mapProviderSnapshot() {
         counts: pmtilesPreviewUserLayerState.counts,
         updatedAt: pmtilesPreviewUserLayerState.updatedAt,
         error: pmtilesPreviewUserLayerState.error
+      },
+      focus: {
+        status: pmtilesPreviewFocusState.status,
+        target: pmtilesPreviewFocusState.target,
+        coords: pmtilesPreviewFocusState.coords,
+        zoom: pmtilesPreviewFocusState.zoom,
+        updatedAt: pmtilesPreviewFocusState.updatedAt,
+        error: pmtilesPreviewFocusState.error,
+        reason: pmtilesPreviewFocusState.reason
       }
     },
     offlineMapManifest: getOfflineMapManifestSnapshot(),
@@ -1053,6 +1078,18 @@ function setPmtilesPreviewUserLayerState(patch = {}, reason = 'pmtiles preview u
   updatePmtilesPreviewUi();
 }
 
+function setPmtilesPreviewFocusState(patch = {}, reason = 'pmtiles preview focus update') {
+  pmtilesPreviewFocusState = {
+    ...pmtilesPreviewFocusState,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+    reason
+  };
+  recordMapDebug(reason, { pmtilesPreviewFocus: pmtilesPreviewFocusState });
+  updatePmtilesPreviewUi();
+  updatePmtilesPreviewFocusUi();
+}
+
 function setCurrentPmtilesPreviewButtonStatus(status, detail) {
   if (activeButtonDiagnostics && activeButtonDiagnostics.buttonId === 'previewPmtilesBtn') {
     setButtonApiStatus(activeButtonDiagnostics, status, detail);
@@ -1073,7 +1110,10 @@ function updatePmtilesPreviewUi() {
     const userText = pmtilesPreviewUserLayerState.status === 'rendered'
       ? ` · слои: точки ${c.spots || 0}, GPS ${c.gps || 0}, выбор ${c.picked || 0}, чат ${c.chat || 0}, друзья ${c.live || 0}`
       : '';
-    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}. Это отдельный preview, основная карта остаётся Leaflet.`;
+    const focusText = pmtilesPreviewFocusState.status === 'focused' && pmtilesPreviewFocusState.target
+      ? ` · фокус: ${pmtilesPreviewFocusState.target}`
+      : '';
+    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}${focusText}. Это отдельный preview, основная карта остаётся Leaflet.`;
   } else if (pmtilesPreviewState.status === 'loading') {
     statusEl.textContent = 'PMTiles preview: загрузка MapLibre и подключение pmtiles:// source…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
@@ -1085,6 +1125,23 @@ function updatePmtilesPreviewUi() {
     statusEl.textContent = `PMTiles preview: ошибка — ${pmtilesPreviewState.error || 'неизвестная ошибка'}`;
   } else {
     statusEl.textContent = 'PMTiles preview: не запускался.';
+  }
+}
+
+function updatePmtilesPreviewFocusUi() {
+  const el = $('pmtilesPreviewFocusStatus');
+  if (!el) return;
+  if (pmtilesPreviewFocusState.status === 'focused') {
+    const coords = pmtilesPreviewFocusState.coords
+      ? `${Number(pmtilesPreviewFocusState.coords[1]).toFixed(6)}, ${Number(pmtilesPreviewFocusState.coords[0]).toFixed(6)}`
+      : 'координаты неизвестны';
+    el.textContent = `Фокус PMTiles: ${pmtilesPreviewFocusState.target || 'точка'} · ${coords} · zoom ${pmtilesPreviewFocusState.zoom || '—'}.`;
+  } else if (pmtilesPreviewFocusState.status === 'pending') {
+    el.textContent = 'Фокус PMTiles: запрашиваю GPS / запускаю preview…';
+  } else if (pmtilesPreviewFocusState.status === 'error') {
+    el.textContent = `Фокус PMTiles: ошибка — ${pmtilesPreviewFocusState.error || 'неизвестная ошибка'}`;
+  } else {
+    el.textContent = 'Фокус PMTiles: не выполнялся.';
   }
 }
 
@@ -2033,6 +2090,76 @@ function renderPmtilesPreviewUserLayers(reason = 'PMTiles preview user layers up
   } catch (err) {
     setPmtilesPreviewUserLayerState({ status: 'error', error: err?.message || String(err) }, 'PMTiles preview user layers failed');
     return false;
+  }
+}
+
+function isPmtilesPreviewLoaded() {
+  return Boolean(pmtilesPreviewMap && pmtilesPreviewState.status === 'loaded');
+}
+
+function getCurrentPositionOnceForPmtilesFocus() {
+  if (currentPosition) return Promise.resolve(currentPosition);
+  if (!navigator.geolocation) {
+    return Promise.reject(new Error('Геолокация не поддерживается этим браузером.'));
+  }
+  const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'PMTiles preview center');
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        finishApiRequest(requestId, 'готово', `GPS ${meters(pos.coords.accuracy)}`);
+        updateUserPosition(pos, false);
+        resolve(currentPosition);
+      },
+      (err) => {
+        finishApiRequest(requestId, 'ошибка', err.message);
+        reject(new Error(`GPS ошибка: ${err.message}`));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    );
+  });
+}
+
+function focusPmtilesPreviewOnLatLon(lat, lon, zoom = 16, target = 'точка') {
+  const point = normalizePreviewPoint(lat, lon);
+  if (!point) throw new Error('Некорректные координаты для PMTiles preview.');
+  if (!isPmtilesPreviewLoaded()) throw new Error('PMTiles preview ещё не запущен.');
+  renderPmtilesPreviewUserLayers(`PMTiles preview user layers refresh before focus ${target}`);
+  if (typeof pmtilesPreviewMap.resize === 'function') pmtilesPreviewMap.resize();
+  const currentZoom = typeof pmtilesPreviewMap.getZoom === 'function' ? Number(pmtilesPreviewMap.getZoom()) : zoom;
+  const targetZoom = Math.max(Number.isFinite(currentZoom) ? currentZoom : zoom, zoom);
+  const center = [point.lon, point.lat];
+  if (typeof pmtilesPreviewMap.easeTo === 'function') {
+    pmtilesPreviewMap.easeTo({ center, zoom: targetZoom, duration: 450 });
+  } else if (typeof pmtilesPreviewMap.jumpTo === 'function') {
+    pmtilesPreviewMap.jumpTo({ center, zoom: targetZoom });
+  } else {
+    throw new Error('MapLibre preview не поддерживает центрирование.');
+  }
+  setPmtilesPreviewFocusState({
+    status: 'focused',
+    target,
+    coords: center,
+    zoom: targetZoom,
+    error: null
+  }, `PMTiles preview focused on ${target}`);
+  return true;
+}
+
+async function centerPmtilesPreviewOnMe() {
+  setPmtilesPreviewFocusState({ status: 'pending', target: 'Я', error: null }, 'PMTiles preview center on me requested');
+  try {
+    if (!isPmtilesPreviewLoaded()) {
+      const ok = await showPmtilesPreviewMap();
+      if (!ok || !isPmtilesPreviewLoaded()) throw new Error('PMTiles preview не удалось запустить.');
+    }
+    const position = await getCurrentPositionOnceForPmtilesFocus();
+    if (!position) throw new Error('GPS-позиция недоступна.');
+    const result = focusPmtilesPreviewOnLatLon(position.lat, position.lon, 16, 'Я');
+    setButtonApiStatus(activeButtonDiagnostics || 'centerPmtilesOnMeBtn', 'готово', 'PMTiles preview центрирован на GPS');
+    return result;
+  } catch (err) {
+    setPmtilesPreviewFocusState({ status: 'error', target: 'Я', error: err?.message || String(err) }, 'PMTiles preview center on me failed');
+    throw err;
   }
 }
 
@@ -5019,6 +5146,7 @@ function bindUi() {
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
+  if ($('centerPmtilesOnMeBtn')) $('centerPmtilesOnMeBtn').onclick = withButtonDiagnostics('centerPmtilesOnMeBtn', centerPmtilesPreviewOnMe);
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
   if ($('startBboxExportBtn')) $('startBboxExportBtn').onclick = withButtonDiagnostics('startBboxExportBtn', startBboxExportSelection);
   if ($('useVisibleBboxBtn')) $('useVisibleBboxBtn').onclick = withButtonDiagnostics('useVisibleBboxBtn', useVisibleMapBbox);
@@ -5061,7 +5189,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.12`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 4.13`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
