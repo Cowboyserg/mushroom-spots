@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.11-hotfix.1';
+const APP_VERSION = '0.7.11-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -4131,7 +4131,9 @@ function selectLiveFriendMapObject(row) {
 function updateSavedSpotMarkerStates() {
   if (!canUseMapRuntime()) return;
   for (const [id, marker] of spotMarkers.entries()) {
-    marker.setIcon(makeMapIcon(id === selectedSpotId ? 'spot-selected' : 'spot'));
+    const icon = makeMapIcon(id === selectedSpotId ? 'spot-selected' : 'spot');
+    if (typeof marker.setIcon === 'function') marker.setIcon(icon);
+    else if (marker.options) marker.options.icon = icon;
   }
 }
 
@@ -6226,7 +6228,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.11.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.11.2`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

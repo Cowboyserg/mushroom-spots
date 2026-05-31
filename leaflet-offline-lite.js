@@ -245,6 +245,16 @@
     addTo(map) { map._addLayer(this); return this; }
     remove() { if (this._map) this._map._removeLayer(this); return this; }
     setLatLng(latlng) { this._latlng = normalizeLatLng(latlng); this._render(); return this; }
+    setIcon(icon) {
+      this.options.icon = icon;
+      if (this._el) {
+        const iconOptions = icon && icon.options ? icon.options : {};
+        this._el.className = `leaflet-marker-icon ${iconOptions.className || ''}`.trim();
+        this._el.innerHTML = iconOptions.html || '<div class="map-dot"></div>';
+      }
+      this._render();
+      return this;
+    }
     bindPopup(html) { this._popupHtml = html || ''; return this; }
     setPopupContent(html) { this._popupHtml = html || ''; if (this._popupEl) this._popupEl.querySelector('.leaflet-popup-content').innerHTML = this._popupHtml; return this; }
     openPopup() { if (this._map) this._map._openPopup(this, this._popupHtml); return this; }
