@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.9';
+const APP_VERSION = '0.7.9-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -742,7 +742,7 @@ function getSaveSpotTarget() {
       source: 'map-picked',
       position: pickedMapPoint,
       title: 'Будет сохранена выбранная точка',
-      description: 'Ты выбрал место на карте. Нажми “Сохранить выбранную точку” и оно появится в списке “Точки”.',
+      description: 'Ты выбрал место на карте. Заполни анкету ниже и нажми “Сохранить выбранную точку”.',
       pill: 'выбранная точка',
       pillState: 'on',
       button: 'Сохранить выбранную точку'
@@ -766,7 +766,7 @@ function getSaveSpotTarget() {
     position: null,
     title: navigator.geolocation ? 'Сначала включи GPS' : 'GPS недоступен',
     description: navigator.geolocation
-      ? 'Нажми “GPS” или “Сохранить место” — приложение запросит координаты. Для другой точки зажми место на карте.'
+      ? 'Нажми “GPS” или выбери место на карте, затем заполни анкету и нажми кнопку сохранения под ней.'
       : 'Этот браузер не даёт доступ к геолокации. Точку можно будет сохранить после выбора места на карте.',
     pill: navigator.geolocation ? 'ждём GPS' : 'GPS недоступен',
     pillState: 'warn',
@@ -5977,7 +5977,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.9`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.9.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

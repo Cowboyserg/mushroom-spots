@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.9" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.9" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.9-hotfix.1" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.9-hotfix.1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.9" />
+  <link rel="stylesheet" href="styles.css?v=0.7.9-hotfix.1" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.9 · Sprint 5.9</p>
+      <p id="appVersion">v0.7.9-hotfix.1 · Sprint 5.9.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -67,19 +67,15 @@
             <div class="save-flow-icon" aria-hidden="true">📍</div>
             <div>
               <strong id="saveFlowTitle">Сначала включи GPS</strong>
-              <p class="hint" id="saveFlowDescription">Нажми “GPS” или “Сохранить место” — приложение запросит координаты. Для другой точки зажми место на карте.</p>
+              <p class="hint" id="saveFlowDescription">Нажми “GPS” или выбери место на карте, затем заполни анкету и нажми кнопку сохранения под ней.</p>
               <p class="save-flow-coords" id="saveFlowCoords">Координаты: —</p>
             </div>
           </div>
 
           <p class="hint" id="pickedMapPointHint">Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.</p>
 
-          <div class="row map-primary-actions">
-            <button id="saveSpotBtn" class="save-main-btn">Сохранить место</button>
-          </div>
-
           <details class="map-spot-editor" id="saveSpotDetails" open>
-            <summary>Детали точки: название, тип, заметка и фото</summary>
+            <summary>Анкета точки: что именно сохранить</summary>
             <div class="field">
               <label for="spotName">Название</label>
               <input id="spotName" placeholder="Например: Белые у сосны" autocomplete="off" />
@@ -97,6 +93,13 @@
               <input id="spotPhoto" type="file" accept="image/*" />
             </div>
           </details>
+
+          <div class="save-form-submit">
+            <p class="hint">Проверь координаты и анкету выше. Эта кнопка сохранит именно эту точку в локальный список.</p>
+            <div class="row map-primary-actions">
+              <button id="saveSpotBtn" class="save-main-btn">Сохранить место</button>
+            </div>
+          </div>
 
           <details class="legacy-save-actions">
             <summary>Другие способы сохранения</summary>
@@ -366,7 +369,7 @@
     <section class="card settings-summary-card">
       <div class="section-title">
         <h2>Настройки</h2>
-        <span class="pill">v0.7.9 · Sprint 5.9</span>
+        <span class="pill">v0.7.9-hotfix.1 · Sprint 5.9.1</span>
       </div>
       <p class="hint">Здесь собраны обслуживание, диагностика, версия и backup. Быстрый debug также остаётся доступен через кнопку “!” в верхней панели.</p>
       <label class="settings-toggle-row" for="showMapAdvancedToggle">
@@ -426,7 +429,7 @@
       <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
     </section>
     <section class="card">
-      <h2>Sprint 5.9</h2>
+      <h2>Sprint 5.9.1</h2>
       <p class="hint">Экран “Точки” стал каталогом мест: карточки, поиск, фильтр по типу, сортировка и быстрые действия без изменения локальной схемы хранения.</p>
     </section>
     </section>
@@ -462,10 +465,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.9"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.9-hotfix.1"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.9"></script>
-  <script src="app.js?v=0.7.9"></script>
+  <script src="config.js?v=0.7.9-hotfix.1"></script>
+  <script src="app.js?v=0.7.9-hotfix.1"></script>
 </body>
 </html>
