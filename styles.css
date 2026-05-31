@@ -15,7 +15,7 @@ button, .file-button { appearance:none; border:0; border-radius:12px; background
 button.secondary, .file-button { background:var(--green2); } button.ghost { background:#ffffff22; width:38px; height:38px; padding:0; } button.danger { background:var(--danger); } button.danger-ghost { background:#9b2c2ccc; } .small-btn { padding:7px 10px; font-size:13px; }
 button:disabled { opacity:.55; cursor:not-allowed; }
 .field { margin:10px 0; } label { display:block; font-size:13px; color:var(--muted); margin-bottom:5px; }
-input, textarea { width:100%; padding:11px; border:1px solid var(--border); border-radius:12px; background:white; color:var(--text); font:inherit; }
+input, textarea, select { width:100%; padding:11px; border:1px solid var(--border); border-radius:12px; background:white; color:var(--text); font:inherit; }
 .hint { color:var(--muted); font-size:13px; line-height:1.35; }
 .map-wrap {
   height:52vh;
@@ -925,5 +925,97 @@ body {
   }
   .spot-detail-head {
     flex-direction: column;
+  }
+}
+
+
+/* Sprint 5.9 — Spots List UX */
+.spots-catalog-card {
+  border-color: rgba(36,75,47,.18);
+}
+.spots-toolbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 10px 0 4px;
+}
+.compact-field {
+  margin: 0;
+}
+.compact-field span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  margin-bottom: 5px;
+}
+.spots-empty-state {
+  border: 1px dashed rgba(36,75,47,.2);
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255,255,255,.55);
+}
+.spots-empty-state strong {
+  display: block;
+  margin-bottom: 5px;
+}
+.spot-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  cursor: default;
+}
+.spot-item-main {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+}
+.spot-item-main:focus-visible {
+  outline: 3px solid #b7d7bd;
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+.spot-item-copy {
+  min-width: 0;
+}
+.spot-note-preview {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: .86;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.spot-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(36,75,47,.14);
+}
+@media (min-width: 720px) {
+  .spots-toolbar {
+    grid-template-columns: 1.4fr .8fr .8fr;
+    align-items: end;
+  }
+}
+@media (max-width: 560px) {
+  .spot-item-main {
+    flex-direction: column;
+  }
+  .spot-card-actions button {
+    flex: 1 1 140px;
   }
 }

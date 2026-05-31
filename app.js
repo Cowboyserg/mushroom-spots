@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.8';
+const APP_VERSION = '0.7.9';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -207,6 +207,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   clearPickedMapPointBtn: 'Сбросить выбранную точку на карте',
   averageBtn: 'Уточнить GPS 30 сек',
   showSelectedSpotOnMapBtn: 'Показать выбранную точку на карте',
+  spotListOpenDetailsBtn: 'Открыть карточку точки из списка',
   spotListShowOnMapBtn: 'Показать точку из списка на карте',
   spotListSendToChatBtn: 'Отправить точку из списка в чат',
   closeSelectedSpotBtn: 'Закрыть карточку точки',
@@ -800,7 +801,7 @@ function updateActionButtonsUi() {
   const hasPosition = Boolean(currentPosition);
   const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
-  const canUseChat = hasSupabase && hasGroup && groupJoined;
+  const canUseChat = canSendSpotToChat();
   const canRequestGps = Boolean(navigator.geolocation);
 
   setDisabled('saveSpotBtn', !hasPickedMapPoint && !hasPosition && !canRequestGps);
@@ -832,6 +833,7 @@ function updateActionButtonsUi() {
   setDisabled('stopLiveBtn', !liveEnabled);
   setDisabled('refreshFriendsBtn', !hasSupabase || !hasGroup || !groupJoined);
   setDisabled('testSupabaseBtn', !hasSupabase);
+  renderList();
 }
 
 function beginApiRequest(apiName, method = 'API', target = '', ctx = activeButtonDiagnostics) {
@@ -4389,25 +4391,147 @@ function renderMarkers() {
   renderPmtilesPreviewUserLayers('saved spots mirrored to PMTiles preview');
 }
 
+function canSendSpotToChat() {
+  return Boolean(getSupabaseConfig() && currentGroupId() && groupJoined);
+}
+
+function normalizedSpotType(spot) {
+  return String(spot?.mushroomType || '').trim();
+}
+
+function spotTypeFilterValue(type) {
+  const normalized = String(type || '').trim();
+  return normalized || '__empty__';
+}
+
+function spotTypeFilterLabel(value) {
+  return value === '__empty__' ? 'Без типа' : value;
+}
+
+function updateSpotTypeFilterOptions() {
+  const select = $('spotTypeFilter');
+  if (!select) return;
+  const previous = select.value || 'all';
+  const types = Array.from(new Set(spots.map(normalizedSpotType).map(spotTypeFilterValue)))
+    .sort((a, b) => spotTypeFilterLabel(a).localeCompare(spotTypeFilterLabel(b), 'ru'));
+  select.innerHTML = '<option value="all">Все типы</option>' + types
+    .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(spotTypeFilterLabel(type))}</option>`)
+    .join('');
+  select.value = types.includes(previous) ? previous : 'all';
+}
+
+function buildSpotCardMeta(spot) {
+  const parts = [];
+  parts.push(spot.mushroomType ? escapeHtml(spot.mushroomType) : 'Тип не указан');
+  parts.push(spot.createdAt ? fmtDate(spot.createdAt) : 'Дата не указана');
+  const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, spot)) : 'GPS не готов';
+  parts.push(`Расстояние: ${dist}`);
+  if (spot.accuracy != null) parts.push(`точность ${meters(spot.accuracy)}`);
+  return parts.join(' · ');
+}
+
+function renderSpotListItem(spot, canUseChat) {
+  const item = document.createElement('article');
+  item.className = `spot-item ${spot.id === selectedSpotId ? 'active' : ''}`;
+  item.dataset.spotId = spot.id;
+
+  const content = document.createElement('button');
+  content.type = 'button';
+  content.className = 'spot-item-main';
+  content.onclick = () => openSpotDetailsFromList(spot.id);
+  content.innerHTML = `
+    <div class="spot-item-copy">
+      <div class="spot-title">${escapeHtml(spot.name || 'Грибная точка')}</div>
+      <div class="spot-meta">${buildSpotCardMeta(spot)}</div>
+      ${spot.note ? `<div class="spot-note-preview">${escapeHtml(spot.note)}</div>` : ''}
+    </div>
+    ${spot.photo ? `<img class="thumb" src="${spot.photo}" alt="Фото места">` : ''}
+  `;
+  item.appendChild(content);
+
+  const actions = document.createElement('div');
+  actions.className = 'spot-card-actions';
+
+  const openBtn = document.createElement('button');
+  openBtn.type = 'button';
+  openBtn.className = 'secondary small-btn';
+  openBtn.textContent = 'Открыть';
+  openBtn.onclick = withButtonDiagnostics('spotListOpenDetailsBtn', () => openSpotDetailsFromList(spot.id));
+  actions.appendChild(openBtn);
+
+  const mapBtn = document.createElement('button');
+  mapBtn.type = 'button';
+  mapBtn.className = 'secondary small-btn';
+  mapBtn.textContent = 'Показать на карте';
+  mapBtn.onclick = withButtonDiagnostics('spotListShowOnMapBtn', () => {
+    selectSpot(spot.id, false);
+    return showSelectedSpotOnMap();
+  });
+  actions.appendChild(mapBtn);
+
+  if (canUseChat) {
+    const chatBtn = document.createElement('button');
+    chatBtn.type = 'button';
+    chatBtn.className = 'secondary small-btn';
+    chatBtn.textContent = 'Отправить в чат';
+    chatBtn.onclick = withButtonDiagnostics('spotListSendToChatBtn', () => {
+      selectSpot(spot.id, false);
+      return sendSelectedSpotToChat();
+    });
+    actions.appendChild(chatBtn);
+  }
+
+  item.appendChild(actions);
+  return item;
+}
+
 function renderList() {
-  const q = $('searchInput').value.trim().toLowerCase();
-  const filtered = spots.filter(s => [s.name, s.mushroomType, s.note].join(' ').toLowerCase().includes(q));
-  $('spotCount').textContent = String(spots.length);
+  updateSpotTypeFilterOptions();
+  const q = ($('searchInput')?.value || '').trim().toLowerCase();
+  const typeFilter = $('spotTypeFilter')?.value || 'all';
+  const sortMode = $('spotSortSelect')?.value || 'recent';
   const list = $('spotsList');
+  const summary = $('spotsListSummary');
+  const canUseChat = canSendSpotToChat();
+  if (!list) return;
+
+  const filtered = spots
+    .filter((spot) => [spot.name, spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
+    .filter((spot) => typeFilter === 'all' || spotTypeFilterValue(normalizedSpotType(spot)) === typeFilter)
+    .slice();
+
+  filtered.sort((a, b) => {
+    if (sortMode === 'name') return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    if (sortMode === 'nearest' && currentPosition) {
+      const from = { lat: currentPosition.lat, lon: currentPosition.lon };
+      return distanceMeters(from, a) - distanceMeters(from, b);
+    }
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+
+  $('spotCount').textContent = filtered.length === spots.length ? String(spots.length) : `${filtered.length}/${spots.length}`;
+  if (summary) {
+    if (!spots.length) {
+      summary.textContent = 'Пока нет сохранённых точек. Открой карту и нажми “Сохранить место”.';
+    } else if (!filtered.length) {
+      summary.textContent = 'Поиск или фильтр ничего не нашли. Измени запрос или выбери “Все типы”.';
+    } else {
+      const sortText = sortMode === 'nearest' ? (currentPosition ? 'сначала ближайшие' : 'сначала последние, потому что GPS ещё не готов') : sortMode === 'name' ? 'по названию' : 'сначала последние';
+      summary.textContent = `Показано ${filtered.length} из ${spots.length} · ${sortText}.`;
+    }
+  }
+
   list.innerHTML = '';
   if (!filtered.length) {
-    list.innerHTML = '<p class="hint">Пока нет сохранённых мест. Открой “Карта” и нажми “Сохранить место”.</p>';
+    const empty = document.createElement('div');
+    empty.className = 'spots-empty-state';
+    empty.innerHTML = spots.length
+      ? '<strong>Ничего не найдено</strong><p class="hint">Попробуй другой поиск, тип гриба или сортировку.</p>'
+      : '<strong>Пока нет сохранённых точек</strong><p class="hint">Открой карту, дождись GPS или выбери место долгим нажатием, затем нажми “Сохранить место”.</p>';
+    list.appendChild(empty);
     return;
   }
-  for (const spot of filtered) {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = `spot-item ${spot.id === selectedSpotId ? 'active' : ''}`;
-    const dist = currentPosition ? meters(distanceMeters({lat:currentPosition.lat, lon:currentPosition.lon}, spot)) : '—';
-    item.innerHTML = `<div><div class="spot-title">${escapeHtml(spot.name)}</div><div class="spot-meta">${escapeHtml(spot.mushroomType || 'Тип не указан')} · ${fmtDate(spot.createdAt)}<br>Расстояние: ${dist} · GPS: ${meters(spot.accuracy)}</div></div>${spot.photo ? `<img class="thumb" src="${spot.photo}" alt="Фото">` : ''}`;
-    item.onclick = () => openSpotDetailsFromList(spot.id);
-    list.appendChild(item);
-  }
+  for (const spot of filtered) list.appendChild(renderSpotListItem(spot, canUseChat));
 }
 
 async function refreshSpots() {
@@ -5751,6 +5875,8 @@ function bindUi() {
   if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
+  if ($('spotTypeFilter')) $('spotTypeFilter').onchange = renderList;
+  if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
   if ($('showSelectedSpotOnMapBtn')) $('showSelectedSpotOnMapBtn').onclick = withButtonDiagnostics('showSelectedSpotOnMapBtn', showSelectedSpotOnMap);
   if ($('spotListShowOnMapBtn')) $('spotListShowOnMapBtn').onclick = withButtonDiagnostics('spotListShowOnMapBtn', showSelectedSpotOnMap);
   if ($('closeSelectedSpotBtn')) $('closeSelectedSpotBtn').onclick = withButtonDiagnostics('closeSelectedSpotBtn', closeSpotDetails);
@@ -5851,7 +5977,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.8`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.9`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
