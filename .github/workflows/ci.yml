@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "0.7.x"
+  pull_request:
+    branches:
+      - main
+      - master
+      - "0.7.x"
+
+permissions:
+  contents: read
+
+jobs:
+  safety-checks:
+    name: PWA source safety checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run project CI
+        run: npm run ci
