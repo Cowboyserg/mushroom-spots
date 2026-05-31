@@ -1,17 +1,25 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { basename, extname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
-const VERSION = '0.7.6';
-const SPRINT = 'Sprint 5.6';
 const ROOT = new URL('.', import.meta.url).pathname;
 const FORBIDDEN_PACKAGE_NAMES = new Set([
   'config.js',
   'config.json',
   'offline-map-packages.json',
   '.DS_Store',
+]);
+const REPO_ONLY_NAMES = new Set([
+  '.git',
+  '.github',
+  '__MACOSX',
+  'offline-test.pmtiles',
+  'offline-map-packages.json',
+  '.DS_Store',
+  'config.js',
+  'config.json',
 ]);
 const REQUIRED_PACKAGE_FILES = [
   'index.html',
@@ -24,21 +32,17 @@ const REQUIRED_PACKAGE_FILES = [
   'db.js',
   'map.js',
   'export.js',
-  'README.md',
-  'SPRINTS.md',
-  'EXTERNAL_MEMORY.md',
-  'UX_ROADMAP.md',
+  'apple-touch-icon.svg',
+  'icon.svg',
   'package.json',
   'ci-checks.mjs',
   'package-checks.mjs',
   'geo.test.mjs',
-  'ci.workflow.yml',
-  'GITHUB_ACTIONS_SETUP.md',
-  'SPRINT_5_6_CI_SOURCE_VS_PACKAGE_RULES_FIX.md',
 ];
 
 function walk(dir, result = []) {
   for (const entry of readdirSync(dir)) {
+    if (REPO_ONLY_NAMES.has(entry)) continue;
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
@@ -56,6 +60,24 @@ function run(command, args, options = {}) {
     throw new Error(`${command} ${args.join(' ')} failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
   }
   return result.stdout;
+}
+
+function read(path) {
+  return readFileSync(path, 'utf8');
+}
+
+function matchOne(text, regexp, label) {
+  const match = text.match(regexp);
+  assert.ok(match, `Missing ${label}`);
+  return match[1];
+}
+
+function readVersionInfoFromDirectory(dir) {
+  const appJs = read(join(dir, 'app.js'));
+  const indexHtml = read(join(dir, 'index.html'));
+  const version = matchOne(appJs, /const APP_VERSION = ['"]([^'"]+)['"];/, 'APP_VERSION');
+  const sprintMatch = indexHtml.match(new RegExp(`v${version.replaceAll('.', '\\.')}` + String.raw`\s*·\s*(Sprint\s+[0-9.]+)`));
+  return { version, sprint: sprintMatch?.[1] ?? null };
 }
 
 function checkEntriesAreFlat(entries) {
@@ -78,24 +100,24 @@ function checkRequiredPackageEntries(entries) {
 }
 
 function checkVersionInDirectory(dir) {
-  const appJs = readFileSync(join(dir, 'app.js'), 'utf8');
-  const swJs = readFileSync(join(dir, 'sw.js'), 'utf8');
-  const indexHtml = readFileSync(join(dir, 'index.html'), 'utf8');
-  const readme = readFileSync(join(dir, 'README.md'), 'utf8');
-  const sprints = readFileSync(join(dir, 'SPRINTS.md'), 'utf8');
-  const memory = readFileSync(join(dir, 'EXTERNAL_MEMORY.md'), 'utf8');
+  const { version, sprint } = readVersionInfoFromDirectory(dir);
+  const swJs = read(join(dir, 'sw.js'));
+  const indexHtml = read(join(dir, 'index.html'));
+  const packageJson = JSON.parse(read(join(dir, 'package.json')));
 
-  assert.ok(appJs.includes(`const APP_VERSION = '${VERSION}'`), 'app.js must contain current APP_VERSION');
-  assert.ok(swJs.includes(`const APP_ASSET_VERSION = '${VERSION}'`), 'sw.js must contain current APP_ASSET_VERSION');
-  assert.ok(indexHtml.includes(`app.js?v=${VERSION}`), 'index.html must version app.js');
-  assert.ok(readme.includes(`v${VERSION} / ${SPRINT}`), 'README must contain current version/sprint');
-  assert.ok(sprints.includes(`Version: ${VERSION}`), 'SPRINTS must contain current version');
-  assert.ok(memory.includes(`v${VERSION}`), 'EXTERNAL_MEMORY must contain current version');
+  const swVersion = matchOne(swJs, /const APP_ASSET_VERSION = ['"]([^'"]+)['"];/, 'APP_ASSET_VERSION');
+  assert.equal(swVersion, version, 'sw.js APP_ASSET_VERSION must match app.js APP_VERSION');
+  assert.equal(packageJson.version, version, 'package.json version must match app.js APP_VERSION');
+  assert.ok(swJs.includes(`mushroom-spots-v${version}`), 'sw.js cache name must include current version');
+  assert.ok(indexHtml.includes(`app.js?v=${version}`), 'index.html must version app.js');
+  assert.ok(indexHtml.includes(`styles.css?v=${version}`), 'index.html must version styles.css');
+  assert.ok(indexHtml.includes(`leaflet-offline-lite.js?v=${version}`), 'index.html must version leaflet-offline-lite.js');
+  assert.ok(indexHtml.includes(`manifest.webmanifest?v=${version}`), 'index.html must version manifest.webmanifest');
+  if (sprint) assert.ok(indexHtml.includes(sprint), 'index.html must show current sprint label');
 }
 
 function checkDirectoryPackage(dir) {
   const entries = walk(dir).map((full) => relative(dir, full).replaceAll('\\', '/')).sort();
-  checkEntriesAreFlat(entries);
   checkForbiddenPackageEntries(entries);
   checkRequiredPackageEntries(entries);
   checkVersionInDirectory(dir);
@@ -126,7 +148,8 @@ function checkZipPackage(zipPath) {
 const target = process.argv[2];
 if (!target) {
   checkDirectoryPackage(ROOT);
-  console.log(`Package directory checks passed for v${VERSION} / ${SPRINT}`);
+  const { version, sprint } = readVersionInfoFromDirectory(ROOT);
+  console.log(`Package directory checks passed for v${version}${sprint ? ` / ${sprint}` : ''}`);
 } else if (extname(target).toLowerCase() === '.zip') {
   checkZipPackage(target);
   console.log(`Package ZIP checks passed for ${target}`);

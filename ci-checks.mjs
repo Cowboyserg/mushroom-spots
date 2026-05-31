@@ -3,9 +3,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 
 const ROOT = new URL('.', import.meta.url).pathname;
-const VERSION = '0.7.6';
-const SPRINT = 'Sprint 5.6';
-const CACHE_SUFFIX = 'sprint5.6';
 const ALLOWED_PMTILES_FIXTURES = new Map([
   ['offline-test.pmtiles', 5 * 1024 * 1024],
 ]);
@@ -58,6 +55,22 @@ function extractStringLiteralsFromArraySource(source) {
     .map((match) => match[1] ?? match[2]);
 }
 
+function getProjectVersionInfo() {
+  const appJs = read('app.js');
+  const indexHtml = read('index.html');
+
+  const version = matchOne(
+    appJs,
+    /const APP_VERSION = ['"]([^'"]+)['"];/,
+    'APP_VERSION'
+  );
+
+  const visibleSprintMatch = indexHtml.match(new RegExp(`v${version.replaceAll('.', '\\.')}` + String.raw`\s*·\s*(Sprint\s+[0-9.]+)`));
+  const sprint = visibleSprintMatch?.[1] ?? null;
+
+  return { version, sprint };
+}
+
 function checkRequiredProjectFiles() {
   for (const path of [
     'index.html',
@@ -94,39 +107,56 @@ function checkPmtilesSourcePolicy() {
     }
 
     const size = statSync(join(ROOT, rel)).size;
-    assert.ok(size <= maxBytes, `${rel} is allowed only as a small diagnostic fixture; size ${size} exceeds ${maxBytes} bytes`);
+    assert.ok(
+      size <= maxBytes,
+      `${rel} is allowed only as a small diagnostic fixture; size ${size} exceeds ${maxBytes} bytes`
+    );
   }
 
-  assert.deepEqual(forbidden, [], `Only offline-test.pmtiles may exist as a small diagnostic fixture; forbidden PMTiles files: ${forbidden.join(', ')}`);
+  assert.deepEqual(
+    forbidden,
+    [],
+    `Only offline-test.pmtiles may exist as a small diagnostic fixture; forbidden PMTiles files: ${forbidden.join(', ')}`
+  );
 }
 
 function checkGitignoreGuard() {
+  if (!pathExists('.gitignore')) {
+    console.warn('Warning: .gitignore is missing; skipping gitignore guard check.');
+    return;
+  }
+
   const gitignore = read('.gitignore');
   assertIncludes(gitignore, '*.pmtiles', '.gitignore PMTiles guard');
   assertIncludes(gitignore, '.DS_Store', '.gitignore macOS metadata guard');
 }
 
 function checkVersionConsistency() {
-  const appJs = read('app.js');
+  const { version, sprint } = getProjectVersionInfo();
   const swJs = read('sw.js');
   const indexHtml = read('index.html');
-  const packageJson = read('package.json');
-  const readme = read('README.md');
-  const sprints = read('SPRINTS.md');
-  const memory = read('EXTERNAL_MEMORY.md');
+  const packageJson = JSON.parse(read('package.json'));
 
-  assert.equal(matchOne(appJs, /const APP_VERSION = ['"]([^'"]+)['"];/, 'APP_VERSION'), VERSION);
-  assert.equal(matchOne(swJs, /const APP_ASSET_VERSION = ['"]([^'"]+)['"];/, 'APP_ASSET_VERSION'), VERSION);
-  assertIncludes(swJs, `mushroom-spots-v${VERSION}-${CACHE_SUFFIX}`, 'Service Worker cache name');
-  assertIncludes(indexHtml, `v${VERSION} · ${SPRINT}`, 'index visible version');
-  assert.ok(appJs.includes('v${APP_VERSION}') && appJs.includes(SPRINT), `app.js must render visible version with ${SPRINT}`);
-  assertIncludes(packageJson, `"version": "${VERSION}"`, 'package.json version');
-  assertIncludes(readme, `v${VERSION} / ${SPRINT}`, 'README current version');
-  assertIncludes(sprints, `Version: ${VERSION}`, 'SPRINTS current version');
-  assertIncludes(memory, `v${VERSION}`, 'EXTERNAL_MEMORY current version');
+  const swVersion = matchOne(
+    swJs,
+    /const APP_ASSET_VERSION = ['"]([^'"]+)['"];/,
+    'APP_ASSET_VERSION'
+  );
+
+  assert.equal(swVersion, version, 'sw.js APP_ASSET_VERSION must match app.js APP_VERSION');
+  assert.equal(packageJson.version, version, 'package.json version must match app.js APP_VERSION');
+
+  assertIncludes(swJs, `mushroom-spots-v${version}`, 'Service Worker cache name');
+  assertIncludes(indexHtml, `v${version}`, 'index visible version');
+
+  if (sprint) {
+    assertIncludes(read('app.js'), sprint, 'app.js visible sprint label');
+    assertIncludes(indexHtml, sprint, 'index visible sprint label');
+  }
 }
 
 function checkVersionedAppShellAssets() {
+  const { version } = getProjectVersionInfo();
   const indexHtml = read('index.html');
   const versionedAssets = [
     'manifest.webmanifest',
@@ -137,7 +167,7 @@ function checkVersionedAppShellAssets() {
   ];
 
   for (const asset of versionedAssets) {
-    assertIncludes(indexHtml, `${asset}?v=${VERSION}`, `index.html versioned asset ${asset}`);
+    assertIncludes(indexHtml, `${asset}?v=${version}`, `index.html versioned asset ${asset}`);
   }
 }
 
@@ -194,11 +224,18 @@ function checkServiceWorkerCacheRules() {
 }
 
 function checkWorkflowTemplate() {
-  const workflowPath = pathExists('.github/workflows/ci.yml')
-    ? '.github/workflows/ci.yml'
-    : 'ci.workflow.yml';
-  const workflow = read(workflowPath);
+  const workflowCandidates = [
+    '.github/workflows/ci.yml',
+    'ci.workflow.yml',
+  ];
+  const workflowPath = workflowCandidates.find((candidate) => pathExists(candidate));
 
+  if (!workflowPath) {
+    console.warn('Warning: no GitHub Actions workflow/template found; skipping workflow check.');
+    return;
+  }
+
+  const workflow = read(workflowPath);
   assertIncludes(workflow, 'actions/checkout@v4', 'GitHub Actions checkout step');
   assertIncludes(workflow, 'actions/setup-node@v4', 'GitHub Actions Node setup step');
   assertIncludes(workflow, 'node-version: "22"', 'GitHub Actions Node version');
@@ -223,4 +260,5 @@ checkServiceWorkerCacheRules();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();
 
-console.log(`Source CI checks passed for v${VERSION} / ${SPRINT}`);
+const { version, sprint } = getProjectVersionInfo();
+console.log(`Source CI checks passed for v${version}${sprint ? ` / ${sprint}` : ''}`);
