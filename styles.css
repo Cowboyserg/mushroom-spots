@@ -1021,6 +1021,11 @@ body {
 }
 
 /* Sprint 5.11 — Map Object Interaction Model */
+
+.selected-card,
+.map-object-card {
+  scroll-margin-top: 88px;
+}
 .map-object-card {
   border-color: rgba(36,75,47,.24);
   background: linear-gradient(180deg, #fffdf7, #faf8ef);

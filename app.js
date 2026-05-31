@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.14';
+const APP_VERSION = '0.7.14-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -4193,15 +4193,29 @@ function renderMapObjectPanel() {
   setHidden('mapObjectSecondaryBtn', !model.secondaryVisible);
 }
 
+function revealSelectedSpotCardOnMap() {
+  const card = $('selectedCard');
+  if (!card) return false;
+  card.hidden = false;
+  card.setAttribute('tabindex', '-1');
+  const prefersReducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  const behavior = prefersReducedMotion ? 'auto' : 'smooth';
+  const reveal = () => {
+    card.scrollIntoView({ behavior, block: 'start', inline: 'nearest' });
+    try { card.focus({ preventScroll: true }); } catch {}
+  };
+  window.requestAnimationFrame(reveal);
+  window.setTimeout(reveal, 180);
+  return true;
+}
+
 function runSelectedMapObjectPrimaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') {
     const spot = spots.find((item) => item.id === selectedMapObject.id);
     if (!spot) return false;
     selectSpot(spot.id, false);
-    setHidden('selectedCard', false);
-    $('selectedCard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return true;
+    return revealSelectedSpotCardOnMap();
   }
   if (selectedMapObject.kind === 'picked') return savePickedMapPoint();
   if (selectedMapObject.kind === 'chat' && chatPreviewPoint) {
@@ -4959,7 +4973,10 @@ function selectSpot(id, center=false) {
   updateActionButtonsUi();
   renderPmtilesPreviewUserLayers('selected spot mirrored to PMTiles preview');
 }
-window.selectSpotFromPopup = (id) => selectSpot(id, false);
+window.selectSpotFromPopup = (id) => {
+  selectSpot(id, false);
+  return revealSelectedSpotCardOnMap();
+};
 
 function updateSelectedDetails() {
   const spot = getSelectedSpot();
@@ -6469,7 +6486,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.14`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.14.2`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
