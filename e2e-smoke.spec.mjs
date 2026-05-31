@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.22-hotfix\.1 · Sprint 5\.22\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.23 · Sprint 5\.23/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -290,10 +290,10 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   expect(cardBox.y, 'context sheet must sit inside the map viewport').toBeGreaterThanOrEqual(mapBox.y);
   expect(cardBox.y + cardBox.height, 'context sheet must not overflow below map viewport').toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
   await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
-  await expect(page.locator('#mapObjectSubtitle')).toContainText('черновик точки');
-  await expect(page.locator('#mapObjectPill')).toHaveText('черновик');
-  await expect(page.locator('#mapObjectDetails')).toContainText('выбрано на карте');
-  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Сохранить');
+  await expect(page.locator('#mapObjectSubtitle')).toContainText('Мини-инфо по точке');
+  await expect(page.locator('#mapObjectPill')).toHaveText('выбрано');
+  await expect(page.locator('#mapObjectDetails')).toContainText('ещё не сохранено');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('☆ Сохранить');
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectClearBtn')).toHaveText('Отмена');
@@ -332,15 +332,23 @@ test('picked map point context sheet enables share action only when group chat i
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранить место');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Сохранить и поделиться');
+  await expect(page.locator('#mapObjectSaveEditor')).toBeVisible();
 });
 
-test('picked map point context primary save creates result actions and spots handoff', async ({ page }) => {
+test('picked map point bookmark opens save form and creates result actions and spots handoff', async ({ page }) => {
   await bootApp(page);
   await pickMapPoint(page);
 
-  await page.locator('#spotName').fill('Context sheet тестовая точка');
-  await page.locator('#mushroomType').fill('Белые');
-  await page.locator('#spotNote').fill('Сохранено через контекстную карточку выбранного места');
+  await page.locator('#mapObjectPrimaryBtn').click();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранить место');
+  await expect(page.locator('#mapObjectSaveEditor')).toBeVisible();
+  await page.locator('#mapObjectCollection').selectOption({ label: 'Грибные места' });
+  await page.locator('#mapObjectName').fill('Context sheet тестовая точка');
+  await page.locator('#mapObjectType').fill('Белые');
+  await page.locator('#mapObjectNote').fill('Сохранено через закладку выбранного места');
   await page.locator('#mapObjectPrimaryBtn').click();
 
   await expect(page.locator('#saveResultCard')).toBeVisible();
@@ -438,9 +446,9 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
 
   await pickMapPoint(page);
   await expect(page.locator('#mapObjectTitle')).toContainText('Выбранное место');
-  await expect(page.locator('#mapObjectSubtitle')).toContainText('черновик точки');
+  await expect(page.locator('#mapObjectSubtitle')).toContainText('Мини-инфо по точке');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
-  await expect(page.locator('#spotsList')).not.toContainText('Выбранное место на карте');
+  await expect(page.locator('#spotsList')).not.toContainText('Выбранное место');
 });

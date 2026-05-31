@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.22-hotfix.1';
+const APP_VERSION = '0.7.23';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -73,6 +73,8 @@ let selectedSpotId = null;
 let lastSavedSpotId = null;
 let selectedMapObject = null;
 let mapObjectSheetCollapsed = false;
+let pickedSaveEditorOpen = false;
+let pickedSaveShareAfterSave = false;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
@@ -768,11 +770,11 @@ function getSaveSpotTarget() {
       kind: 'picked',
       source: 'map-picked',
       position: pickedMapPoint,
-      title: 'Будет сохранена выбранная точка',
-      description: 'Ты выбрал место на карте. Заполни анкету ниже и нажми “Сохранить выбранную точку”.',
-      pill: 'выбранная точка',
+      title: 'Выбрано место на карте',
+      description: 'Это ещё не сохранённая точка. Нажми ☆ в карточке на карте, чтобы выбрать папку и заполнить поля.',
+      pill: 'выбранное место',
       pillState: 'on',
-      button: 'Сохранить выбранную точку'
+      button: 'Сохранить выбранное место'
     };
   }
   if (currentPosition) {
@@ -3982,6 +3984,8 @@ function setPickedMapPoint(latlng, source = 'map') {
   pickedMapPointMarker.openPopup();
   const details = $('saveSpotDetails');
   if (details) details.open = true;
+  pickedSaveEditorOpen = false;
+  pickedSaveShareAfterSave = false;
   recordMapDebug('picked map point', pickedMapPoint);
   setSelectedMapObject('picked', { source });
   updatePickedMapPointUi();
@@ -4124,6 +4128,10 @@ function distanceFromCurrentPositionLine(target) {
 function setSelectedMapObject(kind, payload = {}) {
   selectedMapObject = { kind, ...payload, selectedAt: new Date().toISOString() };
   mapObjectSheetCollapsed = false;
+  if (kind !== 'picked') {
+    pickedSaveEditorOpen = false;
+    pickedSaveShareAfterSave = false;
+  }
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
@@ -4131,6 +4139,8 @@ function setSelectedMapObject(kind, payload = {}) {
 function clearSelectedMapObjectOnly() {
   selectedMapObject = null;
   mapObjectSheetCollapsed = false;
+  pickedSaveEditorOpen = false;
+  pickedSaveShareAfterSave = false;
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
@@ -4163,6 +4173,7 @@ function describeSelectedMapObject() {
       clear: 'Закрыть',
       rows: [
         ['Название', escapeHtml(spot.name || 'Грибная точка')],
+        ['Папка', escapeHtml(spot.collection || 'Грибные места')],
         ['Тип', escapeHtml(spot.mushroomType || 'не указан')],
         ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(spot)],
@@ -4173,20 +4184,41 @@ function describeSelectedMapObject() {
 
   if (selectedMapObject.kind === 'picked') {
     if (!pickedMapPoint) return null;
+    if (pickedSaveEditorOpen) {
+      return {
+        kind: 'picked',
+        title: 'Сохранить место',
+        subtitle: pickedSaveShareAfterSave
+          ? 'Выбери папку и заполни поля. После сохранения точка отправится группе.'
+          : 'Выбери папку и заполни поля. Это место станет сохранённой точкой.',
+        pill: 'закладка',
+        saveEditorVisible: true,
+        secondaryVisible: canSendSpotToChat() && !pickedSaveShareAfterSave,
+        primary: pickedSaveShareAfterSave ? 'Сохранить и поделиться' : 'Сохранить',
+        secondary: 'Сохранить и поделиться',
+        clear: 'Назад',
+        rows: [
+          ['Состояние', 'открыта форма сохранения'],
+          ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
+          ['Расстояние', distanceFromCurrentPositionLine(pickedMapPoint)]
+        ]
+      };
+    }
     return {
       kind: 'picked',
       title: 'Выбранное место',
-      subtitle: 'Это черновик точки. Заполни анкету ниже, затем сохрани или сохрани и отправь группе.',
-      pill: 'черновик',
+      subtitle: 'Мини-инфо по точке. Нажми ☆, чтобы сохранить её в папку.',
+      pill: 'выбрано',
+      saveEditorVisible: false,
       secondaryVisible: canSendSpotToChat(),
-      primary: 'Сохранить',
+      primary: '☆ Сохранить',
       secondary: 'Сохранить и поделиться',
       clear: 'Отмена',
       rows: [
-        ['Состояние', 'выбрано на карте'],
+        ['Состояние', 'выбрано на карте, ещё не сохранено'],
         ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(pickedMapPoint)],
-        ['Действие', 'после сохранения точка появится во вкладке “Точки”']
+        ['Закладка', 'откроет выбор папки и поля сохранения']
       ]
     };
   }
@@ -4245,7 +4277,8 @@ function renderMapObjectPanel() {
     selectedMapObject = null;
     mapObjectSheetCollapsed = false;
     card.hidden = true;
-    card.classList.remove('map-object-collapsed');
+    card.classList.remove('map-object-collapsed', 'map-object-editing');
+    setHidden('mapObjectSaveEditor', true);
     const collapseBtn = $('mapObjectCollapseBtn');
     if (collapseBtn) collapseBtn.setAttribute('aria-expanded', 'true');
     return;
@@ -4261,6 +4294,7 @@ function renderMapObjectPanel() {
   if (details) {
     details.innerHTML = model.rows.map(([label, value]) => mapObjectDetailRow(label, value)).join('');
   }
+  setHidden('mapObjectSaveEditor', !model.saveEditorVisible);
   setText('mapObjectPrimaryBtn', model.primary);
   setText('mapObjectSecondaryBtn', model.secondary || 'Поделиться в группе');
   setText('mapObjectClearBtn', model.clear || 'Сбросить выбор');
@@ -4296,6 +4330,73 @@ function revealSelectedSpotCardOnMap() {
   return true;
 }
 
+function readLegacySpotFormData() {
+  return {
+    name: $('spotName')?.value?.trim() || '',
+    mushroomType: $('mushroomType')?.value?.trim() || '',
+    note: $('spotNote')?.value?.trim() || '',
+    collection: $('spotCollection')?.value?.trim() || 'Грибные места',
+    photoFile: $('spotPhoto')?.files?.[0] || null
+  };
+}
+
+function readMapObjectSpotFormData() {
+  return {
+    name: $('mapObjectName')?.value?.trim() || '',
+    mushroomType: $('mapObjectType')?.value?.trim() || '',
+    note: $('mapObjectNote')?.value?.trim() || '',
+    collection: $('mapObjectCollection')?.value?.trim() || 'Грибные места',
+    photoFile: null
+  };
+}
+
+function resetMapObjectSaveEditor() {
+  for (const id of ['mapObjectName', 'mapObjectType', 'mapObjectNote']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  const collection = $('mapObjectCollection');
+  if (collection) collection.value = 'Грибные места';
+}
+
+function openPickedSaveEditor(shareAfterSave = false) {
+  if (!pickedMapPoint) return false;
+  pickedSaveEditorOpen = true;
+  pickedSaveShareAfterSave = Boolean(shareAfterSave);
+  const legacy = readLegacySpotFormData();
+  const name = $('mapObjectName');
+  const type = $('mapObjectType');
+  const note = $('mapObjectNote');
+  const collection = $('mapObjectCollection');
+  if (name && !name.value && legacy.name) name.value = legacy.name;
+  if (type && !type.value && legacy.mushroomType) type.value = legacy.mushroomType;
+  if (note && !note.value && legacy.note) note.value = legacy.note;
+  if (collection && legacy.collection) collection.value = legacy.collection;
+  renderMapObjectPanel();
+  window.requestAnimationFrame(() => {
+    const first = $('mapObjectCollection') || $('mapObjectName');
+    try { first?.focus({ preventScroll: true }); } catch {}
+  });
+  return true;
+}
+
+async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
+  if (!pickedMapPoint) {
+    markButtonBlocked('точка на карте не выбрана');
+    return false;
+  }
+  const shouldShare = Boolean(shareAfterSave || pickedSaveShareAfterSave);
+  if (shouldShare && !requireGroupChatReady()) return false;
+  const spot = await saveSpotFromPosition(pickedMapPoint, 'map-picked', readMapObjectSpotFormData());
+  resetMapObjectSaveEditor();
+  if (!spot) return false;
+  if (shouldShare) {
+    selectedSpotId = spot.id;
+    return sendSelectedSpotToChat();
+  }
+  return true;
+}
+
 function runSelectedMapObjectPrimaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') {
@@ -4304,7 +4405,10 @@ function runSelectedMapObjectPrimaryAction() {
     selectSpot(spot.id, false);
     return revealSelectedSpotCardOnMap();
   }
-  if (selectedMapObject.kind === 'picked') return savePickedMapPoint();
+  if (selectedMapObject.kind === 'picked') {
+    if (pickedSaveEditorOpen) return savePickedMapPointFromMapSheet(false);
+    return openPickedSaveEditor(false);
+  }
   if (selectedMapObject.kind === 'chat' && chatPreviewPoint) {
     if (canUseMapRuntime()) map.setView([chatPreviewPoint.lat, chatPreviewPoint.lon], Math.max(map.getZoom(), 16));
     return true;
@@ -4319,13 +4423,22 @@ function runSelectedMapObjectPrimaryAction() {
 function runSelectedMapObjectSecondaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') return sendSelectedSpotToChat();
-  if (selectedMapObject.kind === 'picked') return savePickedMapPointAndShare();
+  if (selectedMapObject.kind === 'picked') {
+    if (pickedSaveEditorOpen) return savePickedMapPointFromMapSheet(true);
+    return openPickedSaveEditor(true);
+  }
   return false;
 }
 
 function clearSelectedMapObject() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'picked') {
+    if (pickedSaveEditorOpen) {
+      pickedSaveEditorOpen = false;
+      pickedSaveShareAfterSave = false;
+      renderMapObjectPanel();
+      return true;
+    }
     clearPickedMapPoint(true);
     return true;
   }
@@ -4653,15 +4766,17 @@ async function afterDataChanged() {
   }
 }
 
-async function saveSpotFromPosition(position, source) {
+async function saveSpotFromPosition(position, source, formData = null) {
   if (!position) return null;
-  const name = $('spotName').value.trim() || `Точка ${spots.length + 1}`;
-  const photo = await fileToDataUrl($('spotPhoto').files[0]);
+  const data = formData || readLegacySpotFormData();
+  const name = data.name || `Точка ${spots.length + 1}`;
+  const photo = await fileToDataUrl(data.photoFile);
   const spot = {
     id: uid(),
     name,
-    mushroomType: $('mushroomType').value.trim(),
-    note: $('spotNote').value.trim(),
+    mushroomType: data.mushroomType || '',
+    note: data.note || '',
+    collection: data.collection || 'Грибные места',
     lat: position.lat,
     lon: position.lon,
     accuracy: position.accuracy ?? null,
@@ -4673,10 +4788,13 @@ async function saveSpotFromPosition(position, source) {
   };
   await putSpot(spot);
   lastSavedSpotId = spot.id;
-  $('spotName').value = '';
-  $('mushroomType').value = '';
-  $('spotNote').value = '';
-  $('spotPhoto').value = '';
+  if (!formData) {
+    $('spotName').value = '';
+    $('mushroomType').value = '';
+    $('spotNote').value = '';
+    $('spotPhoto').value = '';
+    if ($('spotCollection')) $('spotCollection').value = 'Грибные места';
+  }
   if (source === 'map-picked') clearPickedMapPoint(false);
   await afterDataChanged();
   selectSpot(spot.id, true);
@@ -4694,7 +4812,7 @@ function showSaveResult(spot, source) {
   if (!card || !spot) return;
   const sourceText = source === 'map-picked' ? 'выбранная точка на карте' : 'текущая GPS-позиция';
   setText('saveResultTitle', 'Точка сохранена');
-  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText}. Теперь её можно открыть в “Точках”${canSendSpotToChat() ? ' или отправить группе' : ''}.`);
+  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText} в папку “${spot.collection || 'Грибные места'}”. Теперь её можно открыть в “Точках”${canSendSpotToChat() ? ' или отправить группе' : ''}.`);
   card.hidden = false;
   updateActionButtonsUi();
 }
@@ -4839,6 +4957,7 @@ function buildSpotDetailsPanelHtml(spot) {
     distanceLine = `${meters(dist)} · ${Math.round(bearing)}° ${directionName(bearing)}`;
   }
   const rows = [
+    ['Папка', escapeHtml(spot.collection || 'Грибные места')],
     ['Тип грибов', escapeHtml(spot.mushroomType || 'не указан')],
     ['Заметка', escapeHtml(spot.note || 'нет заметки')],
     ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
@@ -4912,6 +5031,7 @@ function updateSpotTypeFilterOptions() {
 
 function buildSpotCardMeta(spot) {
   const parts = [];
+  parts.push(spot.collection ? escapeHtml(spot.collection) : 'Грибные места');
   parts.push(spot.mushroomType ? escapeHtml(spot.mushroomType) : 'Тип не указан');
   parts.push(spot.createdAt ? fmtDate(spot.createdAt) : 'Дата не указана');
   const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, spot)) : 'GPS не готов';
@@ -4986,7 +5106,7 @@ function renderList() {
   if (!list) return;
 
   const filtered = spots
-    .filter((spot) => [spot.name, spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
+    .filter((spot) => [spot.name, spot.collection, spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
     .filter((spot) => typeFilter === 'all' || spotTypeFilterValue(normalizedSpotType(spot)) === typeFilter)
     .slice();
 
@@ -6600,7 +6720,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.22.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.23`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

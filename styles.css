@@ -1972,3 +1972,46 @@ select {
     }
   }
 }
+
+/* Sprint 5.23 — Bookmark Save Flow.
+   A picked map location is only a selected place until the user presses the
+   bookmark action. The save form then opens inside the map sheet, with a
+   bounded height so it cannot become another full-screen card. */
+.map-object-save-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(36, 75, 47, 0.18);
+}
+.map-object-save-editor[hidden] {
+  display: none;
+}
+.map-object-save-editor .field {
+  margin: 0;
+}
+.map-object-save-editor label {
+  font-size: 12px;
+}
+.map-object-save-editor input,
+.map-object-save-editor select,
+.map-object-save-editor textarea {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+.map-object-save-editor textarea {
+  resize: vertical;
+}
+.map-object-sheet.map-object-editing {
+  max-height: clamp(260px, 58%, 430px);
+}
+.map-object-sheet.map-object-collapsed .map-object-save-editor {
+  display: none;
+}
+@media (max-width: 560px) {
+  .map-object-sheet.map-object-editing {
+    max-height: clamp(250px, 62%, 390px);
+  }
+}
