@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.16-hotfix.2';
+const APP_VERSION = '0.7.16-hotfix.3';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -5201,7 +5201,7 @@ function getSupabaseConfig() {
 
 async function supabaseFetch(path, options = {}) {
   const cfg = getSupabaseConfig();
-  if (!cfg) throw new Error('БД не настроена. Заполни настройки БД в config.js.');
+  if (!cfg) throw new Error('Подключение к БД не настроено.');
   const headers = {
     apikey: cfg.key,
     Authorization: `Bearer ${cfg.key}`,
@@ -5289,7 +5289,7 @@ async function createGroup() {
     await joinGroup(true);
     $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   } else {
-    $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Для live-режима нужны настройки БД в config.js.';
+    $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Синхронизация участников, чат и live-локации сейчас недоступны.';
     updateChatUi();
   }
 }
@@ -5360,7 +5360,7 @@ async function joinGroup(silent = false) {
 
   if (!getSupabaseConfig()) {
     setMemberSyncPending(true, 'БД не настроена');
-    $('liveHint').textContent = 'Группа открыта локально. Для синхронизации участников нужны настройки БД в config.js.';
+    $('liveHint').textContent = 'Группа открыта локально. Синхронизация участников сейчас недоступна.';
     return true;
   }
 
@@ -5460,7 +5460,7 @@ function updateDbCleanupUi() {
   if ($('cleanMyEverywhereDbBtn')) $('cleanMyEverywhereDbBtn').disabled = !hasSupabase;
 
   if (!hasSupabase) {
-    setDbCleanupHint('Чистка БД недоступна: нужны настройки БД в config.js. Локальные грибные точки не затрагиваются.');
+    setDbCleanupHint('Чистка БД недоступна: нет подключения к БД. Локальные грибные точки не затрагиваются.');
   } else if (!hasGroup) {
     setDbCleanupHint('Для чистки текущей группы вставь или создай ID группы. Можно удалить “меня из всех групп” по локальному user_id.');
   } else {
@@ -5484,7 +5484,7 @@ function confirmDbCleanup(actionText) {
 }
 
 async function deleteLiveRows(filterQuery, label, options = {}) {
-  if (!getSupabaseConfig()) throw new Error('БД не настроена в config.js.');
+  if (!getSupabaseConfig()) throw new Error('Подключение к БД не настроено.');
   const select = options.select || 'group_id,user_id,user_name,updated_at';
   const path = `live_locations?${filterQuery}&select=${select}`;
   const rows = await supabaseFetch(path, {
@@ -5604,7 +5604,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
   }
   if ($('groupStateHint')) {
     if (!hasSupabase) {
-      $('groupStateHint').textContent = 'Группа может открыться локально, но синхронизация участников и чат требуют настроенной БД в config.js.';
+      $('groupStateHint').textContent = 'Группа может открыться локально, но синхронизация участников и чат сейчас недоступны без подключения к БД.';
     } else if (!group) {
       $('groupStateHint').textContent = 'Создай группу или вставь ID от друга.';
     } else if (groupJoined) {
@@ -5727,7 +5727,7 @@ function updateChatUi() {
   updateChatCounter();
 
   if (!hasSupabase) {
-    setChatHint('Чат недоступен: нужны настройки БД в config.js.');
+    setChatHint('Чат недоступен: нет подключения к БД.');
   } else if (!group) {
     setChatHint('Создай группу или открой приглашение, чтобы читать и писать в чат группы.');
   } else if (!groupJoined) {
@@ -5855,7 +5855,7 @@ function parseSpotChatBody(body) {
 }
 
 function requireGroupChatReady(actionLabel = 'Отправка точки в чат') {
-  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); alert('Для отправки точки в чат нужны настройки БД в config.js.'); return false; }
+  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); alert('Отправка точки в чат сейчас недоступна: нет подключения к БД.'); return false; }
   if (!currentGroupId()) { markButtonBlocked('нет ID группы'); alert('Сначала создай группу или открой приглашение.'); return false; }
   if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); alert('Сначала войди в группу.'); return false; }
   return true;
@@ -6040,7 +6040,7 @@ async function refreshGroupChat(showManualHint = true) {
 async function sendOrUpdateChatMessage() {
   const group = currentGroupId();
   if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай группу или открой приглашение.'); }
-  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала настрой БД в config.js и переопубликуй сайт.'); }
+  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала подключи БД и переопубликуй сайт.'); }
   if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); return alert('Сначала войди в группу.'); }
 
   const input = $('chatMessageInput');
@@ -6377,7 +6377,7 @@ async function refreshFriends() {
 }
 
 async function startLiveSharing() {
-  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала настрой БД в config.js и переопубликуй сайт.'); }
+  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала подключи БД и переопубликуй сайт.'); }
   const name = $('liveName').value.trim();
   const group = $('groupId').value.trim();
   if (!name) { markButtonBlocked('не указано имя'); return alert('Укажи своё имя.'); }
@@ -6418,7 +6418,7 @@ async function stopLiveSharing(keepWatching = true) {
 async function testSupabaseConnection() {
   try {
     const cfg = getSupabaseConfig();
-    if (!cfg) throw new Error('БД не настроена в config.js.');
+    if (!cfg) throw new Error('Подключение к БД не настроено.');
     const rows = await supabaseFetch('live_locations?select=id&limit=1', { method: 'GET' });
     $('liveHint').textContent = `БД доступна. Ответ: ${Array.isArray(rows) ? rows.length : 'ok'}`;
   } catch (err) {
@@ -6545,7 +6545,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.16.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.16.3`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
@@ -6564,7 +6564,7 @@ async function init() {
   await refreshSpots();
   if (!getSupabaseConfig()) {
     updateLiveUi();
-    $('liveHint').textContent = 'Для live-режима нужны настройки БД в файле config.js.';
+    $('liveHint').textContent = 'Для live-режима нужно подключение к БД.';
   } else if ($('groupId').value.trim()) {
     await joinGroup(true);
     $('liveHint').textContent = groupFromUrl
