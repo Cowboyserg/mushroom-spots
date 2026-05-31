@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.20 · Sprint 5\.20/;
+const EXPECTED_APP_VERSION = /v0\.7\.20-hotfix\.2 · Sprint 5\.20\.2/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -274,7 +274,8 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await expect(page.locator('#mapObjectPill')).toHaveText('черновик');
   await expect(page.locator('#mapObjectDetails')).toContainText('выбрано на карте');
   await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Сохранить');
-  await expect(page.locator('#mapObjectSecondaryBtn')).toBeHidden();
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectClearBtn')).toHaveText('Отмена');
 
   for (const forbiddenNavName of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
@@ -287,11 +288,12 @@ test('picked map point context sheet exposes object actions without app-nav dupl
 });
 
 test('picked map point context sheet enables share action only when group chat is ready', async ({ page }) => {
-  await bootApp(page, { fakeSupabase: true });
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-context-sheet-group' });
 
   await page.getByRole('button', { name: 'Группа' }).click();
+  await expect(page.locator('#groupId')).toHaveValue('e2e-context-sheet-group');
   await page.locator('#liveName').fill('E2E пользователь');
-  await page.locator('#groupId').fill('e2e-context-sheet-group');
+  await expect(page.locator('#joinGroupBtn')).toBeEnabled();
   await page.locator('#joinGroupBtn').click();
   await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
 
