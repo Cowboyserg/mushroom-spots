@@ -44,7 +44,7 @@ async function bootApp(page, options = {}) {
   });
 
   await page.goto(options.path || '/');
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17 · Sprint 5\.17/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -239,7 +239,7 @@ test('leaving group clears persisted group after reload', async ({ page }) => {
   expect(persisted.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
 
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17 · Sprint 5\.17/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
   await expect(page.locator('#groupId')).toHaveValue('');
@@ -286,7 +286,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17 · Sprint 5\.17/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -314,7 +314,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17 · Sprint 5\.17/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');

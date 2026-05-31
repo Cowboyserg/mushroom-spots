@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.17';
+const APP_VERSION = '0.7.17-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -6545,7 +6545,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.17`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.17.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
