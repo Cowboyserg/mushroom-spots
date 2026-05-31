@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.7';
+const APP_VERSION = '0.7.8';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -206,6 +206,11 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   sharePickedMapPointToChatBtn: 'Отправить выбранную точку в чат',
   clearPickedMapPointBtn: 'Сбросить выбранную точку на карте',
   averageBtn: 'Уточнить GPS 30 сек',
+  showSelectedSpotOnMapBtn: 'Показать выбранную точку на карте',
+  spotListShowOnMapBtn: 'Показать точку из списка на карте',
+  spotListSendToChatBtn: 'Отправить точку из списка в чат',
+  closeSelectedSpotBtn: 'Закрыть карточку точки',
+  spotListCloseDetailsBtn: 'Закрыть карточку точки в списке',
   navigateBtn: 'Показать направление',
   shareSpotBtn: 'Экспорт точки',
   sendSelectedSpotToChatBtn: 'Отправить сохранённую точку в чат',
@@ -712,6 +717,11 @@ function setDisabled(id, disabled) {
   if (el) el.disabled = Boolean(disabled);
 }
 
+function setHidden(id, hidden) {
+  const el = $(id);
+  if (el) el.hidden = Boolean(hidden);
+}
+
 function setText(id, text) {
   const el = $(id);
   if (el) el.textContent = text;
@@ -801,9 +811,14 @@ function updateActionButtonsUi() {
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('centerPmtilesOnMeBtn', !hasPosition && !navigator.geolocation);
+  setDisabled('showSelectedSpotOnMapBtn', !hasSelected);
+  setDisabled('spotListShowOnMapBtn', !hasSelected);
   setDisabled('navigateBtn', !hasSelected || !hasPosition);
   setDisabled('shareSpotBtn', !hasSelected);
   setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
+  setDisabled('spotListSendToChatBtn', !hasSelected || !canUseChat);
+  setHidden('sendSelectedSpotToChatBtn', !canUseChat);
+  setHidden('spotListSendToChatBtn', !canUseChat);
   setDisabled('deleteSpotBtn', !hasSelected);
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
@@ -4310,8 +4325,55 @@ async function averageAndSave() {
   }, 30000);
 }
 
+function spotSourceLabel(source) {
+  const normalized = String(source || '').trim();
+  if (normalized === 'map-picked' || normalized === 'picked') return 'выбранная точка на карте';
+  if (normalized === 'current-gps' || normalized === 'gps') return 'GPS-позиция';
+  if (normalized === 'import') return 'импорт';
+  return normalized || 'не указан';
+}
+
+function getSelectedSpot() {
+  return spots.find(s => s.id === selectedSpotId) || null;
+}
+
+function buildSpotDetailsPanelHtml(spot) {
+  if (!spot) return '<p class="hint">Точка не выбрана.</p>';
+  const hasCurrentPosition = Boolean(currentPosition);
+  let distanceLine = 'Включи GPS, чтобы видеть расстояние и направление.';
+  if (hasCurrentPosition) {
+    const from = { lat: currentPosition.lat, lon: currentPosition.lon };
+    const dist = distanceMeters(from, spot);
+    const bearing = bearingDegrees(from, spot);
+    distanceLine = `${meters(dist)} · ${Math.round(bearing)}° ${directionName(bearing)}`;
+  }
+  const rows = [
+    ['Тип грибов', escapeHtml(spot.mushroomType || 'не указан')],
+    ['Заметка', escapeHtml(spot.note || 'нет заметки')],
+    ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
+    ['Расстояние от GPS', distanceLine],
+    ['Дата сохранения', spot.createdAt ? fmtDate(spot.createdAt) : 'не указана'],
+    ['Источник', spot.source ? escapeHtml(spotSourceLabel(spot.source)) : 'не указан'],
+    ['Точность', spot.accuracy != null ? meters(spot.accuracy) : 'не указана']
+  ];
+  return `
+    <article class="spot-detail-panel">
+      <div class="spot-detail-head">
+        <div>
+          <p class="hint spot-detail-kicker">Сохранённая грибная точка</p>
+          <h3>${escapeHtml(spot.name || 'Грибная точка')}</h3>
+        </div>
+        <span class="pill">${escapeHtml(spot.mushroomType || 'без типа')}</span>
+      </div>
+      ${spot.photo ? `<img class="spot-detail-photo" src="${spot.photo}" alt="Фото места">` : ''}
+      <div class="spot-detail-grid">
+        ${rows.map(([label, value]) => `<div class="spot-detail-row"><span>${label}</span><strong>${value}</strong></div>`).join('')}
+      </div>
+    </article>`;
+}
+
 function markerPopup(spot) {
-  return `<strong>${escapeHtml(spot.name)}</strong><br>${spot.mushroomType ? escapeHtml(spot.mushroomType)+'<br>' : ''}${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}<br>Точность: ${meters(spot.accuracy)}<br><button onclick="window.selectSpotFromPopup('${spot.id}')">Выбрать</button>`;
+  return `<strong>${escapeHtml(spot.name)}</strong><br>${spot.mushroomType ? escapeHtml(spot.mushroomType)+'<br>' : ''}${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}<br>Точность: ${meters(spot.accuracy)}<br><button onclick="window.selectSpotFromPopup('${spot.id}')">Открыть карточку</button>`;
 }
 
 function renderMarkers() {
@@ -4338,32 +4400,68 @@ function renderList() {
     return;
   }
   for (const spot of filtered) {
-    const item = document.createElement('div');
+    const item = document.createElement('button');
+    item.type = 'button';
     item.className = `spot-item ${spot.id === selectedSpotId ? 'active' : ''}`;
     const dist = currentPosition ? meters(distanceMeters({lat:currentPosition.lat, lon:currentPosition.lon}, spot)) : '—';
     item.innerHTML = `<div><div class="spot-title">${escapeHtml(spot.name)}</div><div class="spot-meta">${escapeHtml(spot.mushroomType || 'Тип не указан')} · ${fmtDate(spot.createdAt)}<br>Расстояние: ${dist} · GPS: ${meters(spot.accuracy)}</div></div>${spot.photo ? `<img class="thumb" src="${spot.photo}" alt="Фото">` : ''}`;
-    item.onclick = () => selectSpot(spot.id, true);
+    item.onclick = () => openSpotDetailsFromList(spot.id);
     list.appendChild(item);
   }
 }
 
 async function refreshSpots() {
   spots = await getAllSpots();
+  if (selectedSpotId && !spots.some(s => s.id === selectedSpotId)) selectedSpotId = null;
   renderMarkers();
   renderList();
   updateSelectedDetails();
   await updateStorageUi();
 }
 
+function showSelectedSpotOnMap() {
+  const spot = getSelectedSpot();
+  if (!spot) { markButtonBlocked('сохранённая точка не выбрана'); alert('Сначала выбери сохранённую точку.'); return false; }
+  switchAppScreen('map');
+  $('selectedCard').hidden = false;
+  if (canUseMapRuntime()) {
+    map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
+    const marker = spotMarkers.get(spot.id);
+    if (marker) marker.openPopup();
+    safeInvalidateMap(150, 'show selected spot on map');
+  }
+  updateSelectedDetails();
+  return true;
+}
+
+function openSpotDetailsFromList(id) {
+  selectSpot(id, false);
+  const card = $('spotListDetailsCard');
+  if (card) {
+    card.hidden = false;
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function closeSpotDetails() {
+  selectedSpotId = null;
+  setHidden('selectedCard', true);
+  setHidden('spotListDetailsCard', true);
+  if (canUseMapRuntime()) map.closePopup();
+  renderList();
+  updateActionButtonsUi();
+  renderPmtilesPreviewUserLayers('selected spot cleared from details panel');
+}
+
 function selectSpot(id, center=false) {
-  selectedSpotId = id;
   const spot = spots.find(s => s.id === id);
   if (!spot) return;
+  selectedSpotId = id;
   $('selectedCard').hidden = false;
   if (center) switchAppScreen('map');
   if (center && canUseMapRuntime()) map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
   const marker = spotMarkers.get(id);
-  if (marker) marker.openPopup();
+  if (marker && activeAppScreen === 'map') marker.openPopup();
   updateSelectedDetails();
   renderList();
   updateActionButtonsUi();
@@ -4372,23 +4470,23 @@ function selectSpot(id, center=false) {
 window.selectSpotFromPopup = (id) => selectSpot(id, false);
 
 function updateSelectedDetails() {
-  const spot = spots.find(s => s.id === selectedSpotId);
-  if (!spot) return;
-  let nav = 'Включи GPS, чтобы видеть расстояние и направление.';
-  if (currentPosition) {
-    const from = { lat: currentPosition.lat, lon: currentPosition.lon };
-    const dist = distanceMeters(from, spot);
-    const bearing = bearingDegrees(from, spot);
-    nav = `До точки: <strong>${meters(dist)}</strong>. Направление: <strong>${Math.round(bearing)}° ${directionName(bearing)}</strong>.`;
+  const spot = getSelectedSpot();
+  if (!spot) {
+    setHidden('selectedCard', true);
+    setHidden('spotListDetailsCard', true);
+    const selectedDetails = $('selectedDetails');
+    if (selectedDetails) selectedDetails.innerHTML = '';
+    const listDetails = $('spotListDetails');
+    if (listDetails) listDetails.innerHTML = '';
+    updateActionButtonsUi();
+    return;
   }
-  $('selectedDetails').innerHTML = `
-    <p><strong>${escapeHtml(spot.name)}</strong></p>
-    <p>${escapeHtml(spot.mushroomType || 'Тип грибов не указан')}</p>
-    <p>${escapeHtml(spot.note || 'Заметки нет')}</p>
-    <p class="hint">${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)} · точность ${meters(spot.accuracy)} · ${fmtDate(spot.createdAt)}</p>
-    <p>${nav}</p>
-    ${spot.photo ? `<img src="${spot.photo}" alt="Фото места">` : ''}
-  `;
+  const html = buildSpotDetailsPanelHtml(spot);
+  const selectedDetails = $('selectedDetails');
+  if (selectedDetails) selectedDetails.innerHTML = html;
+  const listDetails = $('spotListDetails');
+  if (listDetails) listDetails.innerHTML = html;
+  updateActionButtonsUi();
 }
 
 function showNavigationLine() {
@@ -4441,6 +4539,7 @@ async function deleteSelected() {
   await removeSpot(spot.id);
   selectedSpotId = null;
   $('selectedCard').hidden = true;
+  setHidden('spotListDetailsCard', true);
   if (navLine) { navLine.remove(); navLine = null; }
   await afterDataChanged();
 }
@@ -5652,9 +5751,14 @@ function bindUi() {
   if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
+  if ($('showSelectedSpotOnMapBtn')) $('showSelectedSpotOnMapBtn').onclick = withButtonDiagnostics('showSelectedSpotOnMapBtn', showSelectedSpotOnMap);
+  if ($('spotListShowOnMapBtn')) $('spotListShowOnMapBtn').onclick = withButtonDiagnostics('spotListShowOnMapBtn', showSelectedSpotOnMap);
+  if ($('closeSelectedSpotBtn')) $('closeSelectedSpotBtn').onclick = withButtonDiagnostics('closeSelectedSpotBtn', closeSpotDetails);
+  if ($('spotListCloseDetailsBtn')) $('spotListCloseDetailsBtn').onclick = withButtonDiagnostics('spotListCloseDetailsBtn', closeSpotDetails);
   $('navigateBtn').onclick = withButtonDiagnostics('navigateBtn', showNavigationLine);
   $('shareSpotBtn').onclick = withButtonDiagnostics('shareSpotBtn', exportSelected);
   if ($('sendSelectedSpotToChatBtn')) $('sendSelectedSpotToChatBtn').onclick = withButtonDiagnostics('sendSelectedSpotToChatBtn', sendSelectedSpotToChat);
+  if ($('spotListSendToChatBtn')) $('spotListSendToChatBtn').onclick = withButtonDiagnostics('spotListSendToChatBtn', sendSelectedSpotToChat);
   $('deleteSpotBtn').onclick = withButtonDiagnostics('deleteSpotBtn', deleteSelected);
   $('exportAllBtn').onclick = withButtonDiagnostics('exportAllBtn', exportAll);
   $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { alert(`Ошибка импорта: ${err.message}`); } finally { e.target.value = ''; } };
@@ -5747,7 +5851,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.7`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.8`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

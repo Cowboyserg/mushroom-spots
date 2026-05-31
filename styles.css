@@ -842,3 +842,88 @@ body {
   background: var(--card);
   color: var(--text);
 }
+
+/* Sprint 5.8 — Spot Details Panel */
+.spot-item {
+  width: 100%;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+}
+.spot-details-card {
+  border-color: rgba(36,75,47,.22);
+}
+.spot-detail-panel {
+  display: grid;
+  gap: 12px;
+}
+.spot-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.spot-detail-head h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.spot-detail-kicker {
+  margin: 0 0 3px;
+}
+.spot-detail-photo {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+.spot-detail-grid {
+  display: grid;
+  gap: 8px;
+}
+.spot-detail-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.55fr) 1fr;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px dashed rgba(36,75,47,.14);
+}
+.spot-detail-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.spot-detail-row strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+.spot-detail-actions {
+  margin-top: 12px;
+}
+.spot-detail-actions button {
+  min-height: 42px;
+}
+.spot-detail-advanced-actions {
+  margin-top: 10px;
+  border: 1px dashed rgba(36,75,47,.16);
+  border-radius: 14px;
+  padding: 9px 10px;
+  background: rgba(255,255,255,.52);
+}
+.spot-detail-advanced-actions summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 750;
+}
+.spot-detail-advanced-actions .row {
+  margin-top: 10px;
+}
+@media (max-width: 560px) {
+  .spot-detail-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .spot-detail-head {
+    flex-direction: column;
+  }
+}
