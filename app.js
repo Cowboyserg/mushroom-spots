@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.21';
+const APP_VERSION = '0.7.22';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -72,6 +72,7 @@ let spotMarkers = new Map();
 let selectedSpotId = null;
 let lastSavedSpotId = null;
 let selectedMapObject = null;
+let mapObjectSheetCollapsed = false;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
@@ -4122,12 +4123,14 @@ function distanceFromCurrentPositionLine(target) {
 
 function setSelectedMapObject(kind, payload = {}) {
   selectedMapObject = { kind, ...payload, selectedAt: new Date().toISOString() };
+  mapObjectSheetCollapsed = false;
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
 
 function clearSelectedMapObjectOnly() {
   selectedMapObject = null;
+  mapObjectSheetCollapsed = false;
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
@@ -4240,12 +4243,17 @@ function renderMapObjectPanel() {
   const model = describeSelectedMapObject();
   if (!model) {
     selectedMapObject = null;
+    mapObjectSheetCollapsed = false;
     card.hidden = true;
+    card.classList.remove('map-object-collapsed');
+    const collapseBtn = $('mapObjectCollapseBtn');
+    if (collapseBtn) collapseBtn.setAttribute('aria-expanded', 'true');
     return;
   }
 
   card.hidden = false;
   card.dataset.objectKind = model.kind;
+  card.classList.toggle('map-object-collapsed', mapObjectSheetCollapsed);
   setText('mapObjectTitle', model.title);
   setText('mapObjectSubtitle', model.subtitle);
   setText('mapObjectPill', model.pill);
@@ -4257,6 +4265,19 @@ function renderMapObjectPanel() {
   setText('mapObjectSecondaryBtn', model.secondary || 'Поделиться в группе');
   setText('mapObjectClearBtn', model.clear || 'Сбросить выбор');
   setHidden('mapObjectSecondaryBtn', !model.secondaryVisible);
+  const collapseBtn = $('mapObjectCollapseBtn');
+  if (collapseBtn) {
+    collapseBtn.textContent = mapObjectSheetCollapsed ? 'Развернуть' : 'Свернуть';
+    collapseBtn.setAttribute('aria-expanded', mapObjectSheetCollapsed ? 'false' : 'true');
+    collapseBtn.setAttribute('aria-label', mapObjectSheetCollapsed ? 'Развернуть карточку выбранного объекта' : 'Свернуть карточку выбранного объекта');
+  }
+}
+
+function toggleMapObjectSheetCollapsed() {
+  if (!selectedMapObject) return false;
+  mapObjectSheetCollapsed = !mapObjectSheetCollapsed;
+  renderMapObjectPanel();
+  return true;
 }
 
 function revealSelectedSpotCardOnMap() {
@@ -6477,6 +6498,7 @@ function bindUi() {
   if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
   if ($('mapObjectPrimaryBtn')) $('mapObjectPrimaryBtn').onclick = withButtonDiagnostics('mapObjectPrimaryBtn', runSelectedMapObjectPrimaryAction);
   if ($('mapObjectSecondaryBtn')) $('mapObjectSecondaryBtn').onclick = withButtonDiagnostics('mapObjectSecondaryBtn', runSelectedMapObjectSecondaryAction);
+  if ($('mapObjectCollapseBtn')) $('mapObjectCollapseBtn').onclick = withButtonDiagnostics('mapObjectCollapseBtn', toggleMapObjectSheetCollapsed);
   if ($('mapObjectClearBtn')) $('mapObjectClearBtn').onclick = withButtonDiagnostics('mapObjectClearBtn', clearSelectedMapObject);
   if ($('showSelectedSpotOnMapBtn')) $('showSelectedSpotOnMapBtn').onclick = withButtonDiagnostics('showSelectedSpotOnMapBtn', showSelectedSpotOnMap);
   if ($('spotListShowOnMapBtn')) $('spotListShowOnMapBtn').onclick = withButtonDiagnostics('spotListShowOnMapBtn', showSelectedSpotOnMap);
@@ -6578,7 +6600,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.21`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.22`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.21 · Sprint 5\.21/;
+const EXPECTED_APP_VERSION = /v0\.7\.22 · Sprint 5\.22/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -263,6 +263,17 @@ test('map screen keeps GPS controls but does not duplicate bottom navigation in 
   }
 });
 
+test('expanded map workspace keeps map as the primary viewport above bottom navigation', async ({ page }) => {
+  await bootApp(page);
+
+  const mapBox = await page.locator('.map-wrap-home').boundingBox();
+  const navBox = await page.locator('.bottom-nav').boundingBox();
+  expect(mapBox, 'expanded map workspace must have visible bounds').not.toBeNull();
+  expect(navBox, 'bottom navigation must stay visible').not.toBeNull();
+  expect(mapBox.height, 'map should take most of the app workspace').toBeGreaterThan(page.viewportSize().height * 0.52);
+  expect(mapBox.y + mapBox.height, 'map must not overlap the bottom navigation').toBeLessThanOrEqual(navBox.y + 2);
+});
+
 test('picked map point context sheet exposes object actions without app-nav duplicates', async ({ page }) => {
   await bootApp(page);
   await pickMapPoint(page);
@@ -286,6 +297,16 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectClearBtn')).toHaveText('Отмена');
+  await expect(page.locator('#mapObjectCollapseBtn')).toHaveText('Свернуть');
+  await page.locator('#mapObjectCollapseBtn').click();
+  await expect(card).toHaveClass(/map-object-collapsed/);
+  await expect(page.locator('#mapObjectDetails')).toBeHidden();
+  await expect(page.locator('#mapObjectPrimaryBtn')).toBeHidden();
+  await expect(page.locator('#mapObjectCollapseBtn')).toHaveText('Развернуть');
+  await page.locator('#mapObjectCollapseBtn').click();
+  await expect(card).not.toHaveClass(/map-object-collapsed/);
+  await expect(page.locator('#mapObjectDetails')).toBeVisible();
+  await expect(page.locator('#mapObjectPrimaryBtn')).toBeVisible();
 
   for (const forbiddenNavName of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
     await expect(card.getByRole('button', { name: new RegExp(`^${forbiddenNavName}$`) })).toHaveCount(0);

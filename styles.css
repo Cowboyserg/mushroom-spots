@@ -1811,3 +1811,159 @@ select {
     flex-basis: 100%;
   }
 }
+
+/* Sprint 5.22 — Expanded Map Workspace.
+   The map becomes the primary field workspace above bottom navigation.
+   The selected-object sheet can collapse so it does not consume the map. */
+#screen-map .map-home-heading {
+  display: none;
+}
+
+#screen-map .map-home-shell {
+  gap: 10px;
+}
+
+#screen-map .map-home-card {
+  position: relative;
+  padding: 0;
+  margin-top: 0;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+#screen-map .map-title-row {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1120;
+  max-width: min(48ch, calc(100% - 124px));
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  border-radius: 16px;
+  background: rgba(255, 253, 247, 0.90);
+  box-shadow: 0 10px 28px rgba(20, 35, 20, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+#screen-map .map-title-copy h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+#screen-map .map-title-copy .hint {
+  display: none;
+}
+
+#screen-map .map-core-pills {
+  display: none;
+}
+
+#screen-map .map-wrap-home {
+  height: calc(100dvh - 178px);
+  min-height: 520px;
+  max-height: none;
+  border-radius: 24px;
+  border: 0;
+}
+
+#screen-map .map-live-strip {
+  margin: 0;
+  padding: 10px;
+  background: rgba(255, 253, 247, 0.96);
+  border-top: 1px solid rgba(36, 75, 47, 0.12);
+}
+
+.map-object-top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.map-object-collapse-btn {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.map-object-sheet.map-object-collapsed {
+  max-height: 86px;
+  overflow: hidden;
+  cursor: default;
+}
+
+.map-object-sheet.map-object-collapsed .map-object-details,
+.map-object-sheet.map-object-collapsed .map-object-actions {
+  display: none;
+}
+
+.map-object-sheet.map-object-collapsed .compact-title {
+  margin-bottom: 0;
+}
+
+.map-object-sheet.map-object-collapsed .hint {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (min-width: 860px) {
+  #screen-map .map-wrap-home {
+    height: min(78dvh, 760px);
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 560px) {
+  #screen-map .map-home-card {
+    margin-left: -2px;
+    margin-right: -2px;
+    border-radius: 22px;
+  }
+
+  #screen-map .map-title-row {
+    top: 10px;
+    left: 10px;
+    max-width: calc(100% - 112px);
+    padding: 7px 9px;
+    border-radius: 15px;
+  }
+
+  #screen-map .map-title-copy h2 {
+    font-size: 14px;
+  }
+
+  #screen-map .map-wrap-home {
+    height: calc(100dvh - 160px - env(safe-area-inset-bottom));
+    min-height: 500px;
+    max-height: none;
+    border-radius: 22px;
+  }
+
+  #screen-map .map-live-strip {
+    display: none;
+  }
+
+  .map-object-top-actions {
+    justify-content: flex-start;
+  }
+
+  .map-object-sheet.map-object-collapsed {
+    max-height: 92px;
+  }
+}
+
+@supports not (height: 100dvh) {
+  #screen-map .map-wrap-home {
+    height: calc(100vh - 178px);
+  }
+  @media (max-width: 560px) {
+    #screen-map .map-wrap-home {
+      height: calc(100vh - 160px - env(safe-area-inset-bottom));
+    }
+  }
+}
