@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.24-hotfix\.1 · Sprint 5\.24\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.24-hotfix\.2 · Sprint 5\.24\.2/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -397,12 +397,25 @@ test('saved spot map sheet opens spots section for edit and delete CRUD actions'
   await expect(page.locator('#screen-spots')).toBeVisible();
   await expect(page.locator('#spotListDetailsCard')).toBeVisible();
   await expect(page.locator('#spotListDetails')).toContainText('Белые у ручья');
+  await expect(page.locator('#spotListShowOnMapBtn')).toBeVisible();
   await expect(page.locator('#spotListEditBtn')).toHaveText('Править');
+  await expect(page.locator('#spotListEditBtn')).toBeVisible();
   await expect(page.locator('#spotListDeleteBtn')).toHaveText('Удалить');
+  await expect(page.locator('#spotListDeleteBtn')).toBeVisible();
+  await expect(page.locator('#spotListCloseDetailsBtn')).toBeVisible();
+  await expect(page.locator('#spotListSaveEditBtn')).toBeHidden();
+  await expect(page.locator('#spotListCancelEditBtn')).toBeHidden();
 
   await page.locator('#spotListEditBtn').click();
   await expect(page.locator('#spotListEditor')).toBeVisible();
   await expect(page.locator('#spotListDetails')).toBeHidden();
+  await expect(page.locator('#spotListShowOnMapBtn')).toBeHidden();
+  await expect(page.locator('#spotListEditBtn')).toBeHidden();
+  await expect(page.locator('#spotListDeleteBtn')).toBeHidden();
+  await expect(page.locator('#spotListCloseDetailsBtn')).toBeHidden();
+  await expect(page.locator('#spotListSaveEditBtn')).toBeVisible();
+  await expect(page.locator('#spotListCancelEditBtn')).toHaveText('Отмена');
+  await expect(page.locator('#spotListCancelEditBtn')).toBeVisible();
   await page.locator('#spotListCollection').selectOption({ label: 'Разведка' });
   await page.locator('#spotListName').fill('Белые у ручья — обновлено');
   await page.locator('#spotListType').fill('Белые');

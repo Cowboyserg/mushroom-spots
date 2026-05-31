@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.24-hotfix.1';
+const APP_VERSION = '0.7.24-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -848,19 +848,20 @@ function updateActionButtonsUi() {
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('centerPmtilesOnMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('showSelectedSpotOnMapBtn', !hasSelected);
-  setDisabled('spotListShowOnMapBtn', !hasSelected);
+  const spotListEditing = Boolean(hasSelected && spotListEditorOpen);
+  setDisabled('spotListShowOnMapBtn', !hasSelected || spotListEditing);
   setDisabled('navigateBtn', !hasSelected || !hasPosition);
   setDisabled('shareSpotBtn', !hasSelected);
   setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
-  setDisabled('spotListSendToChatBtn', !hasSelected || !canUseChat);
+  setDisabled('spotListSendToChatBtn', !hasSelected || spotListEditing || !canUseChat);
   setDisabled('saveResultShareBtn', !lastSavedSpotId || !canUseChat);
   setHidden('sendSelectedSpotToChatBtn', !canUseChat);
-  setHidden('spotListSendToChatBtn', !canUseChat);
   setHidden('saveResultShareBtn', !canUseChat);
-  setDisabled('spotListEditBtn', !hasSelected);
-  setDisabled('spotListDeleteBtn', !hasSelected);
-  setDisabled('spotListSaveEditBtn', !hasSelected);
-  setDisabled('spotListCancelEditBtn', !hasSelected);
+  setDisabled('spotListEditBtn', !hasSelected || spotListEditing);
+  setDisabled('spotListDeleteBtn', !hasSelected || spotListEditing);
+  setDisabled('spotListSaveEditBtn', !spotListEditing);
+  setDisabled('spotListCancelEditBtn', !spotListEditing);
+  setDisabled('spotListCloseDetailsBtn', !hasSelected || spotListEditing);
   renderSpotListDetailsState();
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
@@ -5329,14 +5330,30 @@ function populateSpotListEditor(spot) {
 function renderSpotListDetailsState() {
   const spot = getSelectedSpot();
   const editing = Boolean(spot && spotListEditorOpen);
+  const canChat = canSendSpotToChat();
+
   setHidden('spotListEditor', !editing);
-  setHidden('spotListDetails', editing);
-  setHidden('spotListSaveEditBtn', !editing);
-  setHidden('spotListCancelEditBtn', !editing);
+  setHidden('spotListDetails', editing || !spot);
+
+  // View state: actions that operate on the saved spot as an existing object.
   setHidden('spotListShowOnMapBtn', editing || !spot);
+  setHidden('spotListSendToChatBtn', editing || !spot || !canChat);
   setHidden('spotListEditBtn', editing || !spot);
   setHidden('spotListDeleteBtn', editing || !spot);
-  setHidden('spotListSendToChatBtn', editing || !spot || !canSendSpotToChat());
+  setHidden('spotListCloseDetailsBtn', editing || !spot);
+
+  // Edit state: only form controls are visible. View/destructive/navigation
+  // actions stay hidden so the user cannot mix two modes in one card.
+  setHidden('spotListSaveEditBtn', !editing);
+  setHidden('spotListCancelEditBtn', !editing);
+
+  setDisabled('spotListShowOnMapBtn', !spot || editing);
+  setDisabled('spotListSendToChatBtn', !spot || editing || !canChat);
+  setDisabled('spotListEditBtn', !spot || editing);
+  setDisabled('spotListDeleteBtn', !spot || editing);
+  setDisabled('spotListCloseDetailsBtn', !spot || editing);
+  setDisabled('spotListSaveEditBtn', !editing);
+  setDisabled('spotListCancelEditBtn', !editing);
 }
 
 function startSpotListEditor() {
@@ -6979,7 +6996,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.24.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.24.2`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

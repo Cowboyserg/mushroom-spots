@@ -925,6 +925,14 @@ body {
 .spot-detail-actions button {
   min-height: 42px;
 }
+
+/* Sprint 5.24.2 — Spots details button state guard.
+   The generic button rule uses inline-flex, so hidden action buttons need a
+   scoped explicit display reset. This is product UI state, not a test-only
+   workaround: view actions and edit actions must never be visible together. */
+.spot-detail-actions button[hidden] {
+  display: none !important;
+}
 .spot-detail-advanced-actions {
   margin-top: 10px;
   border: 1px dashed rgba(36,75,47,.16);
@@ -2056,7 +2064,7 @@ select {
   }
 }
 
-/* Sprint 5.24.1 — Map sheet close placement and Spots-only CRUD.
+/* Sprint 5.24.2 — Map sheet close placement, Spots-only CRUD, and button-state cleanup.
    The close control is a sheet-level control in the top-right corner, aligned
    with the selected-place title. CRUD actions for saved spots live in the
    Spots section, not on the map sheet. */
