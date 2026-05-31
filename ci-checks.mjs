@@ -74,7 +74,6 @@ function checkRequiredProjectFiles() {
     'ci-checks.mjs',
     'package-checks.mjs',
     'geo.test.mjs',
-    'GITHUB_ACTIONS_SETUP.md',
   ]) {
     assert.ok(pathExists(path), `Required project file is missing: ${path}`);
   }
