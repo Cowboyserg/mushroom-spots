@@ -2020,7 +2020,7 @@ select {
    Context sheets close from a top-right × control. Bottom actions are reserved
    for object operations: create/read/update/delete/share/back. */
 .map-object-top-actions {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .map-object-close-btn {
@@ -2053,5 +2053,53 @@ select {
     height: 32px;
     min-height: 32px;
     font-size: 21px;
+  }
+}
+
+/* Sprint 5.24.1 — Map sheet close placement and Spots-only CRUD.
+   The close control is a sheet-level control in the top-right corner, aligned
+   with the selected-place title. CRUD actions for saved spots live in the
+   Spots section, not on the map sheet. */
+.map-object-sheet {
+  padding-top: 12px;
+}
+
+.map-object-heading {
+  position: relative;
+  padding-right: 42px;
+  margin-bottom: 6px;
+}
+
+.map-object-title-copy {
+  min-width: 0;
+}
+
+.map-object-close-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.map-object-top-actions {
+  justify-content: flex-start;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  padding-right: 0;
+}
+
+.spot-list-editor {
+  margin-top: 0;
+  border-top-style: solid;
+}
+
+@media (max-width: 560px) {
+  .map-object-heading {
+    padding-right: 40px;
+  }
+
+  .map-object-close-btn {
+    top: -1px;
+    right: -1px;
   }
 }

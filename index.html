@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.24" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.24" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.24-hotfix.1" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.24-hotfix.1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.24" />
+  <link rel="stylesheet" href="styles.css?v=0.7.24-hotfix.1" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.24 · Sprint 5.24</p>
+      <p id="appVersion">v0.7.24-hotfix.1 · Sprint 5.24.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -47,16 +47,16 @@
               <button id="centerMeBtn" class="map-fab secondary btn-secondary">Ко мне</button>
             </div>
             <section class="card map-object-card map-object-sheet" id="mapObjectCard" hidden aria-label="Контекст выбранного объекта на карте">
-              <div class="section-title compact-title">
-                <div>
+              <div class="section-title compact-title map-object-heading">
+                <div class="map-object-title-copy">
                   <h2 id="mapObjectTitle">Объект на карте</h2>
                   <p class="hint" id="mapObjectSubtitle">Выбери маркер, точку из чата или место долгим нажатием.</p>
                 </div>
-                <div class="map-object-top-actions">
-                  <span id="mapObjectPill" class="pill">объект</span>
-                  <button id="mapObjectCollapseBtn" class="secondary btn-secondary small-btn map-object-collapse-btn" type="button" aria-expanded="true">Свернуть</button>
-                  <button id="mapObjectCloseBtn" class="secondary btn-secondary map-object-close-btn" type="button" aria-label="Закрыть карточку выбранного объекта">×</button>
-                </div>
+                <button id="mapObjectCloseBtn" class="secondary btn-secondary map-object-close-btn" type="button" aria-label="Закрыть карточку выбранного объекта">×</button>
+              </div>
+              <div class="map-object-top-actions">
+                <span id="mapObjectPill" class="pill">объект</span>
+                <button id="mapObjectCollapseBtn" class="secondary btn-secondary small-btn map-object-collapse-btn" type="button" aria-expanded="true">Свернуть</button>
               </div>
               <div id="mapObjectDetails" class="map-object-details"></div>
               <div class="map-object-save-editor" id="mapObjectSaveEditor" hidden>
@@ -191,7 +191,6 @@
             <summary>Дополнительно</summary>
             <div class="row">
               <button id="shareSpotBtn" class="secondary btn-secondary">Экспорт точки</button>
-              <button id="deleteSpotBtn" class="danger btn-danger">Удалить</button>
             </div>
           </details>
         </section>
@@ -265,9 +264,37 @@
         <span class="pill">локальная</span>
       </div>
       <div id="spotListDetails"></div>
+      <div class="map-object-save-editor spot-list-editor" id="spotListEditor" hidden>
+        <div class="field">
+          <label for="spotListCollection">Куда сохранить</label>
+          <select id="spotListCollection">
+            <option value="Грибные места">Грибные места</option>
+            <option value="Разведка">Разведка</option>
+            <option value="Ягоды">Ягоды</option>
+            <option value="Парковка">Парковка</option>
+            <option value="Другое">Другое</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="spotListName">Название</label>
+          <input id="spotListName" placeholder="Например: Белые у сосны" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="spotListType">Тип</label>
+          <input id="spotListType" placeholder="Белые, лисички, ягоды…" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="spotListNote">Заметка</label>
+          <textarea id="spotListNote" rows="3" placeholder="Ориентиры, сезон, сколько было грибов"></textarea>
+        </div>
+      </div>
       <div class="row spot-detail-actions">
         <button id="spotListShowOnMapBtn" class="btn-primary">Показать на карте</button>
         <button id="spotListSendToChatBtn" class="secondary btn-secondary">Отправить в чат</button>
+        <button id="spotListEditBtn" class="secondary btn-secondary">Править</button>
+        <button id="spotListDeleteBtn" class="danger btn-danger">Удалить</button>
+        <button id="spotListSaveEditBtn" class="btn-primary" hidden>Сохранить изменения</button>
+        <button id="spotListCancelEditBtn" class="secondary btn-secondary" hidden>Назад</button>
         <button id="spotListCloseDetailsBtn" class="secondary btn-secondary">Закрыть</button>
       </div>
     </section>
@@ -474,7 +501,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.24 · Sprint 5.24</span>
+          <span class="pill">v0.7.24-hotfix.1 · Sprint 5.24.1</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -490,9 +517,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.24</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.24 — Spot CRUD and Sheet Close Control</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.24</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.24-hotfix.1</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.24.1 — Map Sheet Close and Spots CRUD Placement Hotfix</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.24-hotfix.1</strong></div>
         </div>
       </section>
 
@@ -675,10 +702,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.24"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.24-hotfix.1"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.24"></script>
-  <script src="app.js?v=0.7.24"></script>
+  <script src="config.js?v=0.7.24-hotfix.1"></script>
+  <script src="app.js?v=0.7.24-hotfix.1"></script>
 </body>
 </html>

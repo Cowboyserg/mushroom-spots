@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.24 · Sprint 5\.24/;
+const EXPECTED_APP_VERSION = /v0\.7\.24-hotfix\.1 · Sprint 5\.24\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -302,6 +302,12 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await expect(page.locator('#mapObjectClearBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectCloseBtn')).toBeVisible();
   await expect(page.locator('#mapObjectCloseBtn')).toHaveText('×');
+  const titleBox = await page.locator('#mapObjectTitle').boundingBox();
+  const closeBox = await page.locator('#mapObjectCloseBtn').boundingBox();
+  expect(titleBox, 'selected-place title must have visible bounds').not.toBeNull();
+  expect(closeBox, 'sheet close button must have visible bounds').not.toBeNull();
+  expect(Math.abs(closeBox.y - titleBox.y), 'close × must align with the title row, not the collapse row').toBeLessThanOrEqual(10);
+  expect(closeBox.x + closeBox.width, 'close × must sit in the top-right corner of the sheet').toBeGreaterThan(cardBox.x + cardBox.width - 48);
   await expect(page.locator('#mapObjectCollapseBtn')).toHaveText('Свернуть');
   await page.locator('#mapObjectCollapseBtn').click();
   await expect(card).toHaveClass(/map-object-collapsed/);
@@ -359,7 +365,7 @@ test('picked map point bookmark opens save form and creates result actions and s
   await expect(page.locator('#saveResultCard')).toBeVisible();
   await expect(page.locator('#saveResultText')).toContainText('Context sheet тестовая точка');
   await expect(page.locator('#mapObjectTitle')).toContainText('Сохранённая точка');
-  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Открыть карточку');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Открыть в точках');
   await expect(page.locator('#saveResultListBtn')).toBeVisible();
   await expect(page.locator('#saveResultCloseBtn')).toBeVisible();
 
@@ -368,7 +374,7 @@ test('picked map point bookmark opens save form and creates result actions and s
   await expect(page.locator('#spotsList')).toContainText('Context sheet тестовая точка');
 });
 
-test('saved spot context sheet supports read edit delete CRUD actions', async ({ page }) => {
+test('saved spot map sheet opens spots section for edit and delete CRUD actions', async ({ page }) => {
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
@@ -382,35 +388,35 @@ test('saved spot context sheet supports read edit delete CRUD actions', async ({
   await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранённая точка');
   await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья');
-  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Открыть карточку');
-  await expect(page.locator('#mapObjectEditBtn')).toHaveText('Править');
-  await expect(page.locator('#mapObjectDangerBtn')).toHaveText('Удалить');
-  await expect(page.locator('#mapObjectClearBtn')).toHaveAttribute('hidden', '');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Открыть в точках');
+  await expect(page.locator('#mapObjectEditBtn')).toHaveAttribute('hidden', '');
+  await expect(page.locator('#mapObjectDangerBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectCloseBtn')).toBeVisible();
 
-  await page.locator('#mapObjectEditBtn').click();
-  await expect(page.locator('#mapObjectTitle')).toHaveText('Править точку');
-  await expect(page.locator('#mapObjectSaveEditor')).toBeVisible();
-  await expect(page.locator('#mapObjectClearBtn')).toHaveText('Назад');
-  await page.locator('#mapObjectCollection').selectOption({ label: 'Разведка' });
-  await page.locator('#mapObjectName').fill('Белые у ручья — обновлено');
-  await page.locator('#mapObjectType').fill('Белые');
-  await page.locator('#mapObjectNote').fill('Обновлено через CRUD context sheet');
   await page.locator('#mapObjectPrimaryBtn').click();
+  await expect(page.locator('#screen-spots')).toBeVisible();
+  await expect(page.locator('#spotListDetailsCard')).toBeVisible();
+  await expect(page.locator('#spotListDetails')).toContainText('Белые у ручья');
+  await expect(page.locator('#spotListEditBtn')).toHaveText('Править');
+  await expect(page.locator('#spotListDeleteBtn')).toHaveText('Удалить');
 
-  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранённая точка');
-  await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья — обновлено');
-  await expect(page.locator('#mapObjectDetails')).toContainText('Разведка');
+  await page.locator('#spotListEditBtn').click();
+  await expect(page.locator('#spotListEditor')).toBeVisible();
+  await expect(page.locator('#spotListDetails')).toBeHidden();
+  await page.locator('#spotListCollection').selectOption({ label: 'Разведка' });
+  await page.locator('#spotListName').fill('Белые у ручья — обновлено');
+  await page.locator('#spotListType').fill('Белые');
+  await page.locator('#spotListNote').fill('Обновлено через раздел Точки');
+  await page.locator('#spotListSaveEditBtn').click();
 
-  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotListEditor')).toBeHidden();
+  await expect(page.locator('#spotListDetails')).toContainText('Белые у ручья — обновлено');
+  await expect(page.locator('#spotListDetails')).toContainText('Разведка');
   await expect(page.locator('#spotsList')).toContainText('Белые у ручья — обновлено');
-  await expect(page.locator('#spotsList')).toContainText('Разведка');
-  await page.getByRole('button', { name: 'Карта' }).click();
 
   page.once('dialog', async (dialog) => { await dialog.accept(); });
-  await page.locator('#mapObjectDangerBtn').click();
-  await expect(page.locator('#mapObjectCard')).toBeHidden();
-  await page.getByRole('button', { name: 'Точки' }).click();
+  await page.locator('#spotListDeleteBtn').click();
+  await expect(page.locator('#spotListDetailsCard')).toBeHidden();
   await expect(page.locator('#spotCount')).toHaveText('2');
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья — обновлено');
 });

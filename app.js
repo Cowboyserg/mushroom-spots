@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.24';
+const APP_VERSION = '0.7.24-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -76,6 +76,7 @@ let mapObjectSheetCollapsed = false;
 let pickedSaveEditorOpen = false;
 let pickedSaveShareAfterSave = false;
 let savedSpotEditorOpen = false;
+let spotListEditorOpen = false;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
@@ -215,12 +216,15 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   spotListOpenDetailsBtn: 'Открыть карточку точки из списка',
   spotListShowOnMapBtn: 'Показать точку из списка на карте',
   spotListSendToChatBtn: 'Отправить точку из списка в чат',
+  spotListEditBtn: 'Править точку в разделе Точки',
+  spotListDeleteBtn: 'Удалить точку в разделе Точки',
+  spotListSaveEditBtn: 'Сохранить изменения точки в разделе Точки',
+  spotListCancelEditBtn: 'Отменить правку точки в разделе Точки',
   closeSelectedSpotBtn: 'Закрыть карточку точки',
   spotListCloseDetailsBtn: 'Закрыть карточку точки в списке',
   navigateBtn: 'Показать направление',
   shareSpotBtn: 'Экспорт точки',
   sendSelectedSpotToChatBtn: 'Отправить сохранённую точку в чат',
-  deleteSpotBtn: 'Удалить',
   createGroupBtn: 'Создать группу',
   copyInviteBtn: 'Скопировать приглашение',
   savePersonProfileBtn: 'Запомнить локального человека',
@@ -853,7 +857,11 @@ function updateActionButtonsUi() {
   setHidden('sendSelectedSpotToChatBtn', !canUseChat);
   setHidden('spotListSendToChatBtn', !canUseChat);
   setHidden('saveResultShareBtn', !canUseChat);
-  setDisabled('deleteSpotBtn', !hasSelected);
+  setDisabled('spotListEditBtn', !hasSelected);
+  setDisabled('spotListDeleteBtn', !hasSelected);
+  setDisabled('spotListSaveEditBtn', !hasSelected);
+  setDisabled('spotListCancelEditBtn', !hasSelected);
+  renderSpotListDetailsState();
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
   updateSaveSpotFlowUi();
@@ -4147,6 +4155,7 @@ function clearSelectedMapObjectOnly() {
   pickedSaveEditorOpen = false;
   pickedSaveShareAfterSave = false;
   savedSpotEditorOpen = false;
+  spotListEditorOpen = false;
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
@@ -4194,20 +4203,18 @@ function describeSelectedMapObject() {
       subtitle: spot.name || 'Грибная точка',
       pill: 'сохранена',
       secondaryVisible: canSendSpotToChat(),
-      editVisible: true,
-      dangerVisible: true,
-      primary: 'Открыть карточку',
-      edit: 'Править',
+      editVisible: false,
+      dangerVisible: false,
+      primary: 'Открыть в точках',
       secondary: 'Поделиться в группе',
       clearVisible: false,
-      danger: 'Удалить',
       rows: [
         ['Название', escapeHtml(spot.name || 'Грибная точка')],
         ['Папка', escapeHtml(spot.collection || 'Грибные места')],
         ['Тип', escapeHtml(spot.mushroomType || 'не указан')],
         ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(spot)],
-        ['Действие', 'можно открыть, править, удалить или отправить группе']
+        ['Действие', 'правка и удаление доступны в разделе “Точки”']
       ]
     };
   }
@@ -4508,11 +4515,11 @@ async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
 function runSelectedMapObjectPrimaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') {
-    if (savedSpotEditorOpen) return updateSelectedSpotFromMapSheet();
     const spot = spots.find((item) => item.id === selectedMapObject.id);
     if (!spot) return false;
-    selectSpot(spot.id, false);
-    return revealSelectedSpotCardOnMap();
+    switchAppScreen('spots', { scrollTop: false });
+    openSpotDetailsFromList(spot.id);
+    return true;
   }
   if (selectedMapObject.kind === 'picked') {
     if (pickedSaveEditorOpen) return savePickedMapPointFromMapSheet(false);
@@ -5297,6 +5304,100 @@ async function refreshSpots() {
   await updateStorageUi();
 }
 
+
+function readSpotListEditorFormData() {
+  return {
+    name: $('spotListName')?.value?.trim() || '',
+    mushroomType: $('spotListType')?.value?.trim() || '',
+    note: $('spotListNote')?.value?.trim() || '',
+    collection: $('spotListCollection')?.value?.trim() || 'Грибные места'
+  };
+}
+
+function populateSpotListEditor(spot) {
+  if (!spot) return;
+  const name = $('spotListName');
+  const type = $('spotListType');
+  const note = $('spotListNote');
+  const collection = $('spotListCollection');
+  if (name) name.value = spot.name || '';
+  if (type) type.value = spot.mushroomType || '';
+  if (note) note.value = spot.note || '';
+  if (collection) collection.value = spot.collection || 'Грибные места';
+}
+
+function renderSpotListDetailsState() {
+  const spot = getSelectedSpot();
+  const editing = Boolean(spot && spotListEditorOpen);
+  setHidden('spotListEditor', !editing);
+  setHidden('spotListDetails', editing);
+  setHidden('spotListSaveEditBtn', !editing);
+  setHidden('spotListCancelEditBtn', !editing);
+  setHidden('spotListShowOnMapBtn', editing || !spot);
+  setHidden('spotListEditBtn', editing || !spot);
+  setHidden('spotListDeleteBtn', editing || !spot);
+  setHidden('spotListSendToChatBtn', editing || !spot || !canSendSpotToChat());
+}
+
+function startSpotListEditor() {
+  const spot = getSelectedSpot();
+  if (!spot) return false;
+  spotListEditorOpen = true;
+  populateSpotListEditor(spot);
+  renderSpotListDetailsState();
+  window.requestAnimationFrame(() => {
+    const first = $('spotListCollection') || $('spotListName');
+    try { first?.focus({ preventScroll: true }); } catch {}
+  });
+  return true;
+}
+
+function cancelSpotListEditor() {
+  spotListEditorOpen = false;
+  renderSpotListDetailsState();
+  return true;
+}
+
+async function saveSpotListEditorChanges() {
+  const spot = getSelectedSpot();
+  if (!spot) return false;
+  const data = readSpotListEditorFormData();
+  const updated = {
+    ...spot,
+    name: data.name || spot.name || 'Грибная точка',
+    mushroomType: data.mushroomType || '',
+    note: data.note || '',
+    collection: data.collection || 'Грибные места',
+    updatedAt: new Date().toISOString(),
+    appVersion: APP_VERSION
+  };
+  await putSpot(updated);
+  selectedSpotId = updated.id;
+  spotListEditorOpen = false;
+  await afterDataChanged();
+  updateSelectedDetails();
+  renderList();
+  return true;
+}
+
+async function deleteSelectedFromSpotList() {
+  const spot = getSelectedSpot();
+  if (!spot) return false;
+  if (!confirm(`Удалить точку «${spot.name || 'Грибная точка'}»?`)) return false;
+  await removeSpot(spot.id);
+  if (selectedMapObject?.kind === 'saved' && selectedMapObject.id === spot.id) selectedMapObject = null;
+  selectedSpotId = null;
+  spotListEditorOpen = false;
+  savedSpotEditorOpen = false;
+  if (navLine) { navLine.remove(); navLine = null; }
+  setHidden('selectedCard', true);
+  setHidden('spotListDetailsCard', true);
+  await afterDataChanged();
+  renderMapObjectPanel();
+  updateActionButtonsUi();
+  return true;
+}
+
 function showSelectedSpotOnMap() {
   const spot = getSelectedSpot();
   if (!spot) { markButtonBlocked('сохранённая точка не выбрана'); alert('Сначала выбери сохранённую точку.'); return false; }
@@ -5314,10 +5415,12 @@ function showSelectedSpotOnMap() {
 }
 
 function openSpotDetailsFromList(id) {
+  spotListEditorOpen = false;
   selectSpot(id, false);
   const card = $('spotListDetailsCard');
   if (card) {
     card.hidden = false;
+    renderSpotListDetailsState();
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
@@ -5325,6 +5428,7 @@ function openSpotDetailsFromList(id) {
 function closeSpotDetails() {
   selectedSpotId = null;
   savedSpotEditorOpen = false;
+  spotListEditorOpen = false;
   if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
   setHidden('selectedCard', true);
   setHidden('spotListDetailsCard', true);
@@ -5375,6 +5479,7 @@ function updateSelectedDetails() {
   if (selectedDetails) selectedDetails.innerHTML = html;
   const listDetails = $('spotListDetails');
   if (listDetails) listDetails.innerHTML = html;
+  renderSpotListDetailsState();
   updateActionButtonsUi();
 }
 
@@ -5429,6 +5534,7 @@ async function deleteSelected() {
   selectedSpotId = null;
   if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
   savedSpotEditorOpen = false;
+  spotListEditorOpen = false;
   $('selectedCard').hidden = true;
   setHidden('spotListDetailsCard', true);
   if (navLine) { navLine.remove(); navLine = null; }
@@ -6774,11 +6880,14 @@ function bindUi() {
   if ($('spotListShowOnMapBtn')) $('spotListShowOnMapBtn').onclick = withButtonDiagnostics('spotListShowOnMapBtn', showSelectedSpotOnMap);
   if ($('closeSelectedSpotBtn')) $('closeSelectedSpotBtn').onclick = withButtonDiagnostics('closeSelectedSpotBtn', closeSpotDetails);
   if ($('spotListCloseDetailsBtn')) $('spotListCloseDetailsBtn').onclick = withButtonDiagnostics('spotListCloseDetailsBtn', closeSpotDetails);
+  if ($('spotListEditBtn')) $('spotListEditBtn').onclick = withButtonDiagnostics('spotListEditBtn', startSpotListEditor);
+  if ($('spotListDeleteBtn')) $('spotListDeleteBtn').onclick = withButtonDiagnostics('spotListDeleteBtn', deleteSelectedFromSpotList);
+  if ($('spotListSaveEditBtn')) $('spotListSaveEditBtn').onclick = withButtonDiagnostics('spotListSaveEditBtn', saveSpotListEditorChanges);
+  if ($('spotListCancelEditBtn')) $('spotListCancelEditBtn').onclick = withButtonDiagnostics('spotListCancelEditBtn', cancelSpotListEditor);
   $('navigateBtn').onclick = withButtonDiagnostics('navigateBtn', showNavigationLine);
   $('shareSpotBtn').onclick = withButtonDiagnostics('shareSpotBtn', exportSelected);
   if ($('sendSelectedSpotToChatBtn')) $('sendSelectedSpotToChatBtn').onclick = withButtonDiagnostics('sendSelectedSpotToChatBtn', sendSelectedSpotToChat);
   if ($('spotListSendToChatBtn')) $('spotListSendToChatBtn').onclick = withButtonDiagnostics('spotListSendToChatBtn', sendSelectedSpotToChat);
-  $('deleteSpotBtn').onclick = withButtonDiagnostics('deleteSpotBtn', deleteSelected);
   $('exportAllBtn').onclick = withButtonDiagnostics('exportAllBtn', exportAll);
   $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { alert(`Ошибка импорта: ${err.message}`); } finally { e.target.value = ''; } };
   $('chooseFolderBtn').onclick = withButtonDiagnostics('chooseFolderBtn', chooseBackupFolder);
@@ -6870,7 +6979,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.24`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.24.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
