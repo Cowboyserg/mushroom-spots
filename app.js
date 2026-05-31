@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.16-hotfix.1';
+const APP_VERSION = '0.7.16-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -1297,9 +1297,9 @@ function updatePmtilesPreviewUi() {
     const focusText = pmtilesPreviewFocusState.status === 'focused' && pmtilesPreviewFocusState.target
       ? ` · фокус: ${pmtilesPreviewFocusState.target}`
       : '';
-    statusEl.textContent = `Предпросмотр офлайн-карты: MapLibre отрисовал выбранный файл карты (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}${focusText}. Это отдельный preview, основная карта остаётся Leaflet.`;
+    statusEl.textContent = `Предпросмотр офлайн-карты: выбранный файл карты открыт (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}${focusText}. Это отдельное окно предпросмотра.`;
   } else if (pmtilesPreviewState.status === 'loading') {
-    statusEl.textContent = 'Предпросмотр офлайн-карты: загрузка MapLibre и подключение источника…';
+    statusEl.textContent = 'Предпросмотр офлайн-карты: загрузка модуля предпросмотра и подключение файла…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
     const layerText = pmtilesPreviewState.vectorLayers?.length ? ` Слои: ${pmtilesPreviewState.vectorLayers.slice(0, 8).join(', ')}.` : '';
     statusEl.textContent = `Предпросмотр офлайн-карты: источник подключён, применяем стиль и границы региона…${layerText}`;
@@ -2668,7 +2668,7 @@ function focusPmtilesPreviewOnLatLon(lat, lon, zoom = 16, target = 'точка')
   } else if (typeof pmtilesPreviewMap.jumpTo === 'function') {
     pmtilesPreviewMap.jumpTo({ center, zoom: targetZoom });
   } else {
-    throw new Error('MapLibre preview не поддерживает центрирование.');
+    throw new Error('Предпросмотр офлайн-карты не поддерживает центрирование.');
   }
   setPmtilesPreviewFocusState({
     status: 'focused',
@@ -3208,7 +3208,7 @@ async function runPmtilesRuntimeProbe() {
 
     await startMapLibreSmokeTest();
 
-    setPmtilesProbeState({ status: 'checking-package' }, 'MapLibre smoke test passed; checking пакет карты');
+    setPmtilesProbeState({ status: 'checking-package' }, 'offline map preview module ready; checking map file');
     try {
       const result = await readPmtilesPackage(url, activePackage);
       setPmtilesProbeState({
@@ -3233,7 +3233,7 @@ async function runPmtilesRuntimeProbe() {
           error: `${url} not found`
         }, 'MapLibre/PMTiles runtime ready, but selected offline map package is not available');
         setMapProviderState({ offlinePackageStatus: 'not-installed' }, 'PMTiles runtime ready; selected package missing');
-        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, выбранный файл карты не найден');
+        setCurrentPmtilesProbeButtonStatus('готово', 'модуль готов, выбранный файл карты не найден');
         updateMapDebugUi(true);
         return false;
       }
@@ -3663,15 +3663,15 @@ function updateMapDebugUi(forceText = false) {
   const hint = $('mapHint');
   if (hint) {
     if (!snapshot.leafletLoaded) {
-      hint.textContent = 'Движок карты Leaflet не загрузился. Локальные точки и GPS-координаты остаются в данных, но визуальная карта недоступна до загрузки app shell/CDN.';
+      hint.textContent = 'Движок карты не загрузился. Локальные точки и GPS-координаты остаются в данных, но визуальная карта недоступна до полной загрузки приложения.';
     } else if (snapshot.providerState.mapSourceStatus === 'online-stale-offline') {
       hint.textContent = 'Интернет выключен. Приложение удерживает уже загруженные тайлы, чтобы карта не исчезала до перезагрузки. Новые участки подложки без офлайн-пакета не догрузятся, но точки и GPS продолжают работать.';
     } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
-      hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустого фона.';
+      hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, точки из чата и геопозиции друзей продолжают работать поверх пустого фона.';
     } else if (snapshot.providerState.offlinePackageStatus === 'preview-ready-runtime-experimental') {
-      hint.textContent = 'Предпросмотр офлайн-карты отрисован отдельным MapLibre-контейнером из выбранного пакета. Это не замена основной карты: Leaflet online-raster, точки, GPS и чат остаются рабочим слоем.';
+      hint.textContent = 'Предпросмотр офлайн-карты открыт в отдельном окне из выбранного файла. Точки, GPS и чат остаются доступными в обычном режиме приложения.';
     } else if (snapshot.providerState.offlinePackageStatus === 'metadata-ready-runtime-experimental') {
-      hint.textContent = 'Выбранный файл офлайн-карты читается экспериментальным модулем предпросмотра. Если это внешний asset, приложение проверяет URL из списка карт без автоскачивания большой карты; основная карта пока остаётся на Leaflet online-raster.';
+      hint.textContent = 'Выбранный файл офлайн-карты читается модулем предпросмотра. Если это внешний файл из списка карт, приложение проверяет ссылку без автоскачивания большой карты.';
     } else if (snapshot.tileStats.error > 0) {
       hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
     } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
@@ -6545,7 +6545,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.16.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.16.2`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

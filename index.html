@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.16-hotfix.1" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.16-hotfix.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.16-hotfix.2" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.16-hotfix.2" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.16-hotfix.1" />
+  <link rel="stylesheet" href="styles.css?v=0.7.16-hotfix.2" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.16-hotfix.1 · Sprint 5.16.1</p>
+      <p id="appVersion">v0.7.16-hotfix.2 · Sprint 5.16.2</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -33,8 +33,8 @@
         <section class="map-card map-home-card card">
           <div class="section-title map-title-row">
             <div class="map-title-copy">
-              <h2>Основная карта</h2>
-              <p class="hint">Leaflet остаётся основной стабильной картой. Точки, GPS и live-маркеры работают даже при проблемах с подложкой.</p>
+              <h2>Карта</h2>
+              <p class="hint">Показывает ваши точки, выбранные места, GPS и геопозиции друзей. Если подложка не загрузится, данные останутся доступны.</p>
             </div>
             <div class="pill-row map-core-pills">
               <span id="mapStatusPill" class="pill">карта запускается</span>
@@ -415,7 +415,7 @@
             <h3>Предпросмотр офлайн-карты</h3>
             <span class="pill warn">эксперимент</span>
           </div>
-          <p class="hint">Это отдельное окно предпросмотра. Основная карта приложения остаётся стабильной Leaflet-картой.</p>
+          <p class="hint">Это отдельное окно предпросмотра выбранного файла карты. Оно не меняет сохранённые точки, GPS и групповые данные.</p>
           <div class="row">
             <button id="centerPmtilesOnMeBtn" class="secondary small-btn">Показать меня на офлайн-карте</button>
           </div>
@@ -435,12 +435,12 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.16-hotfix.1 · Sprint 5.16.1</span>
+          <span class="pill">v0.7.16-hotfix.2 · Sprint 5.16.2</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
           <div><span class="label">Режим интерфейса</span><strong>полевое приложение</strong></div>
-          <div><span class="label">Основная карта</span><strong>Leaflet + online-raster</strong></div>
+          <div><span class="label">Карта</span><strong>точки, GPS и подложка</strong></div>
           <div><span class="label">Офлайн-карты</span><strong id="settingsOfflineModeStatus">файл карты не выбран</strong></div>
         </div>
       </section>
@@ -451,9 +451,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.16-hotfix.1</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.16.1 — Offline Map Module Copy Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.16-hotfix.1</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.16-hotfix.2</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.16.2 — Map Copy Cleanup Hotfix</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.16-hotfix.2</strong></div>
         </div>
       </section>
 
@@ -496,7 +496,7 @@
           <div class="settings-diagnostics-grid">
             <div><span class="label">Последний экран</span><strong id="settingsActiveScreenDiagnostic">—</strong></div>
             <div><span class="label">Интернет</span><strong id="settingsOnlineDiagnostic">—</strong></div>
-            <div><span class="label">Provider карты</span><strong id="settingsMapProviderDiagnostic">—</strong></div>
+            <div><span class="label">Источник подложки</span><strong id="settingsMapProviderDiagnostic">—</strong></div>
             <div><span class="label">Модуль офлайн-карты</span><strong id="settingsPmtilesRuntimeDiagnostic">—</strong></div>
           </div>
         </details>
@@ -575,7 +575,7 @@
       </section>
 
       <section class="card">
-        <h2>Sprint 5.16.1</h2>
+        <h2>Sprint 5.16.2</h2>
         <p class="hint">Пользовательские термины и состояния стали понятнее: БД вместо названия backend-провайдера, файл офлайн-карты вместо технического формата, пустые состояния объясняют следующий шаг.</p>
       </section>
     </section>
@@ -611,10 +611,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.16-hotfix.1"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.16-hotfix.2"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.16-hotfix.1"></script>
-  <script src="app.js?v=0.7.16-hotfix.1"></script>
+  <script src="config.js?v=0.7.16-hotfix.2"></script>
+  <script src="app.js?v=0.7.16-hotfix.2"></script>
 </body>
 </html>
