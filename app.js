@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.10';
+const APP_VERSION = '0.7.11';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -824,6 +824,7 @@ function updateActionButtonsUi() {
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
   updateSaveSpotFlowUi();
+  renderMapObjectPanel();
 
   if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : (currentChatName() !== 'Без имени' ? `Войти как ${currentChatName()}` : 'Войти в группу');
   setDisabled('copyInviteBtn', !hasGroup);
@@ -3789,6 +3790,7 @@ function setPickedMapPoint(latlng, source = 'map') {
   const details = $('saveSpotDetails');
   if (details) details.open = true;
   recordMapDebug('picked map point', pickedMapPoint);
+  setSelectedMapObject('picked', { source });
   updatePickedMapPointUi();
   renderPmtilesPreviewUserLayers('picked point mirrored to PMTiles preview');
 }
@@ -3799,6 +3801,7 @@ function clearPickedMapPoint(showStatus = false) {
     pickedMapPointMarker = null;
   }
   pickedMapPoint = null;
+  if (selectedMapObject?.kind === 'picked') clearSelectedMapObjectOnly();
   updatePickedMapPointUi();
   if (showStatus) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearPickedMapPointBtn', label: getButtonDiagnosticLabel('clearPickedMapPointBtn') }, 'готово', 'выбранная точка сброшена');
   renderPmtilesPreviewUserLayers('picked point cleared from PMTiles preview');
@@ -3894,7 +3897,15 @@ async function copyMapDebug() {
 }
 
 function makeMapIcon(kind) {
-  const label = kind === 'user' ? 'Я' : kind === 'friend' ? 'Д' : kind === 'chat' ? 'Ч' : '';
+  const labels = {
+    user: 'Я',
+    friend: 'Д',
+    chat: 'Ч',
+    picked: '+',
+    spot: 'Г',
+    'spot-selected': '✓'
+  };
+  const label = labels[kind] || '';
   const labelHtml = label ? `<span>${label}</span>` : '';
   return L.divIcon({
     className: '',
@@ -3903,6 +3914,224 @@ function makeMapIcon(kind) {
     iconAnchor: [14, 14],
     popupAnchor: [0, -16]
   });
+}
+
+function mapObjectDetailRow(label, value) {
+  return `<div class="map-object-row"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`;
+}
+
+function distanceFromCurrentPositionLine(target) {
+  if (!currentPosition || !target) return 'GPS не готов';
+  const from = { lat: currentPosition.lat, lon: currentPosition.lon };
+  const dist = distanceMeters(from, target);
+  const bearing = bearingDegrees(from, target);
+  return `${meters(dist)} · ${Math.round(bearing)}° ${directionName(bearing)}`;
+}
+
+function setSelectedMapObject(kind, payload = {}) {
+  selectedMapObject = { kind, ...payload, selectedAt: new Date().toISOString() };
+  renderMapObjectPanel();
+  updateSavedSpotMarkerStates();
+}
+
+function clearSelectedMapObjectOnly() {
+  selectedMapObject = null;
+  renderMapObjectPanel();
+  updateSavedSpotMarkerStates();
+}
+
+function clearChatPreviewPoint(showStatus = false) {
+  if (chatPreviewPointMarker) {
+    chatPreviewPointMarker.remove();
+    chatPreviewPointMarker = null;
+  }
+  chatPreviewPoint = null;
+  if (selectedMapObject?.kind === 'chat') clearSelectedMapObjectOnly();
+  if (showStatus) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'mapObjectClearBtn', label: 'Сбросить выбор' }, 'готово', 'точка из чата скрыта');
+  renderPmtilesPreviewUserLayers('chat point cleared from PMTiles preview');
+}
+
+function describeSelectedMapObject() {
+  if (!selectedMapObject) return null;
+
+  if (selectedMapObject.kind === 'saved') {
+    const spot = spots.find((item) => item.id === selectedMapObject.id);
+    if (!spot) return null;
+    return {
+      kind: 'saved',
+      title: 'Сохранённая грибная точка',
+      subtitle: spot.name || 'Грибная точка',
+      pill: 'локальная точка',
+      secondaryVisible: canSendSpotToChat(),
+      primary: 'Открыть карточку',
+      secondary: 'Отправить в чат',
+      rows: [
+        ['Название', escapeHtml(spot.name || 'Грибная точка')],
+        ['Тип', escapeHtml(spot.mushroomType || 'не указан')],
+        ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
+        ['Расстояние', distanceFromCurrentPositionLine(spot)],
+        ['Источник', escapeHtml(spotSourceLabel(spot.source))]
+      ]
+    };
+  }
+
+  if (selectedMapObject.kind === 'picked') {
+    if (!pickedMapPoint) return null;
+    return {
+      kind: 'picked',
+      title: 'Выбранное место на карте',
+      subtitle: 'Это ещё не сохранённая точка. Заполни анкету и нажми сохранение.',
+      pill: 'черновик',
+      secondaryVisible: canSendSpotToChat(),
+      primary: 'Сохранить это место',
+      secondary: 'Отправить в чат',
+      rows: [
+        ['Состояние', 'выбрано долгим нажатием'],
+        ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
+        ['Расстояние', distanceFromCurrentPositionLine(pickedMapPoint)],
+        ['Что дальше', 'можно сохранить как грибную точку или сбросить выбор']
+      ]
+    };
+  }
+
+  if (selectedMapObject.kind === 'chat') {
+    if (!chatPreviewPoint) return null;
+    return {
+      kind: 'chat',
+      title: 'Точка из чата',
+      subtitle: chatPreviewPoint.title || 'Координаты пришли из сообщения группы.',
+      pill: 'чат-preview',
+      secondaryVisible: false,
+      primary: 'Показать здесь',
+      secondary: '',
+      rows: [
+        ['Название', escapeHtml(chatPreviewPoint.title || 'Точка из чата')],
+        ['Тип', escapeHtml(chatPreviewPoint.mushroomType || 'не указан')],
+        ['Координаты', `${fmtCoord(chatPreviewPoint.lat)}, ${fmtCoord(chatPreviewPoint.lon)}`],
+        ['Расстояние', distanceFromCurrentPositionLine(chatPreviewPoint)],
+        ['Важно', 'это preview из чата, он не добавлен в локальные точки']
+      ]
+    };
+  }
+
+  if (selectedMapObject.kind === 'friend') {
+    const loc = selectedMapObject.loc;
+    if (!loc) return null;
+    return {
+      kind: 'friend',
+      title: 'Live-друг',
+      subtitle: selectedMapObject.name || 'Участник группы',
+      pill: 'live-location',
+      secondaryVisible: false,
+      primary: 'Показать на карте',
+      secondary: '',
+      rows: [
+        ['Имя', escapeHtml(selectedMapObject.name || 'Без имени')],
+        ['Координаты', `${fmtCoord(loc.lat)}, ${fmtCoord(loc.lon)}`],
+        ['Расстояние', distanceFromCurrentPositionLine(loc)],
+        ['Обновлено', loc.updated_at ? fmtDate(loc.updated_at) : 'не указано'],
+        ['Источник', 'live_locations, не локальная грибная точка']
+      ]
+    };
+  }
+
+  return null;
+}
+
+function renderMapObjectPanel() {
+  const card = $('mapObjectCard');
+  if (!card) return;
+  const model = describeSelectedMapObject();
+  if (!model) {
+    selectedMapObject = null;
+    card.hidden = true;
+    return;
+  }
+
+  card.hidden = false;
+  card.dataset.objectKind = model.kind;
+  setText('mapObjectTitle', model.title);
+  setText('mapObjectSubtitle', model.subtitle);
+  setText('mapObjectPill', model.pill);
+  const details = $('mapObjectDetails');
+  if (details) {
+    details.innerHTML = model.rows.map(([label, value]) => mapObjectDetailRow(label, value)).join('');
+  }
+  setText('mapObjectPrimaryBtn', model.primary);
+  setText('mapObjectSecondaryBtn', model.secondary || 'Отправить в чат');
+  setHidden('mapObjectSecondaryBtn', !model.secondaryVisible);
+}
+
+function runSelectedMapObjectPrimaryAction() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'saved') {
+    const spot = spots.find((item) => item.id === selectedMapObject.id);
+    if (!spot) return false;
+    selectSpot(spot.id, false);
+    setHidden('selectedCard', false);
+    $('selectedCard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return true;
+  }
+  if (selectedMapObject.kind === 'picked') return savePickedMapPoint();
+  if (selectedMapObject.kind === 'chat' && chatPreviewPoint) {
+    if (canUseMapRuntime()) map.setView([chatPreviewPoint.lat, chatPreviewPoint.lon], Math.max(map.getZoom(), 16));
+    return true;
+  }
+  if (selectedMapObject.kind === 'friend' && selectedMapObject.loc) {
+    if (canUseMapRuntime()) map.setView([selectedMapObject.loc.lat, selectedMapObject.loc.lon], Math.max(map.getZoom(), 16));
+    return true;
+  }
+  return false;
+}
+
+function runSelectedMapObjectSecondaryAction() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'saved') return sendSelectedSpotToChat();
+  if (selectedMapObject.kind === 'picked') return sendPickedMapPointToChat();
+  return false;
+}
+
+function clearSelectedMapObject() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'picked') {
+    clearPickedMapPoint(true);
+    return true;
+  }
+  if (selectedMapObject.kind === 'saved') {
+    closeSpotDetails();
+    return true;
+  }
+  if (selectedMapObject.kind === 'chat') {
+    clearChatPreviewPoint(true);
+    return true;
+  }
+  clearSelectedMapObjectOnly();
+  return true;
+}
+
+function selectLiveFriendMapObject(row) {
+  if (!row?.location) return false;
+  const loc = row.location;
+  setSelectedMapObject('friend', {
+    userId: row.userId,
+    name: row.name,
+    loc: {
+      lat: loc.lat,
+      lon: loc.lon,
+      accuracy: loc.accuracy,
+      updated_at: loc.updated_at
+    }
+  });
+  switchAppScreen('map', { scrollTop: false });
+  if (canUseMapRuntime()) map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16));
+  return true;
+}
+
+function updateSavedSpotMarkerStates() {
+  if (!canUseMapRuntime()) return;
+  for (const [id, marker] of spotMarkers.entries()) {
+    marker.setIcon(makeMapIcon(id === selectedSpotId ? 'spot-selected' : 'spot'));
+  }
 }
 
 function openDb() {
@@ -4383,7 +4612,8 @@ function renderMarkers() {
   for (const marker of spotMarkers.values()) marker.remove();
   spotMarkers.clear();
   for (const spot of spots) {
-    const marker = L.marker([spot.lat, spot.lon], { title: spot.name, icon: makeMapIcon('spot') }).addTo(map).bindPopup(markerPopup(spot));
+    const iconKind = spot.id === selectedSpotId ? 'spot-selected' : 'spot';
+    const marker = L.marker([spot.lat, spot.lon], { title: spot.name, icon: makeMapIcon(iconKind) }).addTo(map).bindPopup(markerPopup(spot));
     marker.on('click', () => selectSpot(spot.id, false));
     spotMarkers.set(spot.id, marker);
   }
@@ -4548,6 +4778,7 @@ function showSelectedSpotOnMap() {
   if (!spot) { markButtonBlocked('сохранённая точка не выбрана'); alert('Сначала выбери сохранённую точку.'); return false; }
   switchAppScreen('map');
   $('selectedCard').hidden = false;
+  setSelectedMapObject('saved', { id: spot.id });
   if (canUseMapRuntime()) {
     map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
     const marker = spotMarkers.get(spot.id);
@@ -4569,8 +4800,11 @@ function openSpotDetailsFromList(id) {
 
 function closeSpotDetails() {
   selectedSpotId = null;
+  if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
   setHidden('selectedCard', true);
   setHidden('spotListDetailsCard', true);
+  renderMapObjectPanel();
+  updateSavedSpotMarkerStates();
   if (canUseMapRuntime()) map.closePopup();
   renderList();
   updateActionButtonsUi();
@@ -4581,6 +4815,7 @@ function selectSpot(id, center=false) {
   const spot = spots.find(s => s.id === id);
   if (!spot) return;
   selectedSpotId = id;
+  setSelectedMapObject('saved', { id });
   $('selectedCard').hidden = false;
   if (center) switchAppScreen('map');
   if (center && canUseMapRuntime()) map.setView([spot.lat, spot.lon], Math.max(map.getZoom(), 16));
@@ -4596,6 +4831,8 @@ window.selectSpotFromPopup = (id) => selectSpot(id, false);
 function updateSelectedDetails() {
   const spot = getSelectedSpot();
   if (!spot) {
+    if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
+    renderMapObjectPanel();
     setHidden('selectedCard', true);
     setHidden('spotListDetailsCard', true);
     const selectedDetails = $('selectedDetails');
@@ -4886,6 +5123,7 @@ function loadLiveInputs() {
 function clearFriendMarkers() {
   for (const marker of friendMarkers.values()) marker.remove();
   friendMarkers.clear();
+  if (selectedMapObject?.kind === 'friend') clearSelectedMapObjectOnly();
   pmtilesPreviewLiveRows = [];
   renderPmtilesPreviewUserLayers('live friends cleared from PMTiles preview');
 }
@@ -5364,6 +5602,7 @@ function showChatSpotOnMap(payload) {
     shownAt: new Date().toISOString()
   };
   renderPmtilesPreviewUserLayers('chat point mirrored to PMTiles preview');
+  setSelectedMapObject('chat');
   switchAppScreen('map', { scrollTop: false });
   if (!canUseMapRuntime()) {
     setChatHint(`Карта недоступна. Координаты точки из чата: ${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}.`);
@@ -5738,9 +5977,12 @@ function renderFriends(data) {
       const popup = `<strong>${escapeHtml(row.name)}</strong><br>${fmtCoord(loc.lat)}, ${fmtCoord(loc.lon)}<br>Точность: ${meters(loc.accuracy)}<br>Обновлено: ${fmtDate(loc.updated_at)}`;
       if (!marker) {
         marker = L.marker(latlng, { title: row.name, icon: makeMapIcon('friend') }).addTo(map).bindPopup(popup);
+        marker.on('click', () => selectLiveFriendMapObject(row));
         friendMarkers.set(row.userId, marker);
       } else {
         marker.setLatLng(latlng).setPopupContent(popup);
+        marker.off('click');
+        marker.on('click', () => selectLiveFriendMapObject(row));
       }
     }
 
@@ -5751,7 +5993,7 @@ function renderFriends(data) {
     if (loc) {
       const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
       meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
-      item.onclick = () => { switchAppScreen('map'); if (canUseMapRuntime()) map.setView([loc.lat, loc.lon], Math.max(map.getZoom(), 16)); };
+      item.onclick = () => selectLiveFriendMapObject(row);
     } else if (fromCache) {
       meta = `из кэша · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)} · кэш: ${fmtDate(cachedAt)}`;
     } else {
@@ -5766,6 +6008,9 @@ function renderFriends(data) {
       marker.remove();
       friendMarkers.delete(id);
     }
+  }
+  if (selectedMapObject?.kind === 'friend' && !seenMarkerIds.has(selectedMapObject.userId)) {
+    clearSelectedMapObjectOnly();
   }
 
   if (!rows.length) {
@@ -5877,6 +6122,9 @@ function bindUi() {
   $('searchInput').oninput = renderList;
   if ($('spotTypeFilter')) $('spotTypeFilter').onchange = renderList;
   if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
+  if ($('mapObjectPrimaryBtn')) $('mapObjectPrimaryBtn').onclick = withButtonDiagnostics('mapObjectPrimaryBtn', runSelectedMapObjectPrimaryAction);
+  if ($('mapObjectSecondaryBtn')) $('mapObjectSecondaryBtn').onclick = withButtonDiagnostics('mapObjectSecondaryBtn', runSelectedMapObjectSecondaryAction);
+  if ($('mapObjectClearBtn')) $('mapObjectClearBtn').onclick = withButtonDiagnostics('mapObjectClearBtn', clearSelectedMapObject);
   if ($('showSelectedSpotOnMapBtn')) $('showSelectedSpotOnMapBtn').onclick = withButtonDiagnostics('showSelectedSpotOnMapBtn', showSelectedSpotOnMap);
   if ($('spotListShowOnMapBtn')) $('spotListShowOnMapBtn').onclick = withButtonDiagnostics('spotListShowOnMapBtn', showSelectedSpotOnMap);
   if ($('closeSelectedSpotBtn')) $('closeSelectedSpotBtn').onclick = withButtonDiagnostics('closeSelectedSpotBtn', closeSpotDetails);
@@ -5977,7 +6225,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.10`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.11`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

@@ -1019,3 +1019,61 @@ body {
     flex: 1 1 140px;
   }
 }
+
+/* Sprint 5.11 — Map Object Interaction Model */
+.map-object-card {
+  border-color: rgba(36,75,47,.24);
+  background: linear-gradient(180deg, #fffdf7, #faf8ef);
+}
+.map-object-card[data-object-kind="picked"] { border-color: rgba(123,63,178,.28); }
+.map-object-card[data-object-kind="chat"] { border-color: rgba(106,79,179,.28); }
+.map-object-card[data-object-kind="friend"] { border-color: rgba(240,138,36,.32); }
+.map-object-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.map-object-row {
+  display: grid;
+  grid-template-columns: minmax(120px, .52fr) 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(36,75,47,.14);
+}
+.map-object-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.map-object-row strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+.map-object-actions {
+  margin-top: 12px;
+}
+.map-object-actions button {
+  min-height: 42px;
+}
+.map-dot-spot { background:#248340; }
+.map-dot-spot-selected {
+  background:#14532d;
+  box-shadow:0 0 0 5px rgba(36,131,64,.22), 0 3px 14px rgba(0,0,0,.38);
+}
+.map-dot-picked {
+  background:#7b3fb2;
+  box-shadow:0 0 0 5px rgba(123,63,178,.18), 0 3px 14px rgba(0,0,0,.35);
+}
+.map-dot-chat {
+  background:#6a4fb3;
+  border-style:dashed;
+}
+.map-dot-friend {
+  background:#f08a24;
+  border-radius:9px;
+}
+@media (max-width: 560px) {
+  .map-object-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
