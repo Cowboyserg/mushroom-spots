@@ -1271,3 +1271,344 @@ body {
 }
 
 /* Sprint 5.15.2: screen headings are page labels, not standalone cards. */
+
+/* Sprint 5.17 — Visual Consistency Pass. */
+:root {
+  --surface-soft: #faf8ef;
+  --surface-muted: #f4f8f1;
+  --border-soft: rgba(36, 75, 47, 0.14);
+  --shadow-card: 0 8px 26px rgba(36, 75, 47, 0.08);
+  --shadow-action: 0 8px 20px rgba(36, 75, 47, 0.16);
+  --danger-soft: #fff1ee;
+  --danger-border: rgba(155, 44, 44, 0.28);
+  --focus-ring: 0 0 0 3px rgba(36, 75, 47, 0.22);
+}
+
+body {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+main {
+  padding: 14px 12px 18px;
+}
+
+.card {
+  border-radius: 20px;
+  padding: 16px;
+  margin: 14px 0;
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-card);
+}
+
+.section-title,
+.compact-title {
+  gap: 12px;
+}
+
+.section-title h2,
+.compact-title h2,
+.card > h2 {
+  margin-bottom: 0;
+  line-height: 1.2;
+}
+
+.pill {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid rgba(36, 75, 47, 0.08);
+  white-space: nowrap;
+}
+
+.row {
+  gap: 10px;
+}
+
+button,
+.file-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  line-height: 1.15;
+  text-align: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease, border-color .12s ease;
+}
+
+button:focus-visible,
+.file-button:focus-within,
+.bottom-nav-btn:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+button:active,
+.file-button:active {
+  transform: translateY(1px);
+}
+
+.btn-primary,
+button:not(.secondary):not(.btn-secondary):not(.danger):not(.btn-danger):not(.ghost):not(.btn-ghost):not(.bottom-nav-btn),
+.primary-fab {
+  background: var(--green);
+  color: #fff;
+  box-shadow: var(--shadow-action);
+}
+
+.btn-primary:hover,
+button:not(.secondary):not(.btn-secondary):not(.danger):not(.btn-danger):not(.ghost):not(.btn-ghost):not(.bottom-nav-btn):hover {
+  background: #1f422a;
+}
+
+.btn-secondary,
+button.secondary,
+.file-button {
+  background: #eef4e9;
+  color: var(--green);
+  border-color: rgba(36, 75, 47, 0.16);
+  box-shadow: none;
+}
+
+.btn-secondary:hover,
+button.secondary:hover,
+.file-button:hover {
+  background: #e2ecd9;
+}
+
+.btn-danger,
+button.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: rgba(155, 44, 44, 0.22);
+  box-shadow: 0 8px 20px rgba(155, 44, 44, 0.14);
+}
+
+.btn-ghost,
+button.ghost {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.20);
+  color: #fff;
+  box-shadow: none;
+}
+
+.danger-ghost {
+  background: rgba(155, 44, 44, 0.72) !important;
+}
+
+.small-btn {
+  min-height: 44px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+button:disabled,
+button[disabled] {
+  opacity: .56;
+  box-shadow: none;
+  transform: none;
+}
+
+.bottom-nav {
+  gap: 8px;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(255, 253, 247, 0.98);
+}
+
+.bottom-nav-btn {
+  min-height: 54px;
+  padding: 8px 4px;
+  border-radius: 16px;
+  color: #536451;
+  background: rgba(36, 75, 47, 0.04);
+  border-color: rgba(36, 75, 47, 0.08);
+  font-size: 12px;
+  letter-spacing: .01em;
+}
+
+.bottom-nav-btn.active {
+  background: var(--green);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(36, 75, 47, 0.18);
+}
+
+.screen-heading {
+  margin: 12px 2px 14px;
+}
+
+.screen-heading h2 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.empty-state,
+.spots-empty-state,
+.remembered-map-empty,
+.friends-list > .hint,
+.chat-list > .hint {
+  border: 1px dashed rgba(36, 75, 47, 0.22);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(244, 248, 241, 0.78);
+  color: var(--muted);
+}
+
+.empty-state strong,
+.spots-empty-state strong,
+.remembered-map-empty strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.storage-state,
+.people-panel,
+.chat-list,
+.settings-info-grid > div,
+.settings-diagnostics-grid > div,
+.group-state-box,
+.map-live-strip > div,
+.map-secondary-gps-grid > div,
+.offline-current-card,
+.remembered-map-card,
+.offline-package-panel {
+  border-radius: 18px;
+  border-color: var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.spot-item,
+.friend-item,
+.chat-message,
+.remembered-map-card {
+  border-radius: 18px;
+  border-color: var(--border-soft);
+  box-shadow: 0 4px 16px rgba(36, 75, 47, 0.05);
+}
+
+.spot-card-actions,
+.spot-detail-actions,
+.map-object-actions,
+.group-actions,
+.live-actions,
+.chat-actions,
+.maintenance-actions,
+.storage-actions,
+.save-result-actions {
+  align-items: stretch;
+}
+
+.spot-card-actions button,
+.spot-detail-actions button,
+.map-object-actions button,
+.group-actions button,
+.live-actions button,
+.chat-actions button,
+.maintenance-actions button,
+.storage-actions button,
+.save-result-actions button {
+  flex: 1 1 160px;
+}
+
+.settings-danger-panel,
+.maintenance-card[data-advanced-only] {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.settings-advanced-panel {
+  background: #fffaf0;
+}
+
+.offline-manager-title .pill-row {
+  align-items: stretch;
+}
+
+.offline-manager-title .pill-row button {
+  flex: 1 1 180px;
+}
+
+.save-main-btn {
+  min-height: 58px;
+  font-size: 17px;
+  border-radius: 18px;
+}
+
+.map-fab-stack > button {
+  min-height: 46px;
+  border-radius: 16px;
+}
+
+.map-object-card,
+.selected-card,
+.spot-details-card {
+  border-color: rgba(36, 75, 47, 0.20);
+}
+
+input,
+textarea,
+select {
+  min-height: 44px;
+  border-radius: 14px;
+}
+
+@media (min-width: 860px) {
+  body {
+    padding-bottom: 104px;
+  }
+  .bottom-nav {
+    padding: 10px;
+  }
+}
+
+@media (max-width: 560px) {
+  main {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+  .section-title,
+  .compact-title,
+  .offline-manager-title,
+  .remembered-map-card-top {
+    align-items: flex-start;
+  }
+  .section-title:not(.map-title-row),
+  .compact-title,
+  .offline-manager-title {
+    flex-direction: column;
+  }
+  .pill-row {
+    justify-content: flex-start;
+  }
+  .row button,
+  .row .file-button {
+    flex: 1 1 100%;
+  }
+  .bottom-nav {
+    gap: 5px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .bottom-nav-btn {
+    min-height: 52px;
+    padding-left: 2px;
+    padding-right: 2px;
+    font-size: 11px;
+  }
+}

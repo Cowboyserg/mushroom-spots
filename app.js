@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.16-hotfix.3';
+const APP_VERSION = '0.7.17';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -1664,7 +1664,7 @@ function renderRememberedPmtilesMapsList() {
   const maps = rememberedPmtilesMapsState.maps || [];
   if (!maps.length) {
     const emptyCard = document.createElement('div');
-    emptyCard.className = 'remembered-map-empty';
+    emptyCard.className = 'empty-state remembered-map-empty';
     emptyCard.setAttribute('role', 'listitem');
     const title = document.createElement('strong');
     title.textContent = 'Мои карты пока пусты';
@@ -1700,7 +1700,7 @@ function renderRememberedPmtilesMapsList() {
 
     const action = document.createElement('button');
     action.type = 'button';
-    action.className = 'secondary small-btn';
+    action.className = 'secondary btn-secondary small-btn';
     action.textContent = isSelected ? 'Текущая' : 'Сделать текущей';
     action.disabled = isSelected;
     action.onclick = () => selectRememberedPmtilesMap(item.id, true);
@@ -4810,7 +4810,7 @@ function buildSpotDetailsPanelHtml(spot) {
 }
 
 function markerPopup(spot) {
-  return `<strong>${escapeHtml(spot.name)}</strong><br>${spot.mushroomType ? escapeHtml(spot.mushroomType)+'<br>' : ''}${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}<br>Точность: ${meters(spot.accuracy)}<br><button onclick="window.selectSpotFromPopup('${spot.id}')">Открыть карточку</button>`;
+  return `<strong>${escapeHtml(spot.name)}</strong><br>${spot.mushroomType ? escapeHtml(spot.mushroomType)+'<br>' : ''}${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}<br>Точность: ${meters(spot.accuracy)}<br><button class="btn-primary small-btn" onclick="window.selectSpotFromPopup('${spot.id}')">Открыть карточку</button>`;
 }
 
 function renderMarkers() {
@@ -4890,14 +4890,14 @@ function renderSpotListItem(spot, canUseChat) {
 
   const openBtn = document.createElement('button');
   openBtn.type = 'button';
-  openBtn.className = 'secondary small-btn';
+  openBtn.className = 'secondary btn-secondary small-btn';
   openBtn.textContent = 'Открыть';
   openBtn.onclick = withButtonDiagnostics('spotListOpenDetailsBtn', () => openSpotDetailsFromList(spot.id));
   actions.appendChild(openBtn);
 
   const mapBtn = document.createElement('button');
   mapBtn.type = 'button';
-  mapBtn.className = 'secondary small-btn';
+  mapBtn.className = 'btn-primary small-btn';
   mapBtn.textContent = 'Показать на карте';
   mapBtn.onclick = withButtonDiagnostics('spotListShowOnMapBtn', () => {
     selectSpot(spot.id, false);
@@ -4908,7 +4908,7 @@ function renderSpotListItem(spot, canUseChat) {
   if (canUseChat) {
     const chatBtn = document.createElement('button');
     chatBtn.type = 'button';
-    chatBtn.className = 'secondary small-btn';
+    chatBtn.className = 'secondary btn-secondary small-btn';
     chatBtn.textContent = 'Отправить в чат';
     chatBtn.onclick = withButtonDiagnostics('spotListSendToChatBtn', () => {
       selectSpot(spot.id, false);
@@ -4960,7 +4960,7 @@ function renderList() {
   list.innerHTML = '';
   if (!filtered.length) {
     const empty = document.createElement('div');
-    empty.className = 'spots-empty-state';
+    empty.className = 'empty-state spots-empty-state';
     empty.innerHTML = spots.length
       ? '<strong>Ничего не найдено</strong><p class="hint">Попробуй другой поиск, тип гриба или сортировку.</p>'
       : '<strong>Пока нет сохранённых точек</strong><p class="hint">Открой карту, дождись GPS или выбери место долгим нажатием, затем нажми “Сохранить место”.</p>';
@@ -5993,14 +5993,14 @@ function renderGroupChat(rows = chatMessages) {
       if (!spotPayload) {
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
-        editBtn.className = 'secondary small-btn';
+        editBtn.className = 'secondary btn-secondary small-btn';
         editBtn.textContent = 'Править';
         editBtn.onclick = withButtonDiagnostics('chatEditMessageBtn', () => startEditChatMessage(row.id));
         actions.appendChild(editBtn);
       }
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
-      deleteBtn.className = 'danger small-btn';
+      deleteBtn.className = 'danger btn-danger small-btn';
       deleteBtn.textContent = 'Удалить';
       deleteBtn.onclick = withButtonDiagnostics('chatDeleteMessageBtn', () => deleteChatMessage(row.id));
       actions.appendChild(deleteBtn);
@@ -6545,7 +6545,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.16.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.17`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

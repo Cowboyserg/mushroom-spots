@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.16-hotfix.3" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.16-hotfix.3" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.17" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.17" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.16-hotfix.3" />
+  <link rel="stylesheet" href="styles.css?v=0.7.17" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.16-hotfix.3 · Sprint 5.16.3</p>
+      <p id="appVersion">v0.7.17 · Sprint 5.17</p>
     </div>
     <div class="topbar-actions">
-      <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
-      <button id="installHelpBtn" class="ghost">?</button>
+      <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
+      <button id="installHelpBtn" class="ghost btn-ghost">?</button>
     </div>
   </header>
 
@@ -43,8 +43,8 @@
           <div class="map-wrap map-wrap-home">
             <div id="map"></div>
             <div class="map-fab-stack" aria-label="Быстрые действия карты">
-              <button id="startGpsBtn" class="map-fab primary-fab">GPS</button>
-              <button id="centerMeBtn" class="map-fab secondary">Ко мне</button>
+              <button id="startGpsBtn" class="map-fab primary-fab btn-primary">GPS</button>
+              <button id="centerMeBtn" class="map-fab secondary btn-secondary">Ко мне</button>
             </div>
           </div>
           <div class="map-live-strip" aria-label="Краткий статус GPS">
@@ -95,7 +95,7 @@
             <div class="save-form-submit">
               <p class="hint">Проверь координаты и анкету. Эта кнопка сохранит именно эту точку в локальный список.</p>
               <div class="row map-primary-actions">
-                <button id="saveSpotBtn" class="save-main-btn">Сохранить место</button>
+                <button id="saveSpotBtn" class="save-main-btn btn-primary">Сохранить место</button>
               </div>
             </div>
           </details>
@@ -103,8 +103,8 @@
           <details class="legacy-save-actions">
             <summary>Другие способы сохранения</summary>
             <div class="row">
-              <button id="saveCurrentGpsOnlyBtn" class="secondary">Сохранить только GPS</button>
-              <button id="savePickedMapPointBtn" class="secondary">Сохранить только выбранную точку</button>
+              <button id="saveCurrentGpsOnlyBtn" class="secondary btn-secondary">Сохранить только GPS</button>
+              <button id="savePickedMapPointBtn" class="secondary btn-secondary">Сохранить только выбранную точку</button>
             </div>
             <p class="hint">Эти кнопки оставлены для точного старого поведения. Обычно достаточно большой кнопки “Сохранить место”.</p>
           </details>
@@ -113,9 +113,9 @@
             <strong id="saveResultTitle">Точка сохранена</strong>
             <p class="hint" id="saveResultText">Новое место добавлено в список точек.</p>
             <div class="row save-result-actions">
-              <button id="saveResultMapBtn" class="secondary">Показать на карте</button>
-              <button id="saveResultListBtn" class="secondary">Открыть в списке</button>
-              <button id="saveResultNewBtn" class="secondary">Сохранить ещё</button>
+              <button id="saveResultMapBtn" class="secondary btn-secondary">Показать на карте</button>
+              <button id="saveResultListBtn" class="secondary btn-secondary">Открыть в списке</button>
+              <button id="saveResultNewBtn" class="secondary btn-secondary">Сохранить ещё</button>
             </div>
           </div>
         </section>
@@ -130,9 +130,9 @@
           </div>
           <div id="mapObjectDetails" class="map-object-details"></div>
           <div class="row map-object-actions">
-            <button id="mapObjectPrimaryBtn">Открыть</button>
-            <button id="mapObjectSecondaryBtn" class="secondary">Отправить в чат</button>
-            <button id="mapObjectClearBtn" class="secondary">Сбросить выбор</button>
+            <button id="mapObjectPrimaryBtn" class="btn-primary">Открыть</button>
+            <button id="mapObjectSecondaryBtn" class="secondary btn-secondary">Отправить в чат</button>
+            <button id="mapObjectClearBtn" class="secondary btn-secondary">Сбросить выбор</button>
           </div>
         </section>
 
@@ -143,16 +143,16 @@
           </div>
           <div id="selectedDetails"></div>
           <div class="row spot-detail-actions">
-            <button id="showSelectedSpotOnMapBtn">Показать на карте</button>
-            <button id="navigateBtn" class="secondary">Показать направление</button>
-            <button id="sendSelectedSpotToChatBtn" class="secondary">Отправить в чат</button>
-            <button id="closeSelectedSpotBtn" class="secondary">Закрыть</button>
+            <button id="showSelectedSpotOnMapBtn" class="btn-primary">Показать на карте</button>
+            <button id="navigateBtn" class="secondary btn-secondary">Показать направление</button>
+            <button id="sendSelectedSpotToChatBtn" class="secondary btn-secondary">Отправить в чат</button>
+            <button id="closeSelectedSpotBtn" class="secondary btn-secondary">Закрыть</button>
           </div>
           <details class="spot-detail-advanced-actions">
             <summary>Дополнительно</summary>
             <div class="row">
-              <button id="shareSpotBtn" class="secondary">Экспорт точки</button>
-              <button id="deleteSpotBtn" class="danger">Удалить</button>
+              <button id="shareSpotBtn" class="secondary btn-secondary">Экспорт точки</button>
+              <button id="deleteSpotBtn" class="danger btn-danger">Удалить</button>
             </div>
           </details>
         </section>
@@ -176,10 +176,10 @@
             <span id="pmtilesRuntimeStatusPill" class="pill warn">Файл карты: не проверен</span>
           </div>
           <div class="row map-secondary-actions">
-            <button id="sharePickedMapPointToChatBtn" class="secondary">Отправить выбранную точку в чат</button>
-            <button id="clearPickedMapPointBtn" class="secondary">Сбросить выбор</button>
-            <button id="averageBtn" class="secondary">Уточнить GPS 30 сек</button>
-            <button id="repairMapBtn" class="secondary">Починить карту</button>
+            <button id="sharePickedMapPointToChatBtn" class="secondary btn-secondary">Отправить выбранную точку в чат</button>
+            <button id="clearPickedMapPointBtn" class="secondary btn-secondary">Сбросить выбор</button>
+            <button id="averageBtn" class="secondary btn-secondary">Уточнить GPS 30 сек</button>
+            <button id="repairMapBtn" class="secondary btn-secondary">Починить карту</button>
           </div>
           <p class="hint" id="saveHint">GPS-кнопка сохраняет текущую позицию. Кнопка “Сохранить выбранную точку” сохраняет координаты, выбранные долгим нажатием на карте.</p>
           <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие файлы офлайн-карт не кладём в репозиторий: их можно скачать отдельно и выбрать локально через системный файл-пикер. Названия локальных карт запоминаются на устройстве. Сам файл карты пока нужно выбирать заново после перезапуска PWA.</p>
@@ -227,9 +227,9 @@
       </div>
       <div id="spotListDetails"></div>
       <div class="row spot-detail-actions">
-        <button id="spotListShowOnMapBtn">Показать на карте</button>
-        <button id="spotListSendToChatBtn" class="secondary">Отправить в чат</button>
-        <button id="spotListCloseDetailsBtn" class="secondary">Закрыть</button>
+        <button id="spotListShowOnMapBtn" class="btn-primary">Показать на карте</button>
+        <button id="spotListSendToChatBtn" class="secondary btn-secondary">Отправить в чат</button>
+        <button id="spotListCloseDetailsBtn" class="secondary btn-secondary">Закрыть</button>
       </div>
     </section>
     </section>
@@ -267,8 +267,8 @@
           <p class="hint" id="peopleHint">Локальный человек будет запомнен на этом устройстве.</p>
           <div id="peopleProfiles" class="profile-chip-row"></div>
           <div class="row profile-actions">
-            <button id="savePersonProfileBtn" class="secondary">Запомнить имя</button>
-            <button id="newPersonProfileBtn" class="secondary">Другой человек</button>
+            <button id="savePersonProfileBtn" class="secondary btn-secondary">Запомнить имя</button>
+            <button id="newPersonProfileBtn" class="secondary btn-secondary">Другой человек</button>
           </div>
         </div>
         <div class="field">
@@ -276,10 +276,10 @@
           <input id="groupId" placeholder="Создай группу или вставь ID от друга" />
         </div>
         <div class="row group-actions">
-          <button id="createGroupBtn" class="secondary">Создать группу</button>
-          <button id="copyInviteBtn" class="secondary">Скопировать приглашение</button>
-          <button id="joinGroupBtn" class="secondary">Войти в группу</button>
-          <button id="leaveGroupBtn" class="secondary">Выйти из группы</button>
+          <button id="createGroupBtn" class="btn-primary">Создать группу</button>
+          <button id="copyInviteBtn" class="secondary btn-secondary">Скопировать приглашение</button>
+          <button id="joinGroupBtn" class="btn-primary">Войти в группу</button>
+          <button id="leaveGroupBtn" class="danger btn-danger">Выйти из группы</button>
         </div>
         <p class="hint" id="groupHint">Группа может открыться локально даже без сети; синхронизация догонит при связи.</p>
       </section>
@@ -298,10 +298,10 @@
         </div>
         <p class="hint" id="liveLocationsHint">На карте появляются только активные live-локации из БД, а не все участники группы.</p>
         <div class="row live-actions">
-          <button id="startLiveBtn">Начать показ моей позиции</button>
-          <button id="stopLiveBtn" class="danger">Остановить мою позицию</button>
-          <button id="refreshFriendsBtn" class="secondary">Обновить участников</button>
-          <button id="testSupabaseBtn" class="secondary">Проверить БД</button>
+          <button id="startLiveBtn" class="btn-primary">Начать показ моей позиции</button>
+          <button id="stopLiveBtn" class="danger btn-danger">Остановить мою позицию</button>
+          <button id="refreshFriendsBtn" class="secondary btn-secondary">Обновить участников</button>
+          <button id="testSupabaseBtn" class="secondary btn-secondary">Проверить БД</button>
         </div>
         <div id="liveLocationsList" class="friends-list live-locations-list"></div>
         <p class="hint" id="liveHint">Для live-режима нужно подключение к БД.</p>
@@ -327,9 +327,9 @@
           </div>
         </div>
         <div class="row chat-actions">
-          <button id="chatSendBtn">Отправить</button>
-          <button id="chatRefreshBtn" class="secondary">Обновить</button>
-          <button id="chatCancelEditBtn" class="secondary" hidden>Отменить правку</button>
+          <button id="chatSendBtn" class="btn-primary">Отправить</button>
+          <button id="chatRefreshBtn" class="secondary btn-secondary">Обновить</button>
+          <button id="chatCancelEditBtn" class="secondary btn-secondary" hidden>Отменить правку</button>
         </div>
         <p class="hint" id="chatHint">Для чата нужна БД и текущий ID группы.</p>
       </section>
@@ -347,8 +347,8 @@
             <p class="hint">Главное название карты — то, которое ты задаёшь сам. Файл выбирается вручную и не загружается на сервер.</p>
           </div>
           <div class="pill-row">
-            <button id="chooseLocalPmtilesBtn" class="secondary small-btn">Выбрать файл карты</button>
-            <button id="previewPmtilesBtn" class="secondary small-btn">Предпросмотр офлайн-карты</button>
+            <button id="chooseLocalPmtilesBtn" class="btn-primary small-btn">Выбрать файл карты</button>
+            <button id="previewPmtilesBtn" class="secondary btn-secondary small-btn">Предпросмотр офлайн-карты</button>
           </div>
         </div>
         <div class="offline-current-card" aria-live="polite">
@@ -365,8 +365,8 @@
             <input id="rememberedPmtilesMapNameInput" placeholder="Например: Лес у станции" />
           </div>
           <div class="row">
-            <button id="renameRememberedPmtilesMapBtn" class="secondary small-btn">Сохранить название</button>
-            <button id="forgetRememberedPmtilesMapBtn" class="secondary small-btn">Забыть карту</button>
+            <button id="renameRememberedPmtilesMapBtn" class="secondary btn-secondary small-btn">Сохранить название</button>
+            <button id="forgetRememberedPmtilesMapBtn" class="secondary btn-secondary small-btn">Забыть карту</button>
           </div>
           <p class="hint" id="rememberedPmtilesMapStatus">Мои карты: пока нет.</p>
         </div>
@@ -378,10 +378,10 @@
           </div>
           <p class="hint" id="bboxExportStatus">Регион не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.</p>
           <div class="row">
-            <button id="startBboxExportBtn" class="secondary small-btn">Выбрать прямоугольник</button>
-            <button id="useVisibleBboxBtn" class="secondary small-btn">Взять видимую область</button>
-            <button id="copyBboxCommandBtn" class="secondary small-btn">Скопировать команду</button>
-            <button id="clearBboxExportBtn" class="secondary small-btn">Сбросить регион</button>
+            <button id="startBboxExportBtn" class="secondary btn-secondary small-btn">Выбрать прямоугольник</button>
+            <button id="useVisibleBboxBtn" class="secondary btn-secondary small-btn">Взять видимую область</button>
+            <button id="copyBboxCommandBtn" class="secondary btn-secondary small-btn">Скопировать команду</button>
+            <button id="clearBboxExportBtn" class="secondary btn-secondary small-btn">Сбросить регион</button>
           </div>
           <textarea id="bboxCommandOutput" rows="3" readonly spellcheck="false" placeholder="Команда появится после выбора региона"></textarea>
           <p class="hint">Это подготовка отдельного регионального файла на компьютере. В приложение потом выбирается уже готовый файл карты.</p>
@@ -394,8 +394,8 @@
           </summary>
           <p class="hint">Этот блок нужен для проверки файла офлайн-карты, списка карт, Range/CORS и модуль предпросмотра. Обычный пользователь может пользоваться офлайн-картами без этих терминов.</p>
           <div class="row">
-            <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить список карт</button>
-            <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный файл карты</button>
+            <button id="loadOfflineManifestBtn" class="secondary btn-secondary small-btn">Обновить список карт</button>
+            <button id="probePmtilesBtn" class="secondary btn-secondary small-btn">Проверить выбранный файл карты</button>
           </div>
           <div class="field">
             <label for="offlinePackageSelect">Технический пакет карты</label>
@@ -417,7 +417,7 @@
           </div>
           <p class="hint">Это отдельное окно предпросмотра выбранного файла карты. Оно не меняет сохранённые точки, GPS и групповые данные.</p>
           <div class="row">
-            <button id="centerPmtilesOnMeBtn" class="secondary small-btn">Показать меня на офлайн-карте</button>
+            <button id="centerPmtilesOnMeBtn" class="secondary btn-secondary small-btn">Показать меня на офлайн-карте</button>
           </div>
           <div id="pmtilesPreviewMap" class="pmtiles-preview-map" aria-label="Предпросмотр офлайн-карты"></div>
           <p id="pmtilesPreviewFocusStatus" class="hint">Фокус офлайн-карты: не выполнялся.</p>
@@ -435,7 +435,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.16-hotfix.3 · Sprint 5.16.3</span>
+          <span class="pill">v0.7.17 · Sprint 5.17</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -451,9 +451,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.16-hotfix.3</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.16.3 — DB Config Copy Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.16-hotfix.3</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.17</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.17 — Visual Consistency Pass</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.17</strong></div>
         </div>
       </section>
 
@@ -485,7 +485,7 @@
           <div><span class="label">Кэш приложения</span><strong id="settingsServiceWorkerDiagnostic">проверяется</strong></div>
         </div>
         <div class="row">
-          <button id="settingsMapDebugBtn" class="secondary">Открыть debug “!”</button>
+          <button id="settingsMapDebugBtn" class="secondary btn-secondary">Открыть debug “!”</button>
         </div>
         <details class="settings-advanced-panel" data-advanced-only hidden>
           <summary>
@@ -515,7 +515,7 @@
           </summary>
           <p class="hint danger-copy">Сброс удаляет кэш приложения и регистрацию service worker, затем перезагружает страницу с обходом старых app.js/styles.css. Локальные грибные точки, фото, имя, ID группы и backup-настройки остаются на телефоне.</p>
           <div class="row maintenance-actions">
-            <button id="resetAppCacheBtn" class="danger">Сбросить кэш приложения</button>
+            <button id="resetAppCacheBtn" class="danger btn-danger">Сбросить кэш приложения</button>
           </div>
         </details>
       </section>
@@ -527,7 +527,7 @@
         </div>
         <p class="hint">Офлайн-карты выбираются на экране “Офлайн”. Без выбранного файла можно пользоваться GPS и сохранёнными точками, но подложка карты может не загрузиться без интернета.</p>
         <div class="row">
-          <button class="secondary" type="button" data-screen-target="offline">Открыть офлайн-карты</button>
+          <button class="secondary btn-secondary" type="button" data-screen-target="offline">Открыть офлайн-карты</button>
         </div>
       </section>
 
@@ -543,10 +543,10 @@
             <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
           </div>
           <div class="row maintenance-actions">
-            <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
-            <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
-            <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
-            <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
+            <button id="cleanMyDbBtn" class="danger btn-danger">Удалить меня из БД</button>
+            <button id="cleanMyEverywhereDbBtn" class="danger btn-danger">Удалить меня из всех групп</button>
+            <button id="cleanStaleGroupDbBtn" class="secondary btn-secondary">Удалить старые записи группы</button>
+            <button id="cleanCurrentGroupDbBtn" class="danger btn-danger">Очистить текущую группу</button>
           </div>
           <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после подключения БД.</p>
         </details>
@@ -560,23 +560,23 @@
           <div><span class="label">Последняя резервная копия</span><strong id="lastBackupStatus">—</strong></div>
         </div>
         <div class="row">
-          <button id="exportAllBtn" class="secondary">Скачать backup JSON</button>
-          <label class="file-button">
+          <button id="exportAllBtn" class="secondary btn-secondary">Скачать backup JSON</button>
+          <label class="file-button btn-secondary">
             Импорт JSON
             <input id="importFile" type="file" accept="application/json,.json" />
           </label>
         </div>
         <div class="row storage-actions">
-          <button id="chooseFolderBtn" class="secondary">Выбрать папку для backup</button>
-          <button id="saveFolderBackupBtn" class="secondary">Сохранить backup в папку</button>
-          <button id="requestPersistentBtn" class="secondary">Запросить постоянное хранение</button>
+          <button id="chooseFolderBtn" class="secondary btn-secondary">Выбрать папку для backup</button>
+          <button id="saveFolderBackupBtn" class="secondary btn-secondary">Сохранить backup в папку</button>
+          <button id="requestPersistentBtn" class="secondary btn-secondary">Запросить постоянное хранение</button>
         </div>
         <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
       </section>
 
       <section class="card">
-        <h2>Sprint 5.16.3</h2>
-        <p class="hint">Пользовательские термины и состояния стали понятнее: БД вместо названия backend-провайдера, файл офлайн-карты вместо технического формата, а недоступная синхронизация больше не объясняется внутренними файлами проекта.</p>
+        <h2>Sprint 5.17</h2>
+        <p class="hint">Визуальный слой выровнен: кнопки разделены по ролям, карточки и пустые состояния приведены к единой системе, нижняя навигация и touch-зоны стали удобнее на телефоне.</p>
       </section>
     </section>
   </main>
@@ -601,9 +601,9 @@
     <p class="hint">Сверху показано состояние map-provider слоя, затем какая кнопка нажата и какой статус у связанного запроса — пендинг, HTTP-статус, готово или ошибка. Ниже остаётся JSON-диагностика карты.</p>
     <pre id="mapDebugText" class="debug-box">Диагностика ещё не собрана.</pre>
     <div class="row">
-      <button id="refreshMapDebugBtn" class="secondary">Обновить диагностику</button>
-      <button id="repairMapFromDebugBtn" class="secondary">Починить карту</button>
-      <button id="copyMapDebugBtn" class="secondary">Скопировать</button>
+      <button id="refreshMapDebugBtn" class="secondary btn-secondary">Обновить диагностику</button>
+      <button id="repairMapFromDebugBtn" class="secondary btn-secondary">Починить карту</button>
+      <button id="copyMapDebugBtn" class="secondary btn-secondary">Скопировать</button>
       <button id="closeMapDebugBtn">Закрыть</button>
     </div>
   </dialog>
@@ -611,10 +611,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.16-hotfix.3"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.17"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.16-hotfix.3"></script>
-  <script src="app.js?v=0.7.16-hotfix.3"></script>
+  <script src="config.js?v=0.7.17"></script>
+  <script src="app.js?v=0.7.17"></script>
 </body>
 </html>
