@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.23-hotfix\.1 · Sprint 5\.23\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.24 · Sprint 5\.24/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -299,7 +299,9 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('☆ Сохранить');
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('hidden', '');
-  await expect(page.locator('#mapObjectClearBtn')).toHaveText('Отмена');
+  await expect(page.locator('#mapObjectClearBtn')).toHaveAttribute('hidden', '');
+  await expect(page.locator('#mapObjectCloseBtn')).toBeVisible();
+  await expect(page.locator('#mapObjectCloseBtn')).toHaveText('×');
   await expect(page.locator('#mapObjectCollapseBtn')).toHaveText('Свернуть');
   await page.locator('#mapObjectCollapseBtn').click();
   await expect(card).toHaveClass(/map-object-collapsed/);
@@ -315,7 +317,7 @@ test('picked map point context sheet exposes object actions without app-nav dupl
     await expect(card.getByRole('button', { name: new RegExp(`^${forbiddenNavName}$`) })).toHaveCount(0);
   }
 
-  await page.locator('#mapObjectClearBtn').click();
+  await page.locator('#mapObjectCloseBtn').click();
   await expect(card).toBeHidden();
   await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
 });
@@ -364,6 +366,53 @@ test('picked map point bookmark opens save form and creates result actions and s
   await page.locator('#saveResultListBtn').click();
   await expect(page.locator('#screen-spots')).toBeVisible();
   await expect(page.locator('#spotsList')).toContainText('Context sheet тестовая точка');
+});
+
+test('saved spot context sheet supports read edit delete CRUD actions', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotCount')).toHaveText('3');
+  const savedSpot = page.locator('.spot-item').filter({ hasText: 'Белые у ручья' });
+  await savedSpot.getByRole('button', { name: 'Показать на карте' }).click();
+
+  await expect(page.locator('#screen-map')).toBeVisible();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранённая точка');
+  await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Открыть карточку');
+  await expect(page.locator('#mapObjectEditBtn')).toHaveText('Править');
+  await expect(page.locator('#mapObjectDangerBtn')).toHaveText('Удалить');
+  await expect(page.locator('#mapObjectClearBtn')).toHaveAttribute('hidden', '');
+  await expect(page.locator('#mapObjectCloseBtn')).toBeVisible();
+
+  await page.locator('#mapObjectEditBtn').click();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Править точку');
+  await expect(page.locator('#mapObjectSaveEditor')).toBeVisible();
+  await expect(page.locator('#mapObjectClearBtn')).toHaveText('Назад');
+  await page.locator('#mapObjectCollection').selectOption({ label: 'Разведка' });
+  await page.locator('#mapObjectName').fill('Белые у ручья — обновлено');
+  await page.locator('#mapObjectType').fill('Белые');
+  await page.locator('#mapObjectNote').fill('Обновлено через CRUD context sheet');
+  await page.locator('#mapObjectPrimaryBtn').click();
+
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранённая точка');
+  await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья — обновлено');
+  await expect(page.locator('#mapObjectDetails')).toContainText('Разведка');
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotsList')).toContainText('Белые у ручья — обновлено');
+  await expect(page.locator('#spotsList')).toContainText('Разведка');
+  await page.getByRole('button', { name: 'Карта' }).click();
+
+  page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await page.locator('#mapObjectDangerBtn').click();
+  await expect(page.locator('#mapObjectCard')).toBeHidden();
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotCount')).toHaveText('2');
+  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья — обновлено');
 });
 
 test('selected map point can be saved without GPS and save action stays inside spot form', async ({ page }) => {

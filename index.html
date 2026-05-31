@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.23-hotfix.1" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.23-hotfix.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.24" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.24" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.23-hotfix.1" />
+  <link rel="stylesheet" href="styles.css?v=0.7.24" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.23-hotfix.1 · Sprint 5.23.1</p>
+      <p id="appVersion">v0.7.24 · Sprint 5.24</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -55,6 +55,7 @@
                 <div class="map-object-top-actions">
                   <span id="mapObjectPill" class="pill">объект</span>
                   <button id="mapObjectCollapseBtn" class="secondary btn-secondary small-btn map-object-collapse-btn" type="button" aria-expanded="true">Свернуть</button>
+                  <button id="mapObjectCloseBtn" class="secondary btn-secondary map-object-close-btn" type="button" aria-label="Закрыть карточку выбранного объекта">×</button>
                 </div>
               </div>
               <div id="mapObjectDetails" class="map-object-details"></div>
@@ -84,8 +85,10 @@
               </div>
               <div class="row map-object-actions">
                 <button id="mapObjectPrimaryBtn" class="btn-primary">Открыть</button>
+                <button id="mapObjectEditBtn" class="secondary btn-secondary">Править</button>
                 <button id="mapObjectSecondaryBtn" class="secondary btn-secondary">Отправить в чат</button>
-                <button id="mapObjectClearBtn" class="secondary btn-secondary">Сбросить выбор</button>
+                <button id="mapObjectClearBtn" class="secondary btn-secondary">Назад</button>
+                <button id="mapObjectDangerBtn" class="danger btn-danger">Удалить</button>
               </div>
             </section>
           </div>
@@ -471,7 +474,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.23-hotfix.1 · Sprint 5.23.1</span>
+          <span class="pill">v0.7.24 · Sprint 5.24</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -487,9 +490,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.23-hotfix.1</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.23.1 — Bookmark Save Flow E2E Helper Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.23-hotfix.1</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.24</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.24 — Spot CRUD and Sheet Close Control</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.24</strong></div>
         </div>
       </section>
 
@@ -672,10 +675,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.23-hotfix.1"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.24"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.23-hotfix.1"></script>
-  <script src="app.js?v=0.7.23-hotfix.1"></script>
+  <script src="config.js?v=0.7.24"></script>
+  <script src="app.js?v=0.7.24"></script>
 </body>
 </html>

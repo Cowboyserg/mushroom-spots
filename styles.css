@@ -2015,3 +2015,43 @@ select {
     max-height: clamp(250px, 62%, 390px);
   }
 }
+
+/* Sprint 5.24 — Spot CRUD and sheet close control.
+   Context sheets close from a top-right × control. Bottom actions are reserved
+   for object operations: create/read/update/delete/share/back. */
+.map-object-top-actions {
+  align-items: flex-start;
+}
+
+.map-object-close-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-object-sheet .map-object-actions .btn-danger,
+.map-object-sheet .map-object-actions .danger {
+  flex: 0 1 110px;
+}
+
+.map-object-sheet.map-object-editing .map-object-close-btn {
+  border-color: rgba(36, 75, 47, 0.22);
+}
+
+@media (max-width: 560px) {
+  .map-object-close-btn {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    font-size: 21px;
+  }
+}

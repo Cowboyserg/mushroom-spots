@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.23-hotfix.1';
+const APP_VERSION = '0.7.24';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -75,6 +75,7 @@ let selectedMapObject = null;
 let mapObjectSheetCollapsed = false;
 let pickedSaveEditorOpen = false;
 let pickedSaveShareAfterSave = false;
+let savedSpotEditorOpen = false;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
@@ -4126,11 +4127,15 @@ function distanceFromCurrentPositionLine(target) {
 }
 
 function setSelectedMapObject(kind, payload = {}) {
+  const previous = selectedMapObject;
   selectedMapObject = { kind, ...payload, selectedAt: new Date().toISOString() };
   mapObjectSheetCollapsed = false;
   if (kind !== 'picked') {
     pickedSaveEditorOpen = false;
     pickedSaveShareAfterSave = false;
+  }
+  if (kind !== 'saved' || previous?.kind !== 'saved' || previous.id !== payload.id) {
+    savedSpotEditorOpen = false;
   }
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
@@ -4141,6 +4146,7 @@ function clearSelectedMapObjectOnly() {
   mapObjectSheetCollapsed = false;
   pickedSaveEditorOpen = false;
   pickedSaveShareAfterSave = false;
+  savedSpotEditorOpen = false;
   renderMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
@@ -4162,22 +4168,46 @@ function describeSelectedMapObject() {
   if (selectedMapObject.kind === 'saved') {
     const spot = spots.find((item) => item.id === selectedMapObject.id);
     if (!spot) return null;
+    if (savedSpotEditorOpen) {
+      return {
+        kind: 'saved',
+        title: 'Править точку',
+        subtitle: 'Измени папку, название, тип или заметку. Координаты остаются прежними.',
+        pill: 'редактирование',
+        saveEditorVisible: true,
+        primary: 'Сохранить изменения',
+        editVisible: false,
+        secondaryVisible: false,
+        clearVisible: true,
+        clear: 'Назад',
+        dangerVisible: false,
+        rows: [
+          ['Точка', escapeHtml(spot.name || 'Грибная точка')],
+          ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
+          ['Важно', 'это обновит сохранённую точку, а не создаст новую']
+        ]
+      };
+    }
     return {
       kind: 'saved',
       title: 'Сохранённая точка',
       subtitle: spot.name || 'Грибная точка',
       pill: 'сохранена',
       secondaryVisible: canSendSpotToChat(),
+      editVisible: true,
+      dangerVisible: true,
       primary: 'Открыть карточку',
+      edit: 'Править',
       secondary: 'Поделиться в группе',
-      clear: 'Закрыть',
+      clearVisible: false,
+      danger: 'Удалить',
       rows: [
         ['Название', escapeHtml(spot.name || 'Грибная точка')],
         ['Папка', escapeHtml(spot.collection || 'Грибные места')],
         ['Тип', escapeHtml(spot.mushroomType || 'не указан')],
         ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(spot)],
-        ['Действие', 'можно открыть карточку или отправить группе']
+        ['Действие', 'можно открыть, править, удалить или отправить группе']
       ]
     };
   }
@@ -4194,8 +4224,11 @@ function describeSelectedMapObject() {
         pill: 'закладка',
         saveEditorVisible: true,
         secondaryVisible: canSendSpotToChat() && !pickedSaveShareAfterSave,
+        editVisible: false,
+        dangerVisible: false,
         primary: pickedSaveShareAfterSave ? 'Сохранить и поделиться' : 'Сохранить',
         secondary: 'Сохранить и поделиться',
+        clearVisible: true,
         clear: 'Назад',
         rows: [
           ['Состояние', 'открыта форма сохранения'],
@@ -4211,9 +4244,11 @@ function describeSelectedMapObject() {
       pill: 'выбрано',
       saveEditorVisible: false,
       secondaryVisible: canSendSpotToChat(),
+      editVisible: false,
+      dangerVisible: false,
       primary: '☆ Сохранить',
       secondary: 'Сохранить и поделиться',
-      clear: 'Отмена',
+      clearVisible: false,
       rows: [
         ['Состояние', 'выбрано на карте, ещё не сохранено'],
         ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
@@ -4231,9 +4266,11 @@ function describeSelectedMapObject() {
       subtitle: chatPreviewPoint.title || 'Координаты пришли из сообщения группы.',
       pill: 'чат-preview',
       secondaryVisible: false,
+      editVisible: false,
+      dangerVisible: false,
       primary: 'Показать здесь',
       secondary: '',
-      clear: 'Закрыть',
+      clearVisible: false,
       rows: [
         ['Название', escapeHtml(chatPreviewPoint.title || 'Точка из чата')],
         ['Тип', escapeHtml(chatPreviewPoint.mushroomType || 'не указан')],
@@ -4253,9 +4290,11 @@ function describeSelectedMapObject() {
       subtitle: selectedMapObject.name || 'Участник группы',
       pill: 'live-location',
       secondaryVisible: false,
+      editVisible: false,
+      dangerVisible: false,
       primary: 'Показать на карте',
       secondary: '',
-      clear: 'Закрыть',
+      clearVisible: false,
       rows: [
         ['Имя', escapeHtml(selectedMapObject.name || 'Без имени')],
         ['Координаты', `${fmtCoord(loc.lat)}, ${fmtCoord(loc.lon)}`],
@@ -4287,6 +4326,7 @@ function renderMapObjectPanel() {
   card.hidden = false;
   card.dataset.objectKind = model.kind;
   card.classList.toggle('map-object-collapsed', mapObjectSheetCollapsed);
+  card.classList.toggle('map-object-editing', Boolean(model.saveEditorVisible));
   setText('mapObjectTitle', model.title);
   setText('mapObjectSubtitle', model.subtitle);
   setText('mapObjectPill', model.pill);
@@ -4296,9 +4336,14 @@ function renderMapObjectPanel() {
   }
   setHidden('mapObjectSaveEditor', !model.saveEditorVisible);
   setText('mapObjectPrimaryBtn', model.primary);
+  setText('mapObjectEditBtn', model.edit || 'Править');
   setText('mapObjectSecondaryBtn', model.secondary || 'Поделиться в группе');
-  setText('mapObjectClearBtn', model.clear || 'Сбросить выбор');
+  setText('mapObjectClearBtn', model.clear || 'Назад');
+  setText('mapObjectDangerBtn', model.danger || 'Удалить');
+  setHidden('mapObjectEditBtn', !model.editVisible);
   setHidden('mapObjectSecondaryBtn', !model.secondaryVisible);
+  setHidden('mapObjectClearBtn', !model.clearVisible);
+  setHidden('mapObjectDangerBtn', !model.dangerVisible);
   const collapseBtn = $('mapObjectCollapseBtn');
   if (collapseBtn) {
     collapseBtn.textContent = mapObjectSheetCollapsed ? 'Развернуть' : 'Свернуть';
@@ -4380,6 +4425,69 @@ function openPickedSaveEditor(shareAfterSave = false) {
   return true;
 }
 
+function openSavedSpotEditor() {
+  if (!selectedMapObject || selectedMapObject.kind !== 'saved') return false;
+  const spot = spots.find((item) => item.id === selectedMapObject.id);
+  if (!spot) return false;
+  savedSpotEditorOpen = true;
+  const name = $('mapObjectName');
+  const type = $('mapObjectType');
+  const note = $('mapObjectNote');
+  const collection = $('mapObjectCollection');
+  if (name) name.value = spot.name || '';
+  if (type) type.value = spot.mushroomType || '';
+  if (note) note.value = spot.note || '';
+  if (collection) collection.value = spot.collection || 'Грибные места';
+  renderMapObjectPanel();
+  window.requestAnimationFrame(() => {
+    const first = $('mapObjectCollection') || $('mapObjectName');
+    try { first?.focus({ preventScroll: true }); } catch {}
+  });
+  return true;
+}
+
+async function updateSelectedSpotFromMapSheet() {
+  if (!selectedMapObject || selectedMapObject.kind !== 'saved') return false;
+  const spot = spots.find((item) => item.id === selectedMapObject.id);
+  if (!spot) return false;
+  const data = readMapObjectSpotFormData();
+  const updated = {
+    ...spot,
+    name: data.name || spot.name || 'Грибная точка',
+    mushroomType: data.mushroomType || '',
+    note: data.note || '',
+    collection: data.collection || 'Грибные места',
+    updatedAt: new Date().toISOString(),
+    appVersion: APP_VERSION
+  };
+  await putSpot(updated);
+  savedSpotEditorOpen = false;
+  selectedSpotId = updated.id;
+  await afterDataChanged();
+  setSelectedMapObject('saved', { id: updated.id });
+  updateSelectedDetails();
+  renderList();
+  return true;
+}
+
+async function deleteSelectedSpotFromMapSheet() {
+  if (!selectedMapObject || selectedMapObject.kind !== 'saved') return false;
+  const spot = spots.find((item) => item.id === selectedMapObject.id);
+  if (!spot) return false;
+  if (!confirm(`Удалить точку «${spot.name || 'Грибная точка'}»?`)) return false;
+  await removeSpot(spot.id);
+  selectedSpotId = null;
+  selectedMapObject = null;
+  savedSpotEditorOpen = false;
+  if (navLine) { navLine.remove(); navLine = null; }
+  setHidden('selectedCard', true);
+  setHidden('spotListDetailsCard', true);
+  await afterDataChanged();
+  renderMapObjectPanel();
+  updateActionButtonsUi();
+  return true;
+}
+
 async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
   if (!pickedMapPoint) {
     markButtonBlocked('точка на карте не выбрана');
@@ -4400,6 +4508,7 @@ async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
 function runSelectedMapObjectPrimaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') {
+    if (savedSpotEditorOpen) return updateSelectedSpotFromMapSheet();
     const spot = spots.find((item) => item.id === selectedMapObject.id);
     if (!spot) return false;
     selectSpot(spot.id, false);
@@ -4430,6 +4539,36 @@ function runSelectedMapObjectSecondaryAction() {
   return false;
 }
 
+function runSelectedMapObjectEditAction() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'saved') return openSavedSpotEditor();
+  return false;
+}
+
+function runSelectedMapObjectDangerAction() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'saved') return deleteSelectedSpotFromMapSheet();
+  return false;
+}
+
+function closeMapObjectSheet() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'picked') {
+    clearPickedMapPoint(true);
+    return true;
+  }
+  if (selectedMapObject.kind === 'saved') {
+    closeSpotDetails();
+    return true;
+  }
+  if (selectedMapObject.kind === 'chat') {
+    clearChatPreviewPoint(true);
+    return true;
+  }
+  clearSelectedMapObjectOnly();
+  return true;
+}
+
 function clearSelectedMapObject() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'picked') {
@@ -4443,6 +4582,11 @@ function clearSelectedMapObject() {
     return true;
   }
   if (selectedMapObject.kind === 'saved') {
+    if (savedSpotEditorOpen) {
+      savedSpotEditorOpen = false;
+      renderMapObjectPanel();
+      return true;
+    }
     closeSpotDetails();
     return true;
   }
@@ -5180,6 +5324,7 @@ function openSpotDetailsFromList(id) {
 
 function closeSpotDetails() {
   selectedSpotId = null;
+  savedSpotEditorOpen = false;
   if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
   setHidden('selectedCard', true);
   setHidden('spotListDetailsCard', true);
@@ -5282,6 +5427,8 @@ async function deleteSelected() {
   if (!confirm(`Удалить точку «${spot.name}»?`)) return;
   await removeSpot(spot.id);
   selectedSpotId = null;
+  if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
+  savedSpotEditorOpen = false;
   $('selectedCard').hidden = true;
   setHidden('spotListDetailsCard', true);
   if (navLine) { navLine.remove(); navLine = null; }
@@ -6618,7 +6765,10 @@ function bindUi() {
   if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
   if ($('mapObjectPrimaryBtn')) $('mapObjectPrimaryBtn').onclick = withButtonDiagnostics('mapObjectPrimaryBtn', runSelectedMapObjectPrimaryAction);
   if ($('mapObjectSecondaryBtn')) $('mapObjectSecondaryBtn').onclick = withButtonDiagnostics('mapObjectSecondaryBtn', runSelectedMapObjectSecondaryAction);
+  if ($('mapObjectEditBtn')) $('mapObjectEditBtn').onclick = withButtonDiagnostics('mapObjectEditBtn', runSelectedMapObjectEditAction);
+  if ($('mapObjectDangerBtn')) $('mapObjectDangerBtn').onclick = withButtonDiagnostics('mapObjectDangerBtn', runSelectedMapObjectDangerAction);
   if ($('mapObjectCollapseBtn')) $('mapObjectCollapseBtn').onclick = withButtonDiagnostics('mapObjectCollapseBtn', toggleMapObjectSheetCollapsed);
+  if ($('mapObjectCloseBtn')) $('mapObjectCloseBtn').onclick = withButtonDiagnostics('mapObjectCloseBtn', closeMapObjectSheet);
   if ($('mapObjectClearBtn')) $('mapObjectClearBtn').onclick = withButtonDiagnostics('mapObjectClearBtn', clearSelectedMapObject);
   if ($('showSelectedSpotOnMapBtn')) $('showSelectedSpotOnMapBtn').onclick = withButtonDiagnostics('showSelectedSpotOnMapBtn', showSelectedSpotOnMap);
   if ($('spotListShowOnMapBtn')) $('spotListShowOnMapBtn').onclick = withButtonDiagnostics('spotListShowOnMapBtn', showSelectedSpotOnMap);
@@ -6720,7 +6870,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.23.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.24`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
