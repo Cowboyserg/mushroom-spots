@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.17-hotfix.1" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.17-hotfix.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.17-hotfix.2" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.17-hotfix.2" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.17-hotfix.1" />
+  <link rel="stylesheet" href="styles.css?v=0.7.17-hotfix.2" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.17-hotfix.1 · Sprint 5.17.1</p>
+      <p id="appVersion">v0.7.17-hotfix.2 · Sprint 5.17.2</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -51,6 +51,44 @@
             <div><span class="label">GPS</span><strong id="gpsStatus">не запущен</strong></div>
             <div><span class="label">Точность</span><strong id="gpsAccuracy">—</strong></div>
             <div><span class="label">Координаты</span><strong id="gpsCoords">—</strong></div>
+          </div>
+        </section>
+
+        <section class="card map-quick-actions-card" id="mapQuickActionsCard" aria-label="Панель быстрых действий карты">
+          <div class="map-quick-head">
+            <div class="map-quick-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M12 21s6-5.6 6-11a6 6 0 1 0-12 0c0 5.4 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.6"></circle></svg>
+            </div>
+            <div class="map-quick-copy">
+              <h2 id="mapQuickTitle">Карта</h2>
+              <p class="hint" id="mapQuickSubtitle">Главные действия всегда под рукой: вернуться к себе, перейти к сохранению, открыть точки и офлайн-карты.</p>
+            </div>
+          </div>
+          <div class="map-quick-grid">
+            <button id="mapQuickCenterBtn" class="map-quick-btn btn-secondary" type="button" aria-label="Вернуться к моему месту">
+              <span class="map-quick-btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8L12 3Z"></path></svg>
+              </span>
+              <span>Ко мне</span>
+            </button>
+            <button id="mapQuickSaveBtn" class="map-quick-btn btn-primary" type="button" aria-label="Перейти к сохранению места">
+              <span class="map-quick-btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3-6 3V5a1 1 0 0 1 1-1Z"></path></svg>
+              </span>
+              <span>Сохранить место</span>
+            </button>
+            <button id="mapQuickSpotsBtn" class="map-quick-btn btn-secondary" type="button" data-screen-target="spots" aria-label="Открыть экран Точки">
+              <span class="map-quick-btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M9 6h10"></path><path d="M9 12h10"></path><path d="M9 18h10"></path><circle cx="5" cy="6" r="1.25" fill="currentColor" stroke="none"></circle><circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none"></circle><circle cx="5" cy="18" r="1.25" fill="currentColor" stroke="none"></circle></svg>
+              </span>
+              <span>Точки</span>
+            </button>
+            <button id="mapQuickOfflineBtn" class="map-quick-btn btn-secondary" type="button" data-screen-target="offline" aria-label="Открыть экран Офлайн">
+              <span class="map-quick-btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v10"></path><path d="m8 9 4 4 4-4"></path><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path></svg>
+              </span>
+              <span>Офлайн</span>
+            </button>
           </div>
         </section>
 
@@ -435,7 +473,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.17-hotfix.1 · Sprint 5.17.1</span>
+          <span class="pill">v0.7.17-hotfix.2 · Sprint 5.17.2</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -451,9 +489,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.17-hotfix.1</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.17.1 — Spot Card Visual Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.17-hotfix.1</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.17-hotfix.2</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.17.2 — Map Quick Actions and Navigation Icons Hotfix</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.17-hotfix.2</strong></div>
         </div>
       </section>
 
@@ -575,18 +613,43 @@
       </section>
 
       <section class="card">
-        <h2>Sprint 5.17.1</h2>
-        <p class="hint">Визуальный слой выровнен: кнопки разделены по ролям, карточки и пустые состояния приведены к единой системе, нижняя навигация и touch-зоны стали удобнее на телефоне.</p>
+        <h2>Sprint 5.17.2</h2>
+        <p class="hint">Экран карты получил компактную панель быстрых действий, а нижняя навигация — иконки и более понятный мобильный вид без изменения логики карты, точек и офлайн-режима.</p>
       </section>
     </section>
   </main>
 
   <nav class="bottom-nav" aria-label="Основная навигация приложения">
-    <button class="bottom-nav-btn active" type="button" data-screen-target="map" aria-current="page">Карта</button>
-    <button class="bottom-nav-btn" type="button" data-screen-target="spots">Точки</button>
-    <button class="bottom-nav-btn" type="button" data-screen-target="group">Группа</button>
-    <button class="bottom-nav-btn" type="button" data-screen-target="offline">Офлайн</button>
-    <button class="bottom-nav-btn" type="button" data-screen-target="settings">Настройки</button>
+    <button class="bottom-nav-btn active" type="button" data-screen-target="map" aria-current="page">
+      <span class="bottom-nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M4 7.2 9 5l6 2.2L20 5v11.8L15 19l-6-2.2L4 19V7.2Z"></path><path d="M9 5v11.8"></path><path d="M15 7.2V19"></path></svg>
+      </span>
+      <span class="bottom-nav-label">Карта</span>
+    </button>
+    <button class="bottom-nav-btn" type="button" data-screen-target="spots">
+      <span class="bottom-nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M12 21s6-5.6 6-11a6 6 0 1 0-12 0c0 5.4 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.6"></circle></svg>
+      </span>
+      <span class="bottom-nav-label">Точки</span>
+    </button>
+    <button class="bottom-nav-btn" type="button" data-screen-target="group">
+      <span class="bottom-nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="9" r="3"></circle><circle cx="17" cy="10" r="2.5"></circle><path d="M4.5 18.2c.9-2.6 3-4.2 5.8-4.2s4.9 1.6 5.8 4.2"></path><path d="M14.3 17.5c.6-1.8 2.1-3 4-3 1.1 0 2.1.4 2.9 1.1"></path></svg>
+      </span>
+      <span class="bottom-nav-label">Группа</span>
+    </button>
+    <button class="bottom-nav-btn" type="button" data-screen-target="offline">
+      <span class="bottom-nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v10"></path><path d="m8 9 4 4 4-4"></path><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path></svg>
+      </span>
+      <span class="bottom-nav-label">Офлайн</span>
+    </button>
+    <button class="bottom-nav-btn" type="button" data-screen-target="settings">
+      <span class="bottom-nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .14 1.7 1.7 0 0 0-1 1.56V21a2 2 0 0 1-4 0v-.08a1.7 1.7 0 0 0-1-1.56 1.7 1.7 0 0 0-1-.14 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.14-1 1.7 1.7 0 0 0-1.56-1H2.8a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 1.56-1 1.7 1.7 0 0 0 .14-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.14 1.7 1.7 0 0 0 1-1.56V2.8a2 2 0 0 1 4 0v.08a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1 .14 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c0 .35.05.69.14 1 .25.61.85 1 1.51 1H21.2a2 2 0 1 1 0 4h-.08c-.66 0-1.26.39-1.51 1Z"></path></svg>
+      </span>
+      <span class="bottom-nav-label">Настройки</span>
+    </button>
   </nav>
 
   <dialog id="helpDialog">
@@ -611,10 +674,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.17-hotfix.1"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.17-hotfix.2"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.17-hotfix.1"></script>
-  <script src="app.js?v=0.7.17-hotfix.1"></script>
+  <script src="config.js?v=0.7.17-hotfix.2"></script>
+  <script src="app.js?v=0.7.17-hotfix.2"></script>
 </body>
 </html>
