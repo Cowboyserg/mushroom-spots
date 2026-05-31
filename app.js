@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.17-hotfix.3';
+const APP_VERSION = '0.7.17-hotfix.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -821,62 +821,6 @@ function updateSaveSpotFlowUi() {
   }
 }
 
-function getMapQuickPanelState() {
-  if (selectedMapObject?.kind === 'saved') {
-    const spot = spots.find((item) => item.id === selectedMapObject.id);
-    return {
-      title: spot?.name || 'Сохранённая точка',
-      subtitle: 'Можно перейти к карточке ниже, показать список точек или вернуться к себе на карте.'
-    };
-  }
-  if (selectedMapObject?.kind === 'chat') {
-    return {
-      title: 'Точка из чата',
-      subtitle: 'Можно перейти к сохранению этой точки или открыть список своих мест.'
-    };
-  }
-  if (selectedMapObject?.kind === 'friend') {
-    return {
-      title: 'Геопозиция друга',
-      subtitle: 'Геопозиции друзей показываются отдельно от ваших сохранённых мест. Можно быстро вернуться к своим точкам или офлайн-карте.'
-    };
-  }
-  if (pickedMapPoint) {
-    return {
-      title: 'Выбрано место на карте',
-      subtitle: 'Перейди к сохранению ниже или вернись к своему GPS-положению одной кнопкой.'
-    };
-  }
-  if (currentPosition) {
-    return {
-      title: 'GPS готов',
-      subtitle: 'Текущее место уже определено. Можно перейти к сохранению, открыть точки или офлайн-карты.'
-    };
-  }
-  return {
-    title: 'Карта',
-    subtitle: 'Главные действия всегда под рукой: вернуться к себе, перейти к сохранению, открыть точки и офлайн-карты.'
-  };
-}
-
-function updateMapQuickActionsUi() {
-  const state = getMapQuickPanelState();
-  setText('mapQuickTitle', state.title);
-  setText('mapQuickSubtitle', state.subtitle);
-}
-
-function focusSaveSpotFlowCard() {
-  const card = $('saveSpotFlowCard');
-  if (!card) return false;
-  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const details = $('saveSpotDetails');
-  if (details) details.open = true;
-  window.setTimeout(() => {
-    const field = $('spotName');
-    if (field && typeof field.focus === 'function') field.focus();
-  }, 220);
-  return true;
-}
 
 function updateActionButtonsUi() {
   const hasSupabase = Boolean(getSupabaseConfig());
@@ -894,8 +838,6 @@ function updateActionButtonsUi() {
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
-  setDisabled('mapQuickCenterBtn', !hasPosition && !navigator.geolocation);
-  setDisabled('mapQuickSaveBtn', false);
   setDisabled('centerPmtilesOnMeBtn', !hasPosition && !navigator.geolocation);
   setDisabled('showSelectedSpotOnMapBtn', !hasSelected);
   setDisabled('spotListShowOnMapBtn', !hasSelected);
@@ -909,7 +851,6 @@ function updateActionButtonsUi() {
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
   updateSaveSpotFlowUi();
-  updateMapQuickActionsUi();
   renderMapObjectPanel();
 
   if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : (currentChatName() !== 'Без имени' ? `Войти как ${currentChatName()}` : 'Войти в группу');
@@ -3512,7 +3453,6 @@ function switchAppScreen(screen, options = {}) {
   }
 
   resizeActiveScreenMaps(`active screen: ${next}`);
-  updateMapQuickActionsUi();
   renderSettingsDiagnostics();
   return next;
 }
@@ -6491,8 +6431,6 @@ function bindUi() {
   bindAppNavigationShell();
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
-  if ($('mapQuickCenterBtn')) $('mapQuickCenterBtn').onclick = withButtonDiagnostics('mapQuickCenterBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
-  if ($('mapQuickSaveBtn')) $('mapQuickSaveBtn').onclick = withButtonDiagnostics('mapQuickSaveBtn', focusSaveSpotFlowCard);
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveSmartSpot);
   if ($('saveCurrentGpsOnlyBtn')) $('saveCurrentGpsOnlyBtn').onclick = withButtonDiagnostics('saveCurrentGpsOnlyBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
@@ -6608,7 +6546,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.17.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.17.4`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

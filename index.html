@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.17-hotfix.3" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.17-hotfix.3" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.17-hotfix.4" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.17-hotfix.4" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.17-hotfix.3" />
+  <link rel="stylesheet" href="styles.css?v=0.7.17-hotfix.4" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.17-hotfix.3 · Sprint 5.17.3</p>
+      <p id="appVersion">v0.7.17-hotfix.4 · Sprint 5.17.4</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -51,44 +51,6 @@
             <div><span class="label">GPS</span><strong id="gpsStatus">не запущен</strong></div>
             <div><span class="label">Точность</span><strong id="gpsAccuracy">—</strong></div>
             <div><span class="label">Координаты</span><strong id="gpsCoords">—</strong></div>
-          </div>
-        </section>
-
-        <section class="card map-quick-actions-card" id="mapQuickActionsCard" aria-label="Панель быстрых действий карты">
-          <div class="map-quick-head">
-            <div class="map-quick-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M12 21s6-5.6 6-11a6 6 0 1 0-12 0c0 5.4 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.6"></circle></svg>
-            </div>
-            <div class="map-quick-copy">
-              <h2 id="mapQuickTitle">Карта</h2>
-              <p class="hint" id="mapQuickSubtitle">Главные действия всегда под рукой: вернуться к себе, перейти к сохранению, открыть точки и офлайн-карты.</p>
-            </div>
-          </div>
-          <div class="map-quick-grid">
-            <button id="mapQuickCenterBtn" class="map-quick-btn btn-secondary" type="button" aria-label="Вернуться к моему месту">
-              <span class="map-quick-btn-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8L12 3Z"></path></svg>
-              </span>
-              <span>Ко мне</span>
-            </button>
-            <button id="mapQuickSaveBtn" class="map-quick-btn btn-primary" type="button" aria-label="Перейти к сохранению места">
-              <span class="map-quick-btn-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3-6 3V5a1 1 0 0 1 1-1Z"></path></svg>
-              </span>
-              <span>Сохранить место</span>
-            </button>
-            <button id="mapQuickSpotsBtn" class="map-quick-btn btn-secondary" type="button" data-screen-target="spots" aria-label="Открыть список сохранённых мест">
-              <span class="map-quick-btn-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false"><path d="M9 6h10"></path><path d="M9 12h10"></path><path d="M9 18h10"></path><circle cx="5" cy="6" r="1.25" fill="currentColor" stroke="none"></circle><circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none"></circle><circle cx="5" cy="18" r="1.25" fill="currentColor" stroke="none"></circle></svg>
-              </span>
-              <span>Точки</span>
-            </button>
-            <button id="mapQuickOfflineBtn" class="map-quick-btn btn-secondary" type="button" data-screen-target="offline" aria-label="Открыть менеджер карт">
-              <span class="map-quick-btn-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v10"></path><path d="m8 9 4 4 4-4"></path><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path></svg>
-              </span>
-              <span>Офлайн</span>
-            </button>
           </div>
         </section>
 
@@ -473,7 +435,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.17-hotfix.3 · Sprint 5.17.3</span>
+          <span class="pill">v0.7.17-hotfix.4 · Sprint 5.17.4</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -489,9 +451,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.17-hotfix.3</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.17.3 — Quick Panel E2E Name Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.17-hotfix.3</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.17-hotfix.4</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.17.4 — Remove Redundant Map Quick Actions Panel</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.17-hotfix.4</strong></div>
         </div>
       </section>
 
@@ -613,8 +575,8 @@
       </section>
 
       <section class="card">
-        <h2>Sprint 5.17.3</h2>
-        <p class="hint">Панель быстрых действий на карте получила отдельные доступные имена для E2E и скринридеров без изменения видимого текста, нижней навигации и логики карты.</p>
+        <h2>Sprint 5.17.4</h2>
+        <p class="hint">Лишняя панель быстрых действий удалена с экрана карты: встроенные кнопки карты, форма сохранения и нижняя навигация остаются единственными основными входами.</p>
       </section>
     </section>
   </main>
@@ -674,10 +636,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.17-hotfix.3"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.17-hotfix.4"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.17-hotfix.3"></script>
-  <script src="app.js?v=0.7.17-hotfix.3"></script>
+  <script src="config.js?v=0.7.17-hotfix.4"></script>
+  <script src="app.js?v=0.7.17-hotfix.4"></script>
 </body>
 </html>
