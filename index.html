@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.15" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.15" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.15-hotfix.2" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.15-hotfix.2" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.15" />
+  <link rel="stylesheet" href="styles.css?v=0.7.15-hotfix.2" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.15 · Sprint 5.15</p>
+      <p id="appVersion">v0.7.15-hotfix.2 · Sprint 5.15.2</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -429,13 +429,13 @@
     <section class="app-screen" id="screen-settings" data-app-screen="settings" aria-labelledby="screenTitleSettings" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleSettings">Настройки</h2>
-        <p class="hint">Приложение, версия, кэш, офлайн-режим, диагностика и расширенные действия.</p>
+        <p class="hint">Настройки приложения, диагностика и обслуживание без технического шума.</p>
       </div>
 
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.15 · Sprint 5.15</span>
+          <span class="pill">v0.7.15-hotfix.2 · Sprint 5.15.2</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -451,9 +451,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.15</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.15 — Settings and Diagnostics UX</strong></div>
-          <div><span class="label">Service Worker cache</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.15</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.15-hotfix.2</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.15.2 — Screen Heading Visual Hotfix</strong></div>
+          <div><span class="label">Service Worker cache</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.15-hotfix.2</strong></div>
         </div>
       </section>
 
@@ -575,8 +575,8 @@
       </section>
 
       <section class="card">
-        <h2>Sprint 5.15</h2>
-        <p class="hint">Настройки стали центром управления: версия, кэш, офлайн-режим, диагностика, debug и расширенный режим без удаления старых технических действий.</p>
+        <h2>Sprint 5.15.2</h2>
+        <p class="hint">Заголовки вкладок стали обычными заголовками страниц, без лишней карточки сверху. Структура настроек и advanced-действия сохранены.</p>
       </section>
     </section>
   </main>
@@ -611,10 +611,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.15"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.15-hotfix.2"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.15"></script>
-  <script src="app.js?v=0.7.15"></script>
+  <script src="config.js?v=0.7.15-hotfix.2"></script>
+  <script src="app.js?v=0.7.15-hotfix.2"></script>
 </body>
 </html>

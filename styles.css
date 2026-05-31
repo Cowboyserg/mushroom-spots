@@ -448,18 +448,16 @@ body {
   display: block;
 }
 .screen-heading {
-  background: rgba(255, 253, 247, 0.72);
-  border: 1px solid rgba(221, 214, 199, 0.84);
-  border-radius: 16px;
-  padding: 12px 14px;
-  margin: 12px 0;
+  padding: 4px 2px 2px;
+  margin: 10px 0 12px;
 }
 .screen-heading h2 {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   font-size: 20px;
 }
 .screen-heading .hint {
   margin: 0;
+  max-width: 760px;
 }
 .bottom-nav {
   position: fixed;
@@ -1271,3 +1269,5 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Sprint 5.15.2: screen headings are page labels, not standalone cards. */
