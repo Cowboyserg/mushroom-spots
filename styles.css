@@ -1133,3 +1133,84 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Sprint 5.14 offline maps UX manager. */
+.offline-manager-title {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.offline-current-card {
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(36, 75, 47, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 253, 247, 0.92);
+}
+.offline-current-card strong {
+  display: block;
+  margin-top: 0.25rem;
+}
+.offline-current-card .hint {
+  margin-bottom: 0;
+}
+.offline-current-card .warn-state {
+  color: #705000;
+}
+.offline-current-card .ok-state {
+  color: #1f612e;
+}
+.remembered-map-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+.remembered-map-card,
+.remembered-map-empty {
+  padding: 0.85rem;
+  border: 1px solid rgba(36, 75, 47, 0.14);
+  border-radius: 16px;
+  background: rgba(244, 248, 241, 0.78);
+}
+.remembered-map-card.selected {
+  border-color: rgba(36, 75, 47, 0.34);
+  background: rgba(232, 238, 220, 0.88);
+}
+.remembered-map-card.active-file {
+  box-shadow: 0 10px 28px rgba(36, 75, 47, 0.10);
+}
+.remembered-map-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.remembered-map-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.remembered-map-meta {
+  margin: 0.35rem 0 0.65rem;
+  word-break: break-word;
+}
+.offline-name-panel input {
+  width: 100%;
+}
+.offline-diagnostics-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  font-weight: 850;
+}
+.offline-diagnostics-panel[open] summary {
+  margin-bottom: 0.75rem;
+}
+.compact-hidden-select {
+  margin-top: 0.75rem;
+}
+@media (min-width: 720px) {
+  .remembered-map-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.13-hotfix.1';
+const APP_VERSION = '0.7.14';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -197,10 +197,10 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   startGpsBtn: 'Включить GPS',
   centerMeBtn: 'Ко мне',
   repairMapBtn: 'Починить карту',
-  startBboxExportBtn: 'Выбрать прямоугольник PMTiles bbox',
-  useVisibleBboxBtn: 'Взять видимую область как PMTiles bbox',
-  copyBboxCommandBtn: 'Скопировать команду PMTiles extract',
-  clearBboxExportBtn: 'Сбросить PMTiles bbox',
+  startBboxExportBtn: 'Выбрать прямоугольник региона',
+  useVisibleBboxBtn: 'Взять видимую область как регион карты',
+  copyBboxCommandBtn: 'Скопировать команду подготовки региона',
+  clearBboxExportBtn: 'Сбросить регион карты',
   saveSpotBtn: 'Сохранить место',
   saveCurrentGpsOnlyBtn: 'Сохранить только GPS',
   savePickedMapPointBtn: 'Сохранить выбранную точку на карте',
@@ -240,12 +240,12 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
   loadOfflineManifestBtn: 'Обновить manifest карт',
-  chooseLocalPmtilesBtn: 'Выбрать локальный PMTiles',
+  chooseLocalPmtilesBtn: 'Выбрать файл карты',
   probePmtilesBtn: 'Проверить выбранный PMTiles',
-  previewPmtilesBtn: 'Показать PMTiles preview',
+  previewPmtilesBtn: 'Предпросмотр офлайн-карты',
   centerPmtilesOnMeBtn: 'Показать меня на офлайн-карте',
-  renameRememberedPmtilesMapBtn: 'Переименовать локальную карту',
-  forgetRememberedPmtilesMapBtn: 'Забыть локальную карту',
+  renameRememberedPmtilesMapBtn: 'Сохранить название карты',
+  forgetRememberedPmtilesMapBtn: 'Забыть карту',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -1176,7 +1176,7 @@ function updateOfflineMapStatusPill() {
   } else if (offlinePackageStatus === 'metadata-ready-runtime-experimental') {
     setOfflineMapStatus('PMTiles найден, рендер экспериментальный', 'warn');
   } else if (offlinePackageStatus === 'preview-ready-runtime-experimental') {
-    setOfflineMapStatus('PMTiles preview готов', 'on');
+    setOfflineMapStatus('Предпросмотр офлайн-карты готов', 'on');
   } else if (offlinePackageStatus === 'ready') {
     setOfflineMapStatus('Карта: офлайн-пакет готов', 'on');
   } else {
@@ -1297,18 +1297,18 @@ function updatePmtilesPreviewUi() {
     const focusText = pmtilesPreviewFocusState.status === 'focused' && pmtilesPreviewFocusState.target
       ? ` · фокус: ${pmtilesPreviewFocusState.target}`
       : '';
-    statusEl.textContent = `PMTiles preview: MapLibre отрисовал выбранный PMTiles (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}${focusText}. Это отдельный preview, основная карта остаётся Leaflet.`;
+    statusEl.textContent = `Предпросмотр офлайн-карты: MapLibre отрисовал выбранный файл карты (${getActivePmtilesPackageName()})${styleText}${boundsText}${userText}${focusText}. Это отдельный preview, основная карта остаётся Leaflet.`;
   } else if (pmtilesPreviewState.status === 'loading') {
-    statusEl.textContent = 'PMTiles preview: загрузка MapLibre и подключение pmtiles:// source…';
+    statusEl.textContent = 'Предпросмотр офлайн-карты: загрузка MapLibre и подключение источника…';
   } else if (pmtilesPreviewState.status === 'source-loaded') {
     const layerText = pmtilesPreviewState.vectorLayers?.length ? ` Слои: ${pmtilesPreviewState.vectorLayers.slice(0, 8).join(', ')}.` : '';
-    statusEl.textContent = `PMTiles preview: источник подключён, применяем style/границы региона…${layerText}`;
+    statusEl.textContent = `Предпросмотр офлайн-карты: источник подключён, применяем стиль и границы региона…${layerText}`;
   } else if (pmtilesPreviewState.status === 'metadata-only') {
-    statusEl.textContent = `PMTiles preview: пакет ${getActivePmtilesPackageName()} читается, но это не raster-пакет для текущего preview. Нужен отдельный vector-style спринт.`;
+    statusEl.textContent = `Предпросмотр офлайн-карты: пакет ${getActivePmtilesPackageName()} читается, но это не raster-пакет для текущего preview. Нужен отдельный vector-style спринт.`;
   } else if (pmtilesPreviewState.status === 'error') {
-    statusEl.textContent = `PMTiles preview: ошибка — ${pmtilesPreviewState.error || 'неизвестная ошибка'}`;
+    statusEl.textContent = `Предпросмотр офлайн-карты: ошибка — ${pmtilesPreviewState.error || 'неизвестная ошибка'}`;
   } else {
-    statusEl.textContent = 'PMTiles preview: не запускался.';
+    statusEl.textContent = 'Предпросмотр офлайн-карты: не запускался.';
   }
 }
 
@@ -1319,13 +1319,13 @@ function updatePmtilesPreviewFocusUi() {
     const coords = pmtilesPreviewFocusState.coords
       ? `${Number(pmtilesPreviewFocusState.coords[1]).toFixed(6)}, ${Number(pmtilesPreviewFocusState.coords[0]).toFixed(6)}`
       : 'координаты неизвестны';
-    el.textContent = `Фокус PMTiles: ${pmtilesPreviewFocusState.target || 'точка'} · ${coords} · zoom ${pmtilesPreviewFocusState.zoom || '—'}.`;
+    el.textContent = `Фокус офлайн-карты: ${pmtilesPreviewFocusState.target || 'точка'} · ${coords} · zoom ${pmtilesPreviewFocusState.zoom || '—'}.`;
   } else if (pmtilesPreviewFocusState.status === 'pending') {
-    el.textContent = 'Фокус PMTiles: запрашиваю GPS / запускаю preview…';
+    el.textContent = 'Фокус офлайн-карты: запрашиваю GPS / запускаю предпросмотр…';
   } else if (pmtilesPreviewFocusState.status === 'error') {
-    el.textContent = `Фокус PMTiles: ошибка — ${pmtilesPreviewFocusState.error || 'неизвестная ошибка'}`;
+    el.textContent = `Фокус офлайн-карты: ошибка — ${pmtilesPreviewFocusState.error || 'неизвестная ошибка'}`;
   } else {
-    el.textContent = 'Фокус PMTiles: не выполнялся.';
+    el.textContent = 'Фокус офлайн-карты: не выполнялся.';
   }
 }
 
@@ -1607,6 +1607,109 @@ function getRememberedPmtilesMapsSnapshot() {
   };
 }
 
+function getUserFacingOfflineMapState() {
+  const selected = getSelectedRememberedPmtilesMap();
+  const sessionFileSelected = localPmtilesFileState.status === 'selected';
+  const sessionMatchesSelected = sessionFileSelected && selected && localPmtilesFileState.fingerprint === selected.fingerprint;
+  const title = localPmtilesFileState.customName || selected?.title || (localPmtilesFileState.name ? localPmtilesFileState.name.replace(/\.pmtiles$/i, '') : 'Офлайн-карта');
+
+  if (sessionFileSelected) {
+    return {
+      mode: 'ready',
+      title,
+      summary: `“${title}” — файл выбран в этой сессии.`,
+      detail: `Можно открыть предпросмотр офлайн-карты. Запись запомнена как “${title}”, сам файл после перезапуска приложения нужно выбрать заново.`,
+      selected,
+      sessionMatchesSelected
+    };
+  }
+
+  if (selected) {
+    return {
+      mode: 'needs-file',
+      title: selected.title,
+      summary: `“${selected.title}” — запись найдена, файл нужно выбрать заново.`,
+      detail: `Нажми “Выбрать файл карты” и выбери ${selected.fileName}. GPS, сохранённые точки и чат работают независимо от подложки карты.`,
+      selected,
+      sessionMatchesSelected: false
+    };
+  }
+
+  return {
+    mode: 'empty',
+    title: 'Офлайн-карта не выбрана',
+    summary: 'Офлайн-карта не выбрана.',
+    detail: 'Офлайн-карта не выбрана. Можно пользоваться GPS и сохранёнными точками, но подложка карты может не загрузиться без интернета.',
+    selected: null,
+    sessionMatchesSelected: false
+  };
+}
+
+function renderCurrentOfflineMapSummary() {
+  const status = $('currentOfflineMapStatus');
+  const empty = $('offlineMapEmptyState');
+  const state = getUserFacingOfflineMapState();
+  if (status) status.textContent = state.summary;
+  if (empty) {
+    empty.textContent = state.detail;
+    empty.classList.toggle('warn-state', state.mode !== 'ready');
+    empty.classList.toggle('ok-state', state.mode === 'ready');
+  }
+}
+
+function renderRememberedPmtilesMapsList() {
+  const list = $('rememberedPmtilesMapsList');
+  if (!list) return;
+  list.innerHTML = '';
+  const maps = rememberedPmtilesMapsState.maps || [];
+  if (!maps.length) {
+    const emptyCard = document.createElement('div');
+    emptyCard.className = 'remembered-map-empty';
+    emptyCard.setAttribute('role', 'listitem');
+    const title = document.createElement('strong');
+    title.textContent = 'Мои карты пока пусты';
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Нажми “Выбрать файл карты”. После выбора появится запись с названием, которое можно переименовать.';
+    emptyCard.append(title, hint);
+    list.appendChild(emptyCard);
+    return;
+  }
+
+  for (const item of maps) {
+    const isSelected = item.id === rememberedPmtilesMapsState.selectedId;
+    const hasSessionFile = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === item.fingerprint;
+    const card = document.createElement('article');
+    card.className = 'remembered-map-card';
+    if (isSelected) card.classList.add('selected');
+    if (hasSessionFile) card.classList.add('active-file');
+    card.setAttribute('role', 'listitem');
+
+    const top = document.createElement('div');
+    top.className = 'remembered-map-card-top';
+    const heading = document.createElement('h3');
+    heading.textContent = item.title || 'Без названия';
+    const pill = document.createElement('span');
+    pill.className = `pill ${hasSessionFile ? 'on' : 'warn'}`;
+    pill.textContent = hasSessionFile ? 'файл выбран' : (isSelected ? 'текущая запись' : 'запомнена');
+    top.append(heading, pill);
+
+    const meta = document.createElement('p');
+    meta.className = 'hint remembered-map-meta';
+    meta.textContent = `${item.fileName} · ${formatBytes(item.sizeBytes)}${item.lastSelectedAt ? ` · выбиралась ${new Date(item.lastSelectedAt).toLocaleString('ru-RU')}` : ''}`;
+
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'secondary small-btn';
+    action.textContent = isSelected ? 'Текущая' : 'Сделать текущей';
+    action.disabled = isSelected;
+    action.onclick = () => selectRememberedPmtilesMap(item.id, true);
+
+    card.append(top, meta, action);
+    list.appendChild(card);
+  }
+}
+
 function renderRememberedPmtilesMapsUi() {
   const select = $('rememberedPmtilesMapSelect');
   const nameInput = $('rememberedPmtilesMapNameInput');
@@ -1639,16 +1742,18 @@ function renderRememberedPmtilesMapsUi() {
   }
   if (status) {
     if (rememberedPmtilesMapsState.status === 'error') {
-      status.textContent = `Запомненные карты: ошибка — ${rememberedPmtilesMapsState.error || 'неизвестно'}`;
+      status.textContent = `Мои карты: ошибка — ${rememberedPmtilesMapsState.error || 'неизвестно'}`;
     } else if (!rememberedPmtilesMapsState.maps.length) {
-      status.textContent = 'Запомненные карты: пока нет. Выбери .pmtiles файл, и запись появится здесь.';
+      status.textContent = 'Мои карты: пока нет. Выбери файл карты, и запись появится здесь.';
     } else if (selected) {
       const active = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === selected.fingerprint;
       status.textContent = active
-        ? `Запомненные карты: активна “${selected.title}” · ${selected.fileName} · ${formatBytes(selected.sizeBytes)}.`
-        : `Запомненные карты: “${selected.title}” известна, но файл не подключён в этой сессии. Нажми “Выбрать локальный PMTiles” и выбери ${selected.fileName}.`;
+        ? `Текущая карта: “${selected.title}” · ${formatBytes(selected.sizeBytes)}.`
+        : `Текущая запись: “${selected.title}”. Чтобы использовать карту сейчас, нажми “Выбрать файл карты” и выбери ${selected.fileName}.`;
     }
   }
+  renderCurrentOfflineMapSummary();
+  renderRememberedPmtilesMapsList();
   const canRename = Boolean(selected);
   const canForget = Boolean(selected);
   setDisabled('renameRememberedPmtilesMapBtn', !canRename);
@@ -1842,11 +1947,11 @@ function renderLocalPmtilesFileUi() {
   if (localPmtilesFileState.status === 'selected') {
     const modified = localPmtilesFileState.lastModified ? new Date(localPmtilesFileState.lastModified).toLocaleString('ru-RU') : 'дата неизвестна';
     const custom = localPmtilesFileState.customName ? ` · карта: “${localPmtilesFileState.customName}”` : '';
-    status.textContent = `Локальный файл: ${localPmtilesFileState.name}${custom} · ${formatBytes(localPmtilesFileState.sizeBytes)} · выбран в этой сессии · изменён ${modified}. Название запоминается, сам файл после перезапуска PWA нужно выбрать заново.`;
+    status.textContent = `Файл карты: ${localPmtilesFileState.name}${custom} · ${formatBytes(localPmtilesFileState.sizeBytes)} · выбран в этой сессии · изменён ${modified}. Название запоминается, сам файл после перезапуска PWA нужно выбрать заново.`;
   } else if (localPmtilesFileState.status === 'error') {
-    status.textContent = `Локальный файл: ошибка — ${localPmtilesFileState.error || 'неизвестно'}`;
+    status.textContent = `Файл карты: ошибка — ${localPmtilesFileState.error || 'неизвестно'}`;
   } else {
-    status.textContent = 'Локальный файл: не выбран. Можно скачать .pmtiles из Release asset и выбрать его здесь, без CORS/Range-запросов к GitHub.';
+    status.textContent = 'Файл карты: не выбран. Можно скачать региональный файл карты и выбрать его здесь. Сетевые CORS/Range-запросы к GitHub для этого не нужны.';
   }
 }
 
@@ -2299,7 +2404,7 @@ async function showPmtilesPreviewMap() {
       loadedAt: new Date().toISOString()
     }, 'PMTiles preview rendered');
     renderPmtilesPreviewUserLayers('PMTiles preview user layers rendered');
-    setCurrentPmtilesPreviewButtonStatus('готово', 'PMTiles preview отрисован отдельно от основной карты');
+    setCurrentPmtilesPreviewButtonStatus('готово', 'предпросмотр офлайн-карты отрисован отдельно от основной карты');
     updateMapDebugUi(true);
     return true;
   } catch (err) {
@@ -2551,8 +2656,8 @@ function getCurrentPositionOnceForPmtilesFocus() {
 
 function focusPmtilesPreviewOnLatLon(lat, lon, zoom = 16, target = 'точка') {
   const point = normalizePreviewPoint(lat, lon);
-  if (!point) throw new Error('Некорректные координаты для PMTiles preview.');
-  if (!isPmtilesPreviewLoaded()) throw new Error('PMTiles preview ещё не запущен.');
+  if (!point) throw new Error('Некорректные координаты для предпросмотра офлайн-карты.');
+  if (!isPmtilesPreviewLoaded()) throw new Error('Предпросмотр офлайн-карты ещё не запущен.');
   renderPmtilesPreviewUserLayers(`PMTiles preview user layers refresh before focus ${target}`);
   if (typeof pmtilesPreviewMap.resize === 'function') pmtilesPreviewMap.resize();
   const currentZoom = typeof pmtilesPreviewMap.getZoom === 'function' ? Number(pmtilesPreviewMap.getZoom()) : zoom;
@@ -2580,12 +2685,12 @@ async function centerPmtilesPreviewOnMe() {
   try {
     if (!isPmtilesPreviewLoaded()) {
       const ok = await showPmtilesPreviewMap();
-      if (!ok || !isPmtilesPreviewLoaded()) throw new Error('PMTiles preview не удалось запустить.');
+      if (!ok || !isPmtilesPreviewLoaded()) throw new Error('Предпросмотр офлайн-карты не удалось запустить.');
     }
     const position = await getCurrentPositionOnceForPmtilesFocus();
     if (!position) throw new Error('GPS-позиция недоступна.');
     const result = focusPmtilesPreviewOnLatLon(position.lat, position.lon, 16, 'Я');
-    setButtonApiStatus(activeButtonDiagnostics || 'centerPmtilesOnMeBtn', 'готово', 'PMTiles preview центрирован на GPS');
+    setButtonApiStatus(activeButtonDiagnostics || 'centerPmtilesOnMeBtn', 'готово', 'предпросмотр офлайн-карты центрирован на GPS');
     return result;
   } catch (err) {
     setPmtilesPreviewFocusState({ status: 'error', target: 'Я', error: err?.message || String(err) }, 'PMTiles preview center on me failed');
@@ -3611,16 +3716,16 @@ function updateBboxExportUi() {
 
   if (status) {
     if (bboxExportState.mode === 'selecting' && !bboxExportState.firstCorner) {
-      status.textContent = 'BBox: режим выбора включён. Нажми первый угол прямоугольника на основной карте.';
+      status.textContent = 'Регион: режим выбора включён. Нажми первый угол прямоугольника на основной карте.';
     } else if (bboxExportState.mode === 'selecting' && bboxExportState.firstCorner) {
       const c = bboxExportState.firstCorner;
-      status.textContent = `BBox: первый угол выбран (${fmtBboxCoord(c.lng ?? c.lon)}, ${fmtBboxCoord(c.lat)}). Нажми противоположный угол.`;
+      status.textContent = `Регион: первый угол выбран (${fmtBboxCoord(c.lng ?? c.lon)}, ${fmtBboxCoord(c.lat)}). Нажми противоположный угол.`;
     } else if (bboxExportState.command && snapshot.bounds) {
-      status.textContent = `BBox готов: ${snapshot.bounds.join(',')}. Команда ниже уже содержит координаты с точностью 6 знаков.`;
+      status.textContent = `Регион готов: ${snapshot.bounds.join(',')}. Команда ниже уже содержит координаты с точностью 6 знаков.`;
     } else if (bboxExportState.error) {
-      status.textContent = `BBox: ошибка — ${bboxExportState.error}`;
+      status.textContent = `Регион: ошибка — ${bboxExportState.error}`;
     } else {
-      status.textContent = 'BBox: не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.';
+      status.textContent = 'Регион не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.';
     }
   }
 
@@ -3678,7 +3783,7 @@ function startBboxExportSelection() {
   };
   removeBboxExportLayer();
   updateBboxExportUi();
-  setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'startBboxExportBtn', label: getButtonDiagnosticLabel('startBboxExportBtn') }, 'готово', 'режим выбора bbox включён');
+  setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'startBboxExportBtn', label: getButtonDiagnosticLabel('startBboxExportBtn') }, 'готово', 'режим выбора региона включён');
   return true;
 }
 
@@ -3745,12 +3850,12 @@ function clearBboxExport() {
   };
   removeBboxExportLayer();
   updateBboxExportUi();
-  setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearBboxExportBtn', label: getButtonDiagnosticLabel('clearBboxExportBtn') }, 'готово', 'bbox сброшен');
+  setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearBboxExportBtn', label: getButtonDiagnosticLabel('clearBboxExportBtn') }, 'готово', 'регион сброшен');
 }
 
 async function copyBboxCommand() {
   if (!bboxExportState.command) {
-    markButtonBlocked('bbox не выбран');
+    markButtonBlocked('регион не выбран');
     alert('Сначала выбери прямоугольник или возьми видимую область карты.');
     return false;
   }
@@ -6364,7 +6469,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.13.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.14`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

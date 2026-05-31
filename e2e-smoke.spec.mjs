@@ -44,7 +44,7 @@ async function bootApp(page, options = {}) {
   });
 
   await page.goto(options.path || '/');
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.14 · Sprint 5.14');
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -77,7 +77,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T08:00:00.000Z',
         updatedAt: '2026-05-31T08:00:00.000Z',
-        appVersion: '0.7.13-hotfix.1'
+        appVersion: '0.7.14'
       },
       {
         id: 'e2e-chanterelle-spot',
@@ -91,7 +91,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T09:00:00.000Z',
         updatedAt: '2026-05-31T09:00:00.000Z',
-        appVersion: '0.7.13-hotfix.1'
+        appVersion: '0.7.14'
       },
       {
         id: 'e2e-birch-spot',
@@ -105,7 +105,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T07:00:00.000Z',
         updatedAt: '2026-05-31T07:00:00.000Z',
-        appVersion: '0.7.13-hotfix.1'
+        appVersion: '0.7.14'
       }
     ];
 
@@ -141,6 +141,23 @@ test('app loads and bottom navigation switches screens', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Карта' }).click();
   await expect(page.locator('#screen-map')).toBeVisible();
+});
+
+test('offline maps screen presents map manager structure', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await expect(page.locator('#screen-offline')).toBeVisible();
+
+  await expect(page.getByRole('heading', { name: 'Мои карты' })).toBeVisible();
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Офлайн-карта не выбрана');
+  await expect(page.locator('#offlineMapEmptyState')).toContainText('Можно пользоваться GPS и сохранёнными точками');
+  await expect(page.getByRole('button', { name: 'Выбрать файл карты' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Предпросмотр офлайн-карты' })).toBeVisible();
+  await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Мои карты пока пусты');
+  await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
+  await expect(page.getByText('Диагностика карты')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Проверить выбранный PMTiles' })).toBeHidden();
 });
 
 test('group screen separates overview members live locations and chat empty states', async ({ page }) => {
@@ -188,7 +205,7 @@ test('leaving group clears persisted group after reload', async ({ page }) => {
   expect(persisted.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
 
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.14 · Sprint 5.14');
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
   await expect(page.locator('#groupId')).toHaveValue('');
@@ -235,7 +252,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.14 · Sprint 5.14');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -263,7 +280,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.14 · Sprint 5.14');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');

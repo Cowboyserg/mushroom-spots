@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.13-hotfix.1" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.13-hotfix.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.14" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.14" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.13-hotfix.1" />
+  <link rel="stylesheet" href="styles.css?v=0.7.14" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.13-hotfix.1 · Sprint 5.13.1</p>
+      <p id="appVersion">v0.7.14 · Sprint 5.14</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -338,69 +338,92 @@
     <section class="app-screen" id="screen-offline" data-app-screen="offline" aria-labelledby="screenTitleOffline" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleOffline">Офлайн-карты</h2>
-        <p class="hint">Выбор локального PMTiles, запомненные карты, preview и подготовка bbox-регионов.</p>
+        <p class="hint">Менеджер локальных карт для леса: выбери файл карты, дай ему понятное имя и используй точки/GPS даже при слабом интернете.</p>
       </div>
-    <section class="card offline-maps-card">
-      <div class="section-title">
-        <h2>Офлайн-карты</h2>
-        <div class="pill-row">
-          <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить manifest</button>
-          <button id="chooseLocalPmtilesBtn" class="secondary small-btn">Выбрать локальный PMTiles</button>
-          <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный PMTiles</button>
-          <button id="previewPmtilesBtn" class="secondary small-btn">Показать PMTiles preview</button>
+      <section class="card offline-maps-card">
+        <div class="section-title offline-manager-title">
+          <div>
+            <h2>Мои карты</h2>
+            <p class="hint">Главное название карты — то, которое ты задаёшь сам. Файл выбирается вручную и не загружается на сервер.</p>
+          </div>
+          <div class="pill-row">
+            <button id="chooseLocalPmtilesBtn" class="secondary small-btn">Выбрать файл карты</button>
+            <button id="previewPmtilesBtn" class="secondary small-btn">Предпросмотр офлайн-карты</button>
+          </div>
         </div>
-      </div>
-      <p class="hint">PMTiles остаётся отдельным preview-слоем: основная карта по-прежнему Leaflet + online raster. Реальный файл выбирается локально через системный файл-пикер и не хранится в приложении постоянно.</p>
-      <div class="offline-package-panel bbox-export-panel">
-        <div class="section-title compact-title">
-          <h3>Экспорт региона PMTiles</h3>
-          <span class="pill warn">bbox</span>
+        <div class="offline-current-card" aria-live="polite">
+          <span class="label">Текущая карта</span>
+          <strong id="currentOfflineMapStatus">Офлайн-карта не выбрана.</strong>
+          <p class="hint" id="offlineMapEmptyState">Офлайн-карта не выбрана. Можно пользоваться GPS и сохранёнными точками, но подложка карты может не загрузиться без интернета.</p>
         </div>
-        <p class="hint" id="bboxExportStatus">BBox: не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.</p>
-        <div class="row">
-          <button id="startBboxExportBtn" class="secondary small-btn">Выбрать прямоугольник</button>
-          <button id="useVisibleBboxBtn" class="secondary small-btn">Взять видимую область</button>
-          <button id="copyBboxCommandBtn" class="secondary small-btn">Скопировать команду</button>
-          <button id="clearBboxExportBtn" class="secondary small-btn">Сбросить bbox</button>
-        </div>
-        <textarea id="bboxCommandOutput" rows="3" readonly spellcheck="false" placeholder="Команда появится после выбора региона"></textarea>
-        <p class="hint">Формат: <code>WEST,SOUTH,EAST,NORTH</code>, то есть долгота/широта в порядке запад, юг, восток, север. Точность координат — 6 знаков после запятой.</p>
-      </div>
-      <div class="offline-package-panel">
-        <label for="offlinePackageSelect">PMTiles пакет</label>
-        <select id="offlinePackageSelect" aria-label="Выбор PMTiles пакета"></select>
+        <div id="rememberedPmtilesMapsList" class="remembered-map-list" role="list" aria-label="Мои офлайн-карты"></div>
         <input id="localPmtilesFileInput" type="file" accept=".pmtiles,application/octet-stream" hidden />
-        <p class="hint" id="offlinePackageManifestStatus">Manifest: не загружен.</p>
-        <p class="hint" id="localPmtilesFileStatus">Локальный файл: не выбран.</p>
-        <div class="field">
-          <label for="rememberedPmtilesMapSelect">Запомненные карты</label>
-          <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные PMTiles карты"></select>
+
+        <div class="offline-package-panel offline-name-panel">
+          <div class="field">
+            <label for="rememberedPmtilesMapNameInput">Название выбранной карты</label>
+            <input id="rememberedPmtilesMapNameInput" placeholder="Например: Лес у станции" />
+          </div>
+          <div class="row">
+            <button id="renameRememberedPmtilesMapBtn" class="secondary small-btn">Сохранить название</button>
+            <button id="forgetRememberedPmtilesMapBtn" class="secondary small-btn">Забыть карту</button>
+          </div>
+          <p class="hint" id="rememberedPmtilesMapStatus">Мои карты: пока нет.</p>
         </div>
-        <div class="field">
-          <label for="rememberedPmtilesMapNameInput">Название карты</label>
-          <input id="rememberedPmtilesMapNameInput" placeholder="Например: Лес у станции" />
+
+        <div class="offline-package-panel bbox-export-panel">
+          <div class="section-title compact-title">
+            <h3>Подготовить регион на компьютере</h3>
+            <span class="pill warn">регион</span>
+          </div>
+          <p class="hint" id="bboxExportStatus">Регион не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.</p>
+          <div class="row">
+            <button id="startBboxExportBtn" class="secondary small-btn">Выбрать прямоугольник</button>
+            <button id="useVisibleBboxBtn" class="secondary small-btn">Взять видимую область</button>
+            <button id="copyBboxCommandBtn" class="secondary small-btn">Скопировать команду</button>
+            <button id="clearBboxExportBtn" class="secondary small-btn">Сбросить регион</button>
+          </div>
+          <textarea id="bboxCommandOutput" rows="3" readonly spellcheck="false" placeholder="Команда появится после выбора региона"></textarea>
+          <p class="hint">Это подготовка отдельного регионального файла на компьютере. В приложение потом выбирается уже готовый файл карты.</p>
         </div>
-        <div class="row">
-          <button id="renameRememberedPmtilesMapBtn" class="secondary small-btn">Переименовать карту</button>
-          <button id="forgetRememberedPmtilesMapBtn" class="secondary small-btn">Забыть запись</button>
+
+        <details class="offline-package-panel offline-diagnostics-panel">
+          <summary>
+            <span>Диагностика карты</span>
+            <span class="pill warn">техническое</span>
+          </summary>
+          <p class="hint">Этот блок нужен для проверки PMTiles/manifest/Range/CORS. Обычный пользователь может пользоваться офлайн-картами без этих терминов.</p>
+          <div class="row">
+            <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить manifest карт</button>
+            <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный PMTiles</button>
+          </div>
+          <div class="field">
+            <label for="offlinePackageSelect">Технический пакет карты</label>
+            <select id="offlinePackageSelect" aria-label="Технический выбор PMTiles пакета"></select>
+          </div>
+          <div class="field compact-hidden-select">
+            <label for="rememberedPmtilesMapSelect">Технический список запомненных карт</label>
+            <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные PMTiles карты"></select>
+          </div>
+          <p class="hint" id="offlinePackageManifestStatus">Manifest: не загружен.</p>
+          <p class="hint" id="localPmtilesFileStatus">Файл карты: не выбран.</p>
+          <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
+        </details>
+
+        <div id="pmtilesPreviewPanel" class="pmtiles-preview-panel" hidden>
+          <div class="section-title compact-title">
+            <h3>Предпросмотр офлайн-карты</h3>
+            <span class="pill warn">эксперимент</span>
+          </div>
+          <p class="hint">Это отдельное окно предпросмотра. Основная карта приложения остаётся стабильной Leaflet-картой.</p>
+          <div class="row">
+            <button id="centerPmtilesOnMeBtn" class="secondary small-btn">Показать меня на офлайн-карте</button>
+          </div>
+          <div id="pmtilesPreviewMap" class="pmtiles-preview-map" aria-label="Предпросмотр офлайн-карты"></div>
+          <p id="pmtilesPreviewFocusStatus" class="hint">Фокус офлайн-карты: не выполнялся.</p>
+          <p id="pmtilesPreviewStatus" class="hint">Предпросмотр офлайн-карты: не запускался.</p>
         </div>
-        <p class="hint" id="rememberedPmtilesMapStatus">Запомненные карты: пока нет.</p>
-        <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
-      </div>
-      <p class="hint">Большие PMTiles не кладём в repo: их можно скачать как региональный пакет и выбрать локально. GitHub Release asset годится для скачивания пользователем, но не как live-источник PMTiles из браузера.</p>
-      <div id="pmtilesPreviewPanel" class="pmtiles-preview-panel" hidden>
-        <div class="section-title compact-title">
-          <h3>PMTiles preview</h3>
-          <span class="pill warn">эксперимент</span>
-        </div>
-        <div class="row">
-          <button id="centerPmtilesOnMeBtn" class="secondary small-btn">Показать меня на офлайн-карте</button>
-        </div>
-        <div id="pmtilesPreviewMap" class="pmtiles-preview-map" aria-label="Экспериментальный preview PMTiles"></div>
-        <p id="pmtilesPreviewFocusStatus" class="hint">Фокус PMTiles: не выполнялся.</p>
-        <p id="pmtilesPreviewStatus" class="hint">PMTiles preview: не запускался.</p>
-      </div>
-    </section>
+      </section>
     </section>
 
     <section class="app-screen" id="screen-settings" data-app-screen="settings" aria-labelledby="screenTitleSettings" hidden>
@@ -411,7 +434,7 @@
     <section class="card settings-summary-card">
       <div class="section-title">
         <h2>Настройки</h2>
-        <span class="pill">v0.7.13-hotfix.1 · Sprint 5.13.1</span>
+        <span class="pill">v0.7.14 · Sprint 5.14</span>
       </div>
       <p class="hint">Здесь собраны обслуживание, диагностика, версия и backup. Быстрый debug также остаётся доступен через кнопку “!” в верхней панели.</p>
       <label class="settings-toggle-row" for="showMapAdvancedToggle">
@@ -471,8 +494,8 @@
       <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
     </section>
     <section class="card">
-      <h2>Sprint 5.13.1</h2>
-      <p class="hint">Добавлена модель выбранного объекта карты: сохранённая точка, выбранное место, точка из чата и live-друг показываются как разные состояния с понятными действиями.</p>
+      <h2>Sprint 5.14</h2>
+      <p class="hint">Экран офлайн-карт стал менеджером карт: мои карты, текущая карта, понятный выбор файла, предпросмотр и диагностика спрятана в технический блок.</p>
     </section>
     </section>
   </main>
@@ -507,10 +530,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.13-hotfix.1"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.14"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.13-hotfix.1"></script>
-  <script src="app.js?v=0.7.13-hotfix.1"></script>
+  <script src="config.js?v=0.7.14"></script>
+  <script src="app.js?v=0.7.14"></script>
 </body>
 </html>
