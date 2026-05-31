@@ -175,6 +175,11 @@ function checkVersionedAppShellAssets() {
   }
 }
 
+function checkRuntimeStateDeclarations() {
+  const appJs = read('app.js');
+  assertIncludes(appJs, 'let selectedMapObject = null;', 'selectedMapObject runtime state declaration');
+}
+
 function checkDomIdContracts() {
   const indexHtml = read('index.html');
   const appJs = read('app.js');
@@ -285,6 +290,7 @@ checkGitignoreGuard();
 checkVersionConsistency();
 checkVersionedAppShellAssets();
 checkDomIdContracts();
+checkRuntimeStateDeclarations();
 checkServiceWorkerCacheRules();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();

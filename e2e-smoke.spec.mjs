@@ -24,7 +24,7 @@ async function bootApp(page) {
   });
 
   await page.goto('/');
-  await expect(page.locator('#appVersion')).toContainText('v0.7.11 · Sprint 5.11');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.11-hotfix.1 · Sprint 5.11.1');
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -57,7 +57,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T08:00:00.000Z',
         updatedAt: '2026-05-31T08:00:00.000Z',
-        appVersion: '0.7.11'
+        appVersion: '0.7.11-hotfix.1'
       },
       {
         id: 'e2e-chanterelle-spot',
@@ -71,7 +71,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T09:00:00.000Z',
         updatedAt: '2026-05-31T09:00:00.000Z',
-        appVersion: '0.7.11'
+        appVersion: '0.7.11-hotfix.1'
       },
       {
         id: 'e2e-birch-spot',
@@ -85,7 +85,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T07:00:00.000Z',
         updatedAt: '2026-05-31T07:00:00.000Z',
-        appVersion: '0.7.11'
+        appVersion: '0.7.11-hotfix.1'
       }
     ];
 
@@ -164,7 +164,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.11 · Sprint 5.11');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.11-hotfix.1 · Sprint 5.11.1');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -192,7 +192,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.11 · Sprint 5.11');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.11-hotfix.1 · Sprint 5.11.1');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');

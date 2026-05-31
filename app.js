@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.11';
+const APP_VERSION = '0.7.11-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -71,6 +71,7 @@ let spots = [];
 let spotMarkers = new Map();
 let selectedSpotId = null;
 let lastSavedSpotId = null;
+let selectedMapObject = null;
 let pickedMapPoint = null;
 let pickedMapPointMarker = null;
 let chatPreviewPointMarker = null;
@@ -6225,7 +6226,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.11`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.11.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
