@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.12" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.12" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.13" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.13" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.12" />
+  <link rel="stylesheet" href="styles.css?v=0.7.13" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.12 · Sprint 5.12</p>
+      <p id="appVersion">v0.7.13 · Sprint 5.13</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -237,75 +237,102 @@
     <section class="app-screen" id="screen-group" data-app-screen="group" aria-labelledby="screenTitleGroup" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleGroup">Группа</h2>
-        <p class="hint">Люди, live-позиция и чат группы собраны в одном экране.</p>
+        <p class="hint">Понятный экран: моя группа, участники, live-локации и чат не смешиваются.</p>
       </div>
-    <section class="card live-card">
-      <div class="section-title">
-        <h2>Участники группы</h2>
-        <div class="pill-row">
-          <span id="groupStatus" class="pill">не в группе</span>
-          <span id="liveStatus" class="pill">моя позиция скрыта</span>
+      <section class="card live-card group-overview-card" aria-labelledby="groupOverviewTitle">
+        <div class="section-title">
+          <h2 id="groupOverviewTitle">Моя группа</h2>
+          <div class="pill-row">
+            <span id="groupStatus" class="pill">не в группе</span>
+            <span id="liveStatus" class="pill">моя позиция скрыта</span>
+          </div>
         </div>
-      </div>
-      <p class="hint">Переход по приглашению открывает группу локально: имя и последняя группа запоминаются на этом телефоне, а синхронизация с Supabase догоняет при связи. Точка на карте появляется только после кнопки “Начать показ моей позиции”.</p>
-      <div class="field">
-        <label for="liveName">Моё имя</label>
-        <input id="liveName" placeholder="Например: Иван" />
-      </div>
-      <div class="people-panel">
-        <p class="hint" id="peopleHint">Локальный человек будет запомнен на этом устройстве.</p>
-        <div id="peopleProfiles" class="profile-chip-row"></div>
-        <div class="row profile-actions">
-          <button id="savePersonProfileBtn" class="secondary">Запомнить имя</button>
-          <button id="newPersonProfileBtn" class="secondary">Другой человек</button>
+        <div class="group-state-grid">
+          <div class="group-state-box">
+            <span>Статус группы</span>
+            <strong id="groupStateText">Ты не в группе</strong>
+            <p id="groupStateHint" class="hint">Создай группу или вставь ID от друга.</p>
+          </div>
+          <div class="group-state-box">
+            <span>Моя live-локация</span>
+            <strong id="myLiveStateText">Геопозиция не передаётся</strong>
+            <p id="myLiveStateHint" class="hint">Маркер на карте появится только после запуска live-позиции.</p>
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label for="groupId">ID группы</label>
-        <input id="groupId" placeholder="Создай группу или вставь ID от друга" />
-      </div>
-      <div class="row">
-        <button id="createGroupBtn" class="secondary">Создать группу</button>
-        <button id="copyInviteBtn" class="secondary">Скопировать приглашение</button>
-        <button id="joinGroupBtn" class="secondary">Войти в группу</button>
-        <button id="leaveGroupBtn" class="secondary">Выйти из группы</button>
-      </div>
-      <div class="row live-actions">
-        <button id="startLiveBtn">Начать показ моей позиции</button>
-        <button id="stopLiveBtn" class="danger">Остановить мою позицию</button>
-        <button id="refreshFriendsBtn" class="secondary">Обновить участников</button>
-        <button id="testSupabaseBtn" class="secondary">Проверить Supabase</button>
-      </div>
-      <div id="friendsList" class="friends-list"></div>
-      <p class="hint" id="liveHint">Для live-режима нужен Supabase URL и anon public key в файле config.js.</p>
-    </section>
-    <section class="card chat-card">
-      <div class="section-title">
-        <h2>Чат группы</h2>
-        <div class="pill-row">
-          <span id="chatStatus" class="pill">чат недоступен</span>
-          <span class="pill">последние 50</span>
+        <div class="field">
+          <label for="liveName">Моё имя</label>
+          <input id="liveName" placeholder="Например: Иван" />
         </div>
-      </div>
-      <p class="hint">Сообщения видны всем, кто знает ID группы. Точки из чата показываются кликабельными карточками: нажми карточку, чтобы перейти к точке на карте. В этом MVP правка и удаление своих сообщений определяются по локальному user_id этого браузера.</p>
-      <div id="groupChatList" class="chat-list">
-        <p class="hint">Чат появится после входа в группу.</p>
-      </div>
-      <div class="field">
-        <label for="chatMessageInput">Сообщение</label>
-        <textarea id="chatMessageInput" rows="3" maxlength="300" placeholder="Напиши сообщение группе…"></textarea>
-        <div class="chat-meta">
-          <span id="chatMessageCounter" class="chat-counter">0/300</span>
-          <span id="chatEditState" class="pill" hidden>режим правки</span>
+        <div class="people-panel">
+          <p class="hint" id="peopleHint">Локальный человек будет запомнен на этом устройстве.</p>
+          <div id="peopleProfiles" class="profile-chip-row"></div>
+          <div class="row profile-actions">
+            <button id="savePersonProfileBtn" class="secondary">Запомнить имя</button>
+            <button id="newPersonProfileBtn" class="secondary">Другой человек</button>
+          </div>
         </div>
-      </div>
-      <div class="row chat-actions">
-        <button id="chatSendBtn">Отправить</button>
-        <button id="chatRefreshBtn" class="secondary">Обновить</button>
-        <button id="chatCancelEditBtn" class="secondary" hidden>Отменить правку</button>
-      </div>
-      <p class="hint" id="chatHint">Для чата нужен Supabase и текущий ID группы.</p>
-    </section>
+        <div class="field">
+          <label for="groupId">ID группы</label>
+          <input id="groupId" placeholder="Создай группу или вставь ID от друга" />
+        </div>
+        <div class="row group-actions">
+          <button id="createGroupBtn" class="secondary">Создать группу</button>
+          <button id="copyInviteBtn" class="secondary">Скопировать приглашение</button>
+          <button id="joinGroupBtn" class="secondary">Войти в группу</button>
+          <button id="leaveGroupBtn" class="secondary">Выйти из группы</button>
+        </div>
+        <p class="hint" id="groupHint">Группа может открыться локально даже без сети; синхронизация догонит при связи.</p>
+      </section>
+      <section class="card group-members-card" aria-labelledby="groupMembersTitle">
+        <div class="section-title">
+          <h2 id="groupMembersTitle">Участники</h2>
+          <span id="groupMembersStatus" class="pill">нет данных</span>
+        </div>
+        <p class="hint" id="groupMembersHint">Участники показывают, кто есть в группе. Сама запись участника не создаёт маркер на карте.</p>
+        <div id="friendsList" class="friends-list"></div>
+      </section>
+      <section class="card live-locations-card" aria-labelledby="liveLocationsTitle">
+        <div class="section-title">
+          <h2 id="liveLocationsTitle">Live-локации</h2>
+          <span id="liveLocationsStatus" class="pill">нет live-данных</span>
+        </div>
+        <p class="hint" id="liveLocationsHint">На карте появляются только активные live-локации из Supabase, а не все участники группы.</p>
+        <div class="row live-actions">
+          <button id="startLiveBtn">Начать показ моей позиции</button>
+          <button id="stopLiveBtn" class="danger">Остановить мою позицию</button>
+          <button id="refreshFriendsBtn" class="secondary">Обновить участников</button>
+          <button id="testSupabaseBtn" class="secondary">Проверить Supabase</button>
+        </div>
+        <div id="liveLocationsList" class="friends-list live-locations-list"></div>
+        <p class="hint" id="liveHint">Для live-режима нужен Supabase URL и anon public key в файле config.js.</p>
+      </section>
+      <section class="card chat-card" aria-labelledby="groupChatTitle">
+        <div class="section-title">
+          <h2 id="groupChatTitle">Чат</h2>
+          <div class="pill-row">
+            <span id="chatStatus" class="pill">чат недоступен</span>
+            <span class="pill">последние 50</span>
+          </div>
+        </div>
+        <p class="hint">Сообщения видны всем, кто знает ID группы. Точки из чата показываются кликабельными карточками: нажми карточку, чтобы перейти к точке на карте.</p>
+        <div id="groupChatList" class="chat-list">
+          <p class="hint">Чат появится после входа в группу.</p>
+        </div>
+        <div class="field">
+          <label for="chatMessageInput">Сообщение</label>
+          <textarea id="chatMessageInput" rows="3" maxlength="300" placeholder="Напиши сообщение группе…"></textarea>
+          <div class="chat-meta">
+            <span id="chatMessageCounter" class="chat-counter">0/300</span>
+            <span id="chatEditState" class="pill" hidden>режим правки</span>
+          </div>
+        </div>
+        <div class="row chat-actions">
+          <button id="chatSendBtn">Отправить</button>
+          <button id="chatRefreshBtn" class="secondary">Обновить</button>
+          <button id="chatCancelEditBtn" class="secondary" hidden>Отменить правку</button>
+        </div>
+        <p class="hint" id="chatHint">Для чата нужен Supabase и текущий ID группы.</p>
+      </section>
     </section>
 
     <section class="app-screen" id="screen-offline" data-app-screen="offline" aria-labelledby="screenTitleOffline" hidden>
@@ -384,7 +411,7 @@
     <section class="card settings-summary-card">
       <div class="section-title">
         <h2>Настройки</h2>
-        <span class="pill">v0.7.12 · Sprint 5.12</span>
+        <span class="pill">v0.7.13 · Sprint 5.13</span>
       </div>
       <p class="hint">Здесь собраны обслуживание, диагностика, версия и backup. Быстрый debug также остаётся доступен через кнопку “!” в верхней панели.</p>
       <label class="settings-toggle-row" for="showMapAdvancedToggle">
@@ -444,7 +471,7 @@
       <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
     </section>
     <section class="card">
-      <h2>Sprint 5.12</h2>
+      <h2>Sprint 5.13</h2>
       <p class="hint">Добавлена модель выбранного объекта карты: сохранённая точка, выбранное место, точка из чата и live-друг показываются как разные состояния с понятными действиями.</p>
     </section>
     </section>
@@ -480,10 +507,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.12"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.13"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.12"></script>
-  <script src="app.js?v=0.7.12"></script>
+  <script src="config.js?v=0.7.13"></script>
+  <script src="app.js?v=0.7.13"></script>
 </body>
 </html>

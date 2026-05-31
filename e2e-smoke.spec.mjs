@@ -24,7 +24,7 @@ async function bootApp(page) {
   });
 
   await page.goto('/');
-  await expect(page.locator('#appVersion')).toContainText('v0.7.12 · Sprint 5.12');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13 · Sprint 5.13');
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -57,7 +57,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T08:00:00.000Z',
         updatedAt: '2026-05-31T08:00:00.000Z',
-        appVersion: '0.7.12'
+        appVersion: '0.7.13'
       },
       {
         id: 'e2e-chanterelle-spot',
@@ -71,7 +71,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T09:00:00.000Z',
         updatedAt: '2026-05-31T09:00:00.000Z',
-        appVersion: '0.7.12'
+        appVersion: '0.7.13'
       },
       {
         id: 'e2e-birch-spot',
@@ -85,7 +85,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T07:00:00.000Z',
         updatedAt: '2026-05-31T07:00:00.000Z',
-        appVersion: '0.7.12'
+        appVersion: '0.7.13'
       }
     ];
 
@@ -121,6 +121,28 @@ test('app loads and bottom navigation switches screens', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Карта' }).click();
   await expect(page.locator('#screen-map')).toBeVisible();
+});
+
+test('group screen separates overview members live locations and chat empty states', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await expect(page.locator('#screen-group')).toBeVisible();
+
+  await expect(page.getByRole('heading', { name: 'Моя группа' })).toBeVisible();
+  await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
+  await expect(page.locator('#myLiveStateText')).toContainText('Геопозиция не передаётся');
+
+  await expect(page.getByRole('heading', { name: 'Участники' })).toBeVisible();
+  await expect(page.locator('#groupMembersHint')).toContainText('не создаёт маркер');
+  await expect(page.locator('#friendsList')).toContainText('Открой приглашение');
+
+  await expect(page.getByRole('heading', { name: 'Live-локации' })).toBeVisible();
+  await expect(page.locator('#liveLocationsHint')).toContainText('только активные live-локации');
+  await expect(page.locator('#liveLocationsList')).toContainText('Live-локации появятся');
+
+  await expect(page.getByRole('heading', { name: 'Чат' })).toBeVisible();
+  await expect(page.locator('#groupChatList')).toContainText('Чат появится после входа в группу');
 });
 
 test('selected map point can be saved without GPS and save action stays inside spot form', async ({ page }) => {
@@ -164,7 +186,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.12 · Sprint 5.12');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13 · Sprint 5.13');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -192,7 +214,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.12 · Sprint 5.12');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13 · Sprint 5.13');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');

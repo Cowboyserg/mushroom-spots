@@ -1077,3 +1077,59 @@ body {
     gap: 3px;
   }
 }
+
+/* Sprint 5.13 group screen UX. */
+.group-overview-card,
+.group-members-card,
+.live-locations-card,
+.chat-card {
+  scroll-margin-top: 12px;
+}
+.group-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+.group-state-box {
+  border: 1px solid rgba(36,75,47,.14);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(36,75,47,.04);
+}
+.group-state-box span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.group-state-box strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.group-members-card .pill.on,
+.live-locations-card .pill.on {
+  background:#dff2df;
+  color:#1f612e;
+}
+.group-members-card .pill.warn,
+.live-locations-card .pill.warn {
+  background:#fff1c2;
+  color:#705000;
+}
+.group-member-item {
+  border-left: 4px solid rgba(36,75,47,.28);
+}
+.live-location-item {
+  border-left: 4px solid rgba(240,138,36,.54);
+  cursor: pointer;
+}
+.live-location-item:active {
+  transform: translateY(1px);
+}
+@media (max-width: 560px) {
+  .group-state-grid {
+    grid-template-columns: 1fr;
+  }
+}

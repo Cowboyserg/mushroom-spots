@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.12';
+const APP_VERSION = '0.7.13';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -5057,6 +5057,7 @@ function updateLiveUi() {
     $('liveStatus').className = liveEnabled ? 'pill on' : 'pill';
     if (!getSupabaseConfig()) $('liveStatus').className = 'pill warn';
   }
+  updateGroupScreenUi();
   updateDbCleanupUi();
   updateChatUi();
   updateActionButtonsUi();
@@ -5184,7 +5185,9 @@ async function leaveGroup() {
   clearInterval(friendsTimer);
   friendsTimer = null;
   clearFriendMarkers();
-  $('friendsList').innerHTML = '<p class="hint">Ты вышел из группы.</p>';
+  if ($('friendsList')) $('friendsList').innerHTML = '<p class="hint">Ты вышел из группы.</p>';
+  if ($('liveLocationsList')) $('liveLocationsList').innerHTML = '<p class="hint">Live-локации скрыты после выхода из группы.</p>';
+  updateGroupScreenUi(0, 0);
   $('groupId').value = '';
   localStorage.removeItem('mushroom_live_group_id');
   updateLiveUi();
@@ -5349,7 +5352,9 @@ async function cleanCurrentGroupDbRows() {
   const encodedGroup = encodeURIComponent(group);
   await deleteLiveRows(`group_id=eq.${encodedGroup}`, 'Очистка текущей группы');
   clearFriendMarkers();
-  $('friendsList').innerHTML = '<p class="hint">Текущая группа очищена в БД.</p>';
+  if ($('friendsList')) $('friendsList').innerHTML = '<p class="hint">Текущая группа очищена в БД.</p>';
+    if ($('liveLocationsList')) $('liveLocationsList').innerHTML = '<p class="hint">Live-локации текущей группы очищены.</p>';
+    updateGroupScreenUi(0, 0);
   updateLiveUi();
   updateDbCleanupUi();
 }
@@ -5373,6 +5378,89 @@ function currentGroupId() {
 
 function currentChatName() {
   return $('liveName')?.value?.trim() || 'Без имени';
+}
+
+
+function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fromCache = false) {
+  const hasSupabase = Boolean(getSupabaseConfig());
+  const group = currentGroupId();
+  const name = currentChatName();
+
+  if ($('groupStateText')) {
+    if (!group) {
+      $('groupStateText').textContent = 'Ты не в группе';
+    } else if (groupJoined && memberSyncPending) {
+      $('groupStateText').textContent = 'Ты в группе локально';
+    } else if (groupJoined) {
+      $('groupStateText').textContent = `Ты в группе${name && name !== 'Без имени' ? ` как ${name}` : ''}`;
+    } else {
+      $('groupStateText').textContent = 'Группа выбрана, вход не выполнен';
+    }
+  }
+  if ($('groupStateHint')) {
+    if (!hasSupabase) {
+      $('groupStateHint').textContent = 'Группа может открыться локально, но синхронизация участников и чат требуют config.js с Supabase.';
+    } else if (!group) {
+      $('groupStateHint').textContent = 'Создай группу или вставь ID от друга.';
+    } else if (groupJoined) {
+      $('groupStateHint').textContent = `ID группы: ${group}. Участники и чат привязаны к этому ID.`;
+    } else {
+      $('groupStateHint').textContent = 'Нажми “Войти в группу”, чтобы видеть участников и чат.';
+    }
+  }
+  if ($('myLiveStateText')) {
+    $('myLiveStateText').textContent = liveEnabled ? 'Геопозиция передаётся' : 'Геопозиция не передаётся';
+  }
+  if ($('myLiveStateHint')) {
+    if (liveEnabled) {
+      $('myLiveStateHint').textContent = 'Друзья увидят твою live-точку, пока есть связь и GPS.';
+    } else if (groupJoined) {
+      $('myLiveStateHint').textContent = 'Ты видишь группу, но твой маркер не появляется у друзей до запуска live-позиции.';
+    } else {
+      $('myLiveStateHint').textContent = 'Сначала войди в группу. Маркер на карте появляется только из live_locations.';
+    }
+  }
+  if ($('groupHint')) {
+    $('groupHint').textContent = groupJoined
+      ? 'Группа активна. Участники и live-локации разделены: участник без live-координат не создаёт маркер на карте.'
+      : 'Группа может открыться локально даже без сети; синхронизация догонит при связи.';
+  }
+  if ($('groupMembersStatus')) {
+    if (memberCount === null) {
+      $('groupMembersStatus').textContent = groupJoined ? 'ожидаю данные' : 'нет группы';
+      $('groupMembersStatus').className = groupJoined ? 'pill warn' : 'pill';
+    } else {
+      $('groupMembersStatus').textContent = memberCount ? `${memberCount} участн.` : 'нет участников';
+      $('groupMembersStatus').className = memberCount ? (fromCache ? 'pill warn' : 'pill on') : 'pill';
+    }
+  }
+  if ($('groupMembersHint')) {
+    $('groupMembersHint').textContent = fromCache
+      ? 'Показан локальный кэш участников. Он может быть устаревшим.'
+      : 'Участники показывают, кто есть в группе. Сама запись участника не создаёт маркер на карте.';
+  }
+  if ($('liveLocationsStatus')) {
+    if (activeLocationCount === null) {
+      $('liveLocationsStatus').textContent = groupJoined ? 'ожидаю live' : 'нет live-данных';
+      $('liveLocationsStatus').className = 'pill';
+    } else {
+      $('liveLocationsStatus').textContent = activeLocationCount ? `${activeLocationCount} на карте` : 'нет live-данных';
+      $('liveLocationsStatus').className = activeLocationCount ? 'pill on' : 'pill';
+    }
+  }
+  if ($('liveLocationsHint')) {
+    $('liveLocationsHint').textContent = 'На карте появляются только активные live-локации из Supabase, а не все участники группы.';
+  }
+  if ($('friendsList') && !$('friendsList').children.length) {
+    $('friendsList').innerHTML = groupJoined
+      ? '<p class="hint">В группе пока нет участников. Если связи нет, список появится из кэша после первого успешного обновления.</p>'
+      : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
+  }
+  if ($('liveLocationsList') && !$('liveLocationsList').children.length) {
+    $('liveLocationsList').innerHTML = groupJoined
+      ? '<p class="hint">Нет активных live-локаций. Участники без live-координат не создают маркеры на карте.</p>'
+      : '<p class="hint">Live-локации появятся после входа в группу и запуска передачи позиции у участников.</p>';
+  }
 }
 
 function setChatHint(text, isError = false) {
@@ -5926,8 +6014,11 @@ async function fetchFriends() {
 }
 
 function renderFriends(data) {
-  const list = $('friendsList');
-  list.innerHTML = '';
+  const memberList = $('friendsList');
+  const liveList = $('liveLocationsList');
+  if (memberList) memberList.innerHTML = '';
+  if (liveList) liveList.innerHTML = '';
+
   const locations = Array.isArray(data) ? data : (data?.locations || []);
   const members = Array.isArray(data) ? [] : (data?.members || []);
   const fromCache = Boolean(data && !Array.isArray(data) && data.fromCache);
@@ -5968,6 +6059,8 @@ function renderFriends(data) {
     const memberAgeMs = member ? now - new Date(member.last_seen_at || member.updated_at).getTime() : Infinity;
     const hasActiveLocation = Boolean(loc) && locAgeMs <= 5 * 60 * 1000;
     const isPresent = Boolean(member) && memberAgeMs <= 10 * 60 * 1000;
+    const suffix = row.userId === myId ? ' · я' : '';
+
     if (hasActiveLocation) {
       activeLocationCount += 1;
       if (row.userId !== myId && loc) previewLiveRows.push(row);
@@ -5989,21 +6082,30 @@ function renderFriends(data) {
       }
     }
 
-    const item = document.createElement('div');
-    item.className = `friend-item ${loc && !hasActiveLocation ? 'friend-stale' : ''} ${fromCache ? 'friend-cached' : ''}`;
-    const suffix = row.userId === myId ? ' · я' : '';
-    let meta;
-    if (loc) {
-      const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
-      meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
-      item.onclick = () => selectLiveFriendMapObject(row);
-    } else if (fromCache) {
-      meta = `из кэша · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)} · кэш: ${fmtDate(cachedAt)}`;
-    } else {
-      meta = `${isPresent ? 'в группе' : 'давно не обновлялся'} · позиция скрыта<br>Последний сигнал: ${fmtDate(member?.last_seen_at || member?.updated_at)}`;
+    if (memberList) {
+      const memberItem = document.createElement('div');
+      memberItem.className = `friend-item group-member-item ${fromCache ? 'friend-cached' : ''}`;
+      let memberMeta;
+      if (member) {
+        memberMeta = `${isPresent ? 'в группе' : 'давно не обновлялся'} · позиция ${hasActiveLocation ? 'передаётся' : 'скрыта'}<br>Последний сигнал: ${fmtDate(member.last_seen_at || member.updated_at)}`;
+      } else if (loc) {
+        memberMeta = `есть live-локация, но запись участника не получена<br>Обновлено: ${fmtDate(loc.updated_at)}`;
+      } else {
+        memberMeta = 'нет данных';
+      }
+      memberItem.innerHTML = `<div><div class="friend-name">${escapeHtml(row.name)}${suffix}</div><div class="friend-meta">${memberMeta}</div></div>`;
+      memberList.appendChild(memberItem);
     }
-    item.innerHTML = `<div><div class="friend-name">${escapeHtml(row.name)}${suffix}</div><div class="friend-meta">${meta}</div></div>`;
-    list.appendChild(item);
+
+    if (liveList && loc) {
+      const liveItem = document.createElement('div');
+      liveItem.className = `friend-item live-location-item ${!hasActiveLocation ? 'friend-stale' : ''} ${fromCache ? 'friend-cached' : ''}`;
+      const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, loc)) : '—';
+      const meta = `${hasActiveLocation ? 'позиция на карте' : 'позиция устарела'} · ${fmtDate(loc.updated_at)}<br>Расстояние: ${dist} · GPS: ${meters(loc.accuracy)}`;
+      liveItem.innerHTML = `<div><div class="friend-name">${escapeHtml(row.name)}${suffix}</div><div class="friend-meta">${meta}</div></div>`;
+      liveItem.onclick = () => selectLiveFriendMapObject(row);
+      liveList.appendChild(liveItem);
+    }
   }
 
   for (const [id, marker] of friendMarkers.entries()) {
@@ -6016,26 +6118,36 @@ function renderFriends(data) {
     clearSelectedMapObjectOnly();
   }
 
-  if (!rows.length) {
-    list.innerHTML = groupJoined ? '<p class="hint">В группе пока нет участников. Если связи нет, список появится из кэша после первого успешного обновления.</p>' : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
+  if (memberList && !rows.length) {
+    memberList.innerHTML = groupJoined
+      ? '<p class="hint">В группе пока нет участников. Если связи нет, список появится из кэша после первого успешного обновления.</p>'
+      : '<p class="hint">Открой приглашение или нажми “Войти в группу”.</p>';
   }
+  if (liveList && activeLocationCount === 0) {
+    liveList.innerHTML = groupJoined
+      ? '<p class="hint">Нет активных live-локаций. Участники без live-координат не создают маркеры на карте.</p>'
+      : '<p class="hint">Live-локации появятся после входа в группу и запуска передачи позиции у участников.</p>';
+  }
+
   safeInvalidateMap(0, 'render/update');
   pmtilesPreviewLiveRows = previewLiveRows;
   renderPmtilesPreviewUserLayers('live friends mirrored to PMTiles preview');
 
-  if (rows.length && fromCache) {
+  if (rows.length && fromCache && memberList) {
     const cacheNote = document.createElement('p');
     cacheNote.className = 'hint';
     cacheNote.textContent = `Показан локальный кэш участников. Он может быть устаревшим; последнее успешное обновление: ${fmtDate(cachedAt)}.`;
-    list.appendChild(cacheNote);
+    memberList.appendChild(cacheNote);
   }
 
-  if (rows.length && activeLocationCount === 0 && !fromCache) {
+  if (rows.length && activeLocationCount === 0 && !fromCache && liveList) {
     const note = document.createElement('p');
     note.className = 'hint';
     note.textContent = 'В группе есть участники, но сейчас ни у кого нет активной позиции на карте.';
-    list.appendChild(note);
+    liveList.appendChild(note);
   }
+
+  updateGroupScreenUi(rows.length, activeLocationCount, fromCache);
 }
 
 async function refreshFriends() {
@@ -6228,7 +6340,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.12`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.13`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
