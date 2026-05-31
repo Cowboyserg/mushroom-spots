@@ -156,7 +156,7 @@ test('offline maps screen presents map manager structure', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Предпросмотр офлайн-карты' })).toBeVisible();
   await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Мои карты пока пусты');
   await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
-  await expect(page.getByText('Диагностика карты')).toBeVisible();
+  await expect(page.locator('.offline-diagnostics-panel > summary').getByText('Диагностика карты', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить выбранный PMTiles' })).toBeHidden();
 });
 
