@@ -1,13 +1,18 @@
 {
   "name": "mushroom-spots-pwa",
-  "version": "0.7.9-hotfix.3",
+  "version": "0.7.10",
   "private": true,
   "type": "module",
   "scripts": {
-    "check:syntax": "node --check app.js && node --check sw.js && node --check leaflet-offline-lite.js && node --check geo.js && node --check export.js && node --check map.js && node --check db.js && node --check ci-checks.mjs && node --check package-checks.mjs && node --check geo.test.mjs",
+    "check:syntax": "node --check app.js && node --check sw.js && node --check leaflet-offline-lite.js && node --check geo.js && node --check export.js && node --check map.js && node --check db.js && node --check ci-checks.mjs && node --check package-checks.mjs && node --check geo.test.mjs && node --check serve-static.mjs && node --check playwright.config.mjs && node --check e2e-smoke.spec.mjs",
     "check:source": "node ci-checks.mjs",
     "check:package": "node package-checks.mjs",
     "test": "node --test geo.test.mjs",
-    "ci": "npm run check:syntax && npm run check:source && npm test"
+    "ci": "npm run check:syntax && npm run check:source && npm test",
+    "test:e2e": "playwright test",
+    "ci:e2e": "npm run ci && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }

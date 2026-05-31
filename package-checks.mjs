@@ -15,6 +15,9 @@ const REPO_ONLY_NAMES = new Set([
   '.git',
   '.github',
   '__MACOSX',
+  'node_modules',
+  'test-results',
+  'playwright-report',
   'offline-test.pmtiles',
   'offline-map-packages.json',
   '.DS_Store',
@@ -38,6 +41,10 @@ const REQUIRED_PACKAGE_FILES = [
   'ci-checks.mjs',
   'package-checks.mjs',
   'geo.test.mjs',
+  'package-lock.json',
+  'serve-static.mjs',
+  'playwright.config.mjs',
+  'e2e-smoke.spec.mjs',
 ];
 
 function walk(dir, result = []) {

@@ -6,7 +6,7 @@ const ROOT = new URL('.', import.meta.url).pathname;
 const ALLOWED_PMTILES_FIXTURES = new Map([
   ['offline-test.pmtiles', 5 * 1024 * 1024],
 ]);
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '__MACOSX']);
+const IGNORED_DIRS = new Set(['.git', 'node_modules', '__MACOSX', 'test-results', 'playwright-report']);
 
 function pathExists(path) {
   return existsSync(join(ROOT, path));
@@ -87,6 +87,10 @@ function checkRequiredProjectFiles() {
     'ci-checks.mjs',
     'package-checks.mjs',
     'geo.test.mjs',
+    'package-lock.json',
+    'serve-static.mjs',
+    'playwright.config.mjs',
+    'e2e-smoke.spec.mjs',
   ]) {
     assert.ok(pathExists(path), `Required project file is missing: ${path}`);
   }
@@ -223,6 +227,29 @@ function checkServiceWorkerCacheRules() {
   assertIncludes(swJs, "cache: 'reload'", 'Service Worker Android app-shell reload fetch');
 }
 
+function checkDependencyAndLockfilePolicy() {
+  const packageJson = JSON.parse(read('package.json'));
+  const hasDependencies = Boolean(
+    Object.keys(packageJson.dependencies || {}).length ||
+    Object.keys(packageJson.devDependencies || {}).length
+  );
+
+  if (hasDependencies) {
+    assert.ok(pathExists('package-lock.json'), 'package-lock.json is required when package.json has dependencies');
+    const lock = JSON.parse(read('package-lock.json'));
+    assert.equal(lock.name, packageJson.name, 'package-lock.json name must match package.json');
+    assert.equal(lock.version, packageJson.version, 'package-lock.json version must match package.json');
+    assertIncludes(read('package-lock.json'), 'https://registry.npmjs.org/', 'package-lock public npm registry URLs');
+  }
+
+  if (packageJson.devDependencies?.['@playwright/test']) {
+    assert.ok(pathExists('playwright.config.mjs'), 'Playwright config is required when @playwright/test is installed');
+    assert.ok(pathExists('e2e-smoke.spec.mjs'), 'Playwright smoke spec is required when @playwright/test is installed');
+    assertIncludes(JSON.stringify(packageJson.scripts || {}), 'playwright test', 'Playwright test script');
+    assertIncludes(JSON.stringify(packageJson.scripts || {}), 'npm run ci && npm run test:e2e', 'E2E CI script');
+  }
+}
+
 function checkWorkflowTemplate() {
   const workflowCandidates = [
     '.github/workflows/ci.yml',
@@ -236,10 +263,12 @@ function checkWorkflowTemplate() {
   }
 
   const workflow = read(workflowPath);
-  assertIncludes(workflow, 'actions/checkout@v4', 'GitHub Actions checkout step');
-  assertIncludes(workflow, 'actions/setup-node@v4', 'GitHub Actions Node setup step');
+  assert.ok(/actions\/checkout@v[4-9]/.test(workflow), 'GitHub Actions checkout step must use a supported major version');
+  assert.ok(/actions\/setup-node@v[4-9]/.test(workflow), 'GitHub Actions Node setup step must use a supported major version');
   assertIncludes(workflow, 'node-version: "22"', 'GitHub Actions Node version');
-  assertIncludes(workflow, 'npm run ci', 'GitHub Actions CI command');
+  assertIncludes(workflow, 'npm ci', 'GitHub Actions dependency install command');
+  assertIncludes(workflow, 'npx playwright install --with-deps chromium', 'GitHub Actions Playwright browser install command');
+  assertIncludes(workflow, 'npm run ci:e2e', 'GitHub Actions E2E CI command');
 }
 
 function checkNoUnexpectedBinaryFixtures() {
@@ -257,6 +286,7 @@ checkVersionConsistency();
 checkVersionedAppShellAssets();
 checkDomIdContracts();
 checkServiceWorkerCacheRules();
+checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();
 
