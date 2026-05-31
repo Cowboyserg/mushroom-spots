@@ -6,7 +6,7 @@ const ROOT = new URL('.', import.meta.url).pathname;
 const ALLOWED_PMTILES_FIXTURES = new Map([
   ['offline-test.pmtiles', 5 * 1024 * 1024],
 ]);
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '__MACOSX', 'test-results', 'playwright-report']);
+const IGNORED_DIRS = new Set(['.git', 'node_modules', '__MACOSX', 'test-results', 'playwright-report', 'blob-report', '.playwright']);
 
 function pathExists(path) {
   return existsSync(join(ROOT, path));
@@ -252,6 +252,12 @@ function checkDependencyAndLockfilePolicy() {
     assert.ok(pathExists('e2e-smoke.spec.mjs'), 'Playwright smoke spec is required when @playwright/test is installed');
     assertIncludes(JSON.stringify(packageJson.scripts || {}), 'playwright test', 'Playwright test script');
     assertIncludes(JSON.stringify(packageJson.scripts || {}), 'npm run ci && npm run test:e2e', 'E2E CI script');
+    const playwrightConfig = read('playwright.config.mjs');
+    assertIncludes(playwrightConfig, "name: 'desktop-chromium'", 'Playwright desktop project');
+    assertIncludes(playwrightConfig, "name: 'android-chromium'", 'Playwright Android project');
+    assertIncludes(playwrightConfig, "name: 'iphone-webkit'", 'Playwright iPhone project');
+    assertIncludes(playwrightConfig, "devices['Pixel 5']", 'Playwright Android device profile');
+    assertIncludes(playwrightConfig, "devices['iPhone 13']", 'Playwright iPhone device profile');
   }
 }
 
@@ -272,7 +278,7 @@ function checkWorkflowTemplate() {
   assert.ok(/actions\/setup-node@v[4-9]/.test(workflow), 'GitHub Actions Node setup step must use a supported major version');
   assertIncludes(workflow, 'node-version: "22"', 'GitHub Actions Node version');
   assertIncludes(workflow, 'npm ci', 'GitHub Actions dependency install command');
-  assertIncludes(workflow, 'npx playwright install --with-deps chromium', 'GitHub Actions Playwright browser install command');
+  assertIncludes(workflow, 'npx playwright install --with-deps chromium webkit', 'GitHub Actions Playwright browser install command');
   assertIncludes(workflow, 'npm run ci:e2e', 'GitHub Actions E2E CI command');
 }
 

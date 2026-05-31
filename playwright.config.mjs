@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT || 4173);
 const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
+const chromiumLaunchOptions = chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : {};
 
 export default defineConfig({
   testDir: '.',
@@ -19,10 +20,26 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'desktop-chromium',
       use: {
         ...devices['Desktop Chrome'],
-        launchOptions: chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : {}
+        browserName: 'chromium',
+        launchOptions: chromiumLaunchOptions
+      }
+    },
+    {
+      name: 'android-chromium',
+      use: {
+        ...devices['Pixel 5'],
+        browserName: 'chromium',
+        launchOptions: chromiumLaunchOptions
+      }
+    },
+    {
+      name: 'iphone-webkit',
+      use: {
+        ...devices['iPhone 13'],
+        browserName: 'webkit'
       }
     }
   ],
