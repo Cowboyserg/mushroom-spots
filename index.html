@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.15-hotfix.2" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.15-hotfix.2" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.16-hotfix.1" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.16-hotfix.1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.15-hotfix.2" />
+  <link rel="stylesheet" href="styles.css?v=0.7.16-hotfix.1" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.15-hotfix.2 · Sprint 5.15.2</p>
+      <p id="appVersion">v0.7.16-hotfix.1 · Sprint 5.16.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -172,8 +172,8 @@
           </div>
           <p class="hint">Браузерная PWA не получает число спутников напрямую. Для оценки качества сигнала используй поле “Точность”: меньше метров — лучше.</p>
           <div class="pill-row map-provider-pills">
-            <span id="offlineMapStatusPill" class="pill warn">Карта: офлайн-пакет не установлен</span>
-            <span id="pmtilesRuntimeStatusPill" class="pill warn">PMTiles: не проверено</span>
+            <span id="offlineMapStatusPill" class="pill warn">Файл офлайн-карты не выбран</span>
+            <span id="pmtilesRuntimeStatusPill" class="pill warn">Файл карты: не проверен</span>
           </div>
           <div class="row map-secondary-actions">
             <button id="sharePickedMapPointToChatBtn" class="secondary">Отправить выбранную точку в чат</button>
@@ -182,7 +182,7 @@
             <button id="repairMapBtn" class="secondary">Починить карту</button>
           </div>
           <p class="hint" id="saveHint">GPS-кнопка сохраняет текущую позицию. Кнопка “Сохранить выбранную точку” сохраняет координаты, выбранные долгим нажатием на карте.</p>
-          <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие PMTiles не кладём в repo: их можно скачать из Release asset и выбрать локально через системный файл-пикер. Названия локальных карт запоминаются на устройстве. Сам .pmtiles файл пока нужно выбирать заново после перезапуска PWA.</p>
+          <p class="hint" id="mapHint">Если карта выглядит серой или тайлы стоят кусками, нажми “Починить карту” или открой диагностику “!”. Большие файлы офлайн-карт не кладём в репозиторий: их можно скачать отдельно и выбрать локально через системный файл-пикер. Названия локальных карт запоминаются на устройстве. Сам файл карты пока нужно выбирать заново после перезапуска PWA.</p>
         </section>
       </section>
     </section>
@@ -296,15 +296,15 @@
           <h2 id="liveLocationsTitle">Live-локации</h2>
           <span id="liveLocationsStatus" class="pill">нет live-данных</span>
         </div>
-        <p class="hint" id="liveLocationsHint">На карте появляются только активные live-локации из Supabase, а не все участники группы.</p>
+        <p class="hint" id="liveLocationsHint">На карте появляются только активные live-локации из БД, а не все участники группы.</p>
         <div class="row live-actions">
           <button id="startLiveBtn">Начать показ моей позиции</button>
           <button id="stopLiveBtn" class="danger">Остановить мою позицию</button>
           <button id="refreshFriendsBtn" class="secondary">Обновить участников</button>
-          <button id="testSupabaseBtn" class="secondary">Проверить Supabase</button>
+          <button id="testSupabaseBtn" class="secondary">Проверить БД</button>
         </div>
         <div id="liveLocationsList" class="friends-list live-locations-list"></div>
-        <p class="hint" id="liveHint">Для live-режима нужен Supabase URL и anon public key в файле config.js.</p>
+        <p class="hint" id="liveHint">Для live-режима нужны настройки БД в файле config.js.</p>
       </section>
       <section class="card chat-card" aria-labelledby="groupChatTitle">
         <div class="section-title">
@@ -331,7 +331,7 @@
           <button id="chatRefreshBtn" class="secondary">Обновить</button>
           <button id="chatCancelEditBtn" class="secondary" hidden>Отменить правку</button>
         </div>
-        <p class="hint" id="chatHint">Для чата нужен Supabase и текущий ID группы.</p>
+        <p class="hint" id="chatHint">Для чата нужна БД и текущий ID группы.</p>
       </section>
     </section>
 
@@ -392,20 +392,20 @@
             <span>Диагностика карты</span>
             <span class="pill warn">техническое</span>
           </summary>
-          <p class="hint">Этот блок нужен для проверки PMTiles/manifest/Range/CORS. Обычный пользователь может пользоваться офлайн-картами без этих терминов.</p>
+          <p class="hint">Этот блок нужен для проверки файла офлайн-карты, списка карт, Range/CORS и модуль предпросмотра. Обычный пользователь может пользоваться офлайн-картами без этих терминов.</p>
           <div class="row">
-            <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить manifest карт</button>
-            <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный PMTiles</button>
+            <button id="loadOfflineManifestBtn" class="secondary small-btn">Обновить список карт</button>
+            <button id="probePmtilesBtn" class="secondary small-btn">Проверить выбранный файл карты</button>
           </div>
           <div class="field">
             <label for="offlinePackageSelect">Технический пакет карты</label>
-            <select id="offlinePackageSelect" aria-label="Технический выбор PMTiles пакета"></select>
+            <select id="offlinePackageSelect" aria-label="Технический выбор пакета карты"></select>
           </div>
           <div class="field compact-hidden-select">
             <label for="rememberedPmtilesMapSelect">Технический список запомненных карт</label>
-            <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные PMTiles карты"></select>
+            <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные карты"></select>
           </div>
-          <p class="hint" id="offlinePackageManifestStatus">Manifest: не загружен.</p>
+          <p class="hint" id="offlinePackageManifestStatus">Список карт: не загружен.</p>
           <p class="hint" id="localPmtilesFileStatus">Файл карты: не выбран.</p>
           <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
         </details>
@@ -435,7 +435,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.15-hotfix.2 · Sprint 5.15.2</span>
+          <span class="pill">v0.7.16-hotfix.1 · Sprint 5.16.1</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -451,9 +451,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.15-hotfix.2</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.15.2 — Screen Heading Visual Hotfix</strong></div>
-          <div><span class="label">Service Worker cache</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.15-hotfix.2</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.16-hotfix.1</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.16.1 — Offline Map Module Copy Hotfix</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.16-hotfix.1</strong></div>
         </div>
       </section>
 
@@ -469,7 +469,7 @@
             <small id="mapAdvancedToggleHint">Выключено: технические действия скрыты, обычные сценарии остаются на виду.</small>
           </span>
         </label>
-        <p class="hint">Инвариант: ничего не удалено. Расширенный режим только показывает инженерные действия — ремонт карты, очистку кэша, Supabase cleanup и подробную диагностику.</p>
+        <p class="hint">Инвариант: ничего не удалено. Расширенный режим только показывает инженерные действия — ремонт карты, очистку кэша, чистку БД и подробную диагностику.</p>
       </section>
 
       <section class="card settings-diagnostics-card">
@@ -479,10 +479,10 @@
         </div>
         <div class="settings-diagnostics-grid">
           <div><span class="label">GPS</span><strong id="settingsGpsDiagnostic">ожидает запуска геолокации</strong></div>
-          <div><span class="label">Карта / basemap</span><strong id="settingsMapDiagnostic">проверяется</strong></div>
-          <div><span class="label">Supabase</span><strong id="settingsSupabaseDiagnostic">не настроен или не проверен</strong></div>
-          <div><span class="label">PMTiles / офлайн-карта</span><strong id="settingsPmtilesDiagnostic">файл карты не выбран</strong></div>
-          <div><span class="label">Service Worker / cache</span><strong id="settingsServiceWorkerDiagnostic">проверяется</strong></div>
+          <div><span class="label">Подложка карты</span><strong id="settingsMapDiagnostic">проверяется</strong></div>
+          <div><span class="label">БД</span><strong id="settingsSupabaseDiagnostic">не настроена или не проверена</strong></div>
+          <div><span class="label">Файл офлайн-карты</span><strong id="settingsPmtilesDiagnostic">файл карты не выбран</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsServiceWorkerDiagnostic">проверяется</strong></div>
         </div>
         <div class="row">
           <button id="settingsMapDebugBtn" class="secondary">Открыть debug “!”</button>
@@ -492,12 +492,12 @@
             <span>Подробная диагностика</span>
             <span class="pill warn">advanced</span>
           </summary>
-          <p class="hint">Разделение по слоям: GPS, карта/basemap, Supabase, PMTiles и Service Worker/cache. Полный JSON остаётся в debug “!”.</p>
+          <p class="hint">Разделение по слоям: GPS, подложка карты, БД, файл офлайн-карты и кэш приложения. Полный JSON остаётся в debug “!”.</p>
           <div class="settings-diagnostics-grid">
             <div><span class="label">Последний экран</span><strong id="settingsActiveScreenDiagnostic">—</strong></div>
             <div><span class="label">Интернет</span><strong id="settingsOnlineDiagnostic">—</strong></div>
-            <div><span class="label">Map provider</span><strong id="settingsMapProviderDiagnostic">—</strong></div>
-            <div><span class="label">PMTiles runtime</span><strong id="settingsPmtilesRuntimeDiagnostic">—</strong></div>
+            <div><span class="label">Provider карты</span><strong id="settingsMapProviderDiagnostic">—</strong></div>
+            <div><span class="label">Модуль офлайн-карты</span><strong id="settingsPmtilesRuntimeDiagnostic">—</strong></div>
           </div>
         </details>
       </section>
@@ -513,7 +513,7 @@
             <span>Опасные действия с кэшем</span>
             <span class="pill bad">danger</span>
           </summary>
-          <p class="hint danger-copy">Сброс удаляет Cache Storage и Service Worker, затем перезагружает страницу с обходом старых app.js/styles.css. Локальные грибные точки, фото, имя, ID группы и backup-настройки остаются на телефоне.</p>
+          <p class="hint danger-copy">Сброс удаляет кэш приложения и регистрацию service worker, затем перезагружает страницу с обходом старых app.js/styles.css. Локальные грибные точки, фото, имя, ID группы и backup-настройки остаются на телефоне.</p>
           <div class="row maintenance-actions">
             <button id="resetAppCacheBtn" class="danger">Сбросить кэш приложения</button>
           </div>
@@ -534,10 +534,10 @@
       <section class="card maintenance-card" data-advanced-only hidden>
         <details>
           <summary>
-            <span>Supabase cleanup</span>
+            <span>Чистка БД</span>
             <span class="pill bad">advanced / danger</span>
           </summary>
-          <p class="hint danger-copy">Эти действия меняют live-таблицы Supabase. Они не удаляют локальные грибные точки, но могут убрать live-записи из группы.</p>
+          <p class="hint danger-copy">Эти действия меняют live-записи в БД. Они не удаляют локальные грибные точки, но могут убрать live-записи из группы.</p>
           <div class="storage-state maintenance-state">
             <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
             <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
@@ -548,7 +548,7 @@
             <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
             <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
           </div>
-          <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки Supabase.</p>
+          <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки БД.</p>
         </details>
       </section>
 
@@ -575,8 +575,8 @@
       </section>
 
       <section class="card">
-        <h2>Sprint 5.15.2</h2>
-        <p class="hint">Заголовки вкладок стали обычными заголовками страниц, без лишней карточки сверху. Структура настроек и advanced-действия сохранены.</p>
+        <h2>Sprint 5.16.1</h2>
+        <p class="hint">Пользовательские термины и состояния стали понятнее: БД вместо названия backend-провайдера, файл офлайн-карты вместо технического формата, пустые состояния объясняют следующий шаг.</p>
       </section>
     </section>
   </main>
@@ -611,10 +611,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.15-hotfix.2"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.16-hotfix.1"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.15-hotfix.2"></script>
-  <script src="app.js?v=0.7.15-hotfix.2"></script>
+  <script src="config.js?v=0.7.16-hotfix.1"></script>
+  <script src="app.js?v=0.7.16-hotfix.1"></script>
 </body>
 </html>

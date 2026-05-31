@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.15-hotfix.2';
+const APP_VERSION = '0.7.16-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -55,8 +55,8 @@ const PROTOMAPS_BASEMAPS_SCRIPT_URLS = [
 
 const MAP_PROVIDER_LABELS = {
   [MAP_PROVIDER_ONLINE_RASTER]: 'online raster',
-  [MAP_PROVIDER_OFFLINE_PMTILES]: 'offline PMTiles',
-  [MAP_PROVIDER_NO_BASEMAP]: 'no basemap'
+  [MAP_PROVIDER_OFFLINE_PMTILES]: 'offline map file',
+  [MAP_PROVIDER_NO_BASEMAP]: 'no map background'
 };
 
 let db;
@@ -227,7 +227,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   startLiveBtn: 'Начать показ моей позиции',
   stopLiveBtn: 'Остановить мою позицию',
   refreshFriendsBtn: 'Обновить участников',
-  testSupabaseBtn: 'Проверить Supabase',
+  testSupabaseBtn: 'Проверить БД',
   chatSendBtn: 'Отправить сообщение',
   chatRefreshBtn: 'Обновить чат',
   chatCancelEditBtn: 'Отменить правку сообщения',
@@ -239,9 +239,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanCurrentGroupDbBtn: 'Очистить текущую группу',
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
-  loadOfflineManifestBtn: 'Обновить manifest карт',
+  loadOfflineManifestBtn: 'Обновить список карт',
   chooseLocalPmtilesBtn: 'Выбрать файл карты',
-  probePmtilesBtn: 'Проверить выбранный PMTiles',
+  probePmtilesBtn: 'Проверить выбранный файл карты',
   previewPmtilesBtn: 'Предпросмотр офлайн-карты',
   centerPmtilesOnMeBtn: 'Показать меня на офлайн-карте',
   renameRememberedPmtilesMapBtn: 'Сохранить название карты',
@@ -682,7 +682,7 @@ async function deleteVisibleCacheStorage() {
 async function unregisterVisibleServiceWorkers() {
   const unregisteredWorkers = [];
   if (!('serviceWorker' in navigator)) {
-    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'Service Worker не поддерживается');
+    setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'заблокировано', 'кэш приложения не поддерживается');
     return unregisteredWorkers;
   }
 
@@ -702,11 +702,11 @@ async function unregisterVisibleServiceWorkers() {
 }
 
 async function resetAppCache() {
-  const ok = confirm('Сбросить кэш приложения и перезагрузить страницу?\n\nЛокальные грибные точки, фото, имя, ID группы и backup-настройки останутся. Будут удалены только Cache Storage и регистрация Service Worker. Если Android PWA держит старую версию, после перезагрузки закрой и открой приложение ещё раз.');
+  const ok = confirm('Сбросить кэш приложения и перезагрузить страницу?\n\nЛокальные грибные точки, фото, имя, ID группы и backup-настройки останутся. Будет удалён только кэш приложения и регистрация service worker. Если Android PWA держит старую версию, после перезагрузки закрой и открой приложение ещё раз.');
   if (!ok) { markButtonCancelled('сброс кэша отменён пользователем'); return; }
 
   setDisabled('resetAppCacheBtn', true);
-  setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'pending', 'удаляю кэш и Service Worker');
+  setButtonApiStatus(activeButtonDiagnostics || 'resetAppCacheBtn', 'pending', 'удаляю кэш приложения');
 
   const reloadUrl = cacheBustUrl();
   const resetMarker = { requestedAt: new Date().toISOString(), targetVersion: APP_VERSION, reloadUrl };
@@ -950,7 +950,7 @@ function formatDiagnosticsText() {
     if (diag.range) lines.push(`- pmtiles Range: ${diag.range.status || 'n/a'}${diag.range.bytes != null ? ` / ${diag.range.bytes} bytes` : ''}${diag.range.error ? ` / ${diag.range.error}` : ''}`);
     if (diag.hint) lines.push(`- pmtiles hint: ${diag.hint}`);
   }
-  lines.push(`- packages manifest: ${provider.offlineMapManifest.status}`);
+  lines.push(`- список пакетов карт: ${provider.offlineMapManifest.status}`);
   lines.push(`- selected package: ${provider.offlineMapManifest.selectedPackageName || provider.offlineMapManifest.selectedPackageId || 'none'}`);
   lines.push(`- pmtiles preview: ${provider.pmtilesPreview.status}`);
   if (provider.pmtilesPreview.userLayers) {
@@ -1170,15 +1170,15 @@ function setOfflineMapStatus(text, mode = '') {
 
 function updateOfflineMapStatusPill() {
   if (offlinePackageStatus === 'not-installed') {
-    setOfflineMapStatus('Карта: офлайн-пакет не установлен', 'warn');
+    setOfflineMapStatus('Файл офлайн-карты не выбран', 'warn');
   } else if (offlinePackageStatus === 'metadata-present-runtime-not-enabled') {
-    setOfflineMapStatus('Офлайн-пакет найден, runtime ещё не подключён', 'warn');
+    setOfflineMapStatus('Файл офлайн-карты найден, предпросмотр ещё не готов', 'warn');
   } else if (offlinePackageStatus === 'metadata-ready-runtime-experimental') {
-    setOfflineMapStatus('PMTiles найден, рендер экспериментальный', 'warn');
+    setOfflineMapStatus('Файл офлайн-карты найден, рендер экспериментальный', 'warn');
   } else if (offlinePackageStatus === 'preview-ready-runtime-experimental') {
     setOfflineMapStatus('Предпросмотр офлайн-карты готов', 'on');
   } else if (offlinePackageStatus === 'ready') {
-    setOfflineMapStatus('Карта: офлайн-пакет готов', 'on');
+    setOfflineMapStatus('Карта: файл офлайн-карты готов', 'on');
   } else {
     setOfflineMapStatus(`Офлайн-карта: ${offlinePackageStatus}`, 'warn');
   }
@@ -1194,19 +1194,19 @@ function setPmtilesRuntimeStatus(text, mode = '') {
 function updatePmtilesRuntimeStatusPill() {
   const status = pmtilesRuntimeProbe.status;
   if (offlinePackageStatus === 'preview-ready-runtime-experimental' && pmtilesPreviewState.status === 'loaded') {
-    setPmtilesRuntimeStatus('PMTiles: preview отрисован', 'on');
+    setPmtilesRuntimeStatus('Файл карты: preview отрисован', 'on');
   } else if (status === 'ready') {
-    setPmtilesRuntimeStatus('PMTiles: пакет читается', 'on');
+    setPmtilesRuntimeStatus('Файл карты: пакет читается', 'on');
   } else if (status === 'maplibre-ready-no-package') {
-    setPmtilesRuntimeStatus('PMTiles: runtime готов, файла нет', 'warn');
+    setPmtilesRuntimeStatus('Файл карты: модуль готов, файл не найден', 'warn');
   } else if (status === 'not-run') {
-    setPmtilesRuntimeStatus('PMTiles: не проверено', 'warn');
+    setPmtilesRuntimeStatus('Файл карты: не проверен', 'warn');
   } else if (status === 'loading-runtime' || status === 'checking-package' || status === 'starting-maplibre' || status === 'starting-maplibre-preview') {
-    setPmtilesRuntimeStatus('PMTiles: проверка…', 'warn');
+    setPmtilesRuntimeStatus('Файл карты: проверка…', 'warn');
   } else if (status === 'runtime-failed' || status === 'package-error' || status === 'maplibre-failed') {
-    setPmtilesRuntimeStatus('PMTiles: ошибка проверки', 'bad');
+    setPmtilesRuntimeStatus('Файл карты: ошибка проверки', 'bad');
   } else {
-    setPmtilesRuntimeStatus(`PMTiles: ${status}`, 'warn');
+    setPmtilesRuntimeStatus(`Файл карты: ${status}`, 'warn');
   }
 }
 
@@ -1304,7 +1304,7 @@ function updatePmtilesPreviewUi() {
     const layerText = pmtilesPreviewState.vectorLayers?.length ? ` Слои: ${pmtilesPreviewState.vectorLayers.slice(0, 8).join(', ')}.` : '';
     statusEl.textContent = `Предпросмотр офлайн-карты: источник подключён, применяем стиль и границы региона…${layerText}`;
   } else if (pmtilesPreviewState.status === 'metadata-only') {
-    statusEl.textContent = `Предпросмотр офлайн-карты: пакет ${getActivePmtilesPackageName()} читается, но это не raster-пакет для текущего preview. Нужен отдельный vector-style спринт.`;
+    statusEl.textContent = `Предпросмотр офлайн-карты: файл ${getActivePmtilesPackageName()} читается, но это не raster-пакет для текущего preview. Нужен отдельный vector-style спринт.`;
   } else if (pmtilesPreviewState.status === 'error') {
     statusEl.textContent = `Предпросмотр офлайн-карты: ошибка — ${pmtilesPreviewState.error || 'неизвестная ошибка'}`;
   } else {
@@ -1386,7 +1386,7 @@ function registerPmtilesArchiveForPackage(packageInfo = getActiveOfflineMapPacka
   if (isLocalPmtilesPackage(packageInfo)) {
     const file = localPmtilesFileState.file;
     if (!file || localPmtilesFileState.packageId !== packageInfo.id) {
-      throw new Error('Локальный PMTiles-файл не выбран в этой сессии. Выбери файл заново.');
+      throw new Error('Локальный файл офлайн-карты не выбран в этой сессии. Выбери файл заново.');
     }
     const key = localPmtilesFileState.key || `local-pmtiles-${Date.now()}`;
     const source = createLocalPmtilesSource(file, key);
@@ -1402,13 +1402,13 @@ function registerPmtilesArchiveForPackage(packageInfo = getActiveOfflineMapPacka
 function defaultOfflineMapPackage() {
   return {
     id: 'mini-sample',
-    name: 'Мини PMTiles sample',
+    name: 'Мини sample файла карты',
     url: PMTILES_SAMPLE_URL,
     sourceType: 'same-origin-sample',
     role: 'diagnostic',
     enabled: true,
     sizeBytes: null,
-    description: 'Маленький встроенный диагностический пакет для проверки PMTiles runtime.'
+    description: 'Маленький встроенный диагностический пакет для проверки модуля офлайн-карты.'
   };
 }
 
@@ -1791,7 +1791,7 @@ function renameSelectedRememberedPmtilesMap() {
   if (localPmtilesFileState.rememberedId === selected.id) {
     localPmtilesFileState = { ...localPmtilesFileState, customName: nextTitle };
     offlineMapManifest.packages = (offlineMapManifest.packages || []).map((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId
-      ? { ...pkg, name: `Локальная карта: ${nextTitle}`, description: `Локально выбранный PMTiles-файл “${localPmtilesFileState.name}”. Хранится только в текущей сессии браузера.` }
+      ? { ...pkg, name: `Локальная карта: ${nextTitle}`, description: `Локально выбранный файл офлайн-карты “${localPmtilesFileState.name}”. Хранится только в текущей сессии браузера.` }
       : pkg);
     pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, packageName: `Локальная карта: ${nextTitle}` };
   }
@@ -1830,7 +1830,7 @@ function getSelectedOfflineMapPackage(allowFallback = true) {
 
 function getActiveOfflineMapPackage() {
   const selected = getSelectedOfflineMapPackage(true);
-  if (!selected.url) throw new Error('У выбранного PMTiles-пакета нет URL в manifest');
+  if (!selected.url) throw new Error('У выбранного пакета карты нет URL в списке карт');
   return selected;
 }
 
@@ -1839,7 +1839,7 @@ function getActivePmtilesPackageUrl() {
 }
 
 function getActivePmtilesPackageName() {
-  return getSelectedOfflineMapPackage(true).name || 'PMTiles package';
+  return getSelectedOfflineMapPackage(true).name || 'пакет карты';
 }
 
 function formatBytes(bytes) {
@@ -1925,7 +1925,7 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     lastEvent: userAction ? 'selected package changed by user' : 'selected package restored'
   };
   if (pmtilesPreviewMap) {
-    try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('PMTiles preview map remove failed', err); }
+    try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('Offline map preview remove failed', err); }
     pmtilesPreviewMap = null;
   }
   pmtilesPreviewUserLayerState = {
@@ -1934,7 +1934,7 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     updatedAt: null,
     error: null
   };
-  setMapProviderState({ offlinePackageStatus: 'not-installed' }, `selected PMTiles package: ${pkg.id}`);
+  setMapProviderState({ offlinePackageStatus: 'not-installed' }, `selected пакет карты: ${pkg.id}`);
   updatePmtilesRuntimeStatusPill();
   updatePmtilesPreviewUi();
   renderOfflineMapPackageUi();
@@ -1989,7 +1989,7 @@ function makeLocalPmtilesPackage(file) {
     maxZoom: null,
     enabled: true,
     required: false,
-    description: `Локально выбранный PMTiles-файл “${safeName}”. Запись и название хранятся в localStorage, сам файл — только в текущей сессии браузера.`,
+    description: `Локально выбранный файл офлайн-карты “${safeName}”. Запись и название хранятся в localStorage, сам файл — только в текущей сессии браузера.`,
     releaseTag: null,
     checksum: null,
     fileRef: true,
@@ -2009,7 +2009,7 @@ async function selectLocalPmtilesFile(file) {
     if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-session';
     selectOfflineMapPackage(pkg.id, true);
     setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)}`);
-    recordMapDebug('local PMTiles file selected', getLocalPmtilesFileSnapshot());
+    recordMapDebug('local offline map file selected', getLocalPmtilesFileSnapshot());
     renderOfflineMapPackageUi();
     updateMapDebugUi(true);
     return pkg;
@@ -2196,7 +2196,7 @@ function getMainMapCenterForPreview() {
     const center = map.getCenter();
     if (Number.isFinite(center?.lng) && Number.isFinite(center?.lat)) return [center.lng, center.lat];
   } catch (err) {
-    recordMapDebug('main map center unavailable for PMTiles preview', err?.message || String(err));
+    recordMapDebug('main map center unavailable for offline map preview', err?.message || String(err));
   }
   return null;
 }
@@ -2237,7 +2237,7 @@ function getPmtilesPreviewZoom(meta = {}, bounds = null, isVectorPreview = false
 async function showPmtilesPreviewMap() {
   const panel = $('pmtilesPreviewPanel');
   const container = $('pmtilesPreviewMap');
-  if (!panel || !container) throw new Error('PMTiles preview container is missing');
+  if (!panel || !container) throw new Error('Offline map preview container is missing');
 
   panel.hidden = false;
   pmtilesPreviewUserLayerState = {
@@ -2257,8 +2257,8 @@ async function showPmtilesPreviewMap() {
     vectorLayers: null,
     error: null,
     loadedAt: null
-  }, 'PMTiles preview started');
-  setCurrentPmtilesPreviewButtonStatus('пендинг', 'загрузка MapLibre/PMTiles preview');
+  }, 'offline map preview started');
+  setCurrentPmtilesPreviewButtonStatus('пендинг', 'загрузка предпросмотра офлайн-карты');
 
   try {
     const runtime = await ensureExperimentalMapLibreRuntime();
@@ -2283,7 +2283,7 @@ async function showPmtilesPreviewMap() {
     setMapProviderState({ offlinePackageStatus: 'metadata-ready-runtime-experimental' }, 'PMTiles preview metadata ready; Leaflet remains primary');
 
     if (pmtilesPreviewMap) {
-      try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('PMTiles preview map remove failed', err); }
+      try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('Offline map preview remove failed', err); }
       pmtilesPreviewMap = null;
     }
     container.innerHTML = '';
@@ -2961,16 +2961,16 @@ function inferPmtilesDiagnosticsHint(diag) {
   const text = `${headError} ${rangeError}`;
   if (diag.range?.status === 404 || diag.head?.status === 404) return 'URL не указывает на файл .pmtiles или release asset не найден.';
   if (/CORS|Failed to fetch|blocked|network/i.test(text) && source === 'github-release-asset') {
-    return 'Похоже на ограничение GitHub Release asset для browser Range/CORS. Asset может скачиваться вручную, но не читаться как live PMTiles source.';
+    return 'Похоже на ограничение внешнего asset для browser Range/CORS. Файл можно скачивать вручную, но браузер может не читать его как live-источник карты.';
   }
   if (/CORS|Failed to fetch|blocked|network/i.test(text)) {
-    return 'Похоже на CORS/Range/network блокировку. Для remote PMTiles нужны Range requests и CORS.';
+    return 'Похоже на CORS/Range/network блокировку. Для удалённого файла карты нужны Range requests и CORS.';
   }
   if (diag.range?.status === 200 && diag.range?.bytes > 1024 * 1024) {
-    return 'Сервер проигнорировал Range и начал отдавать большой файл целиком. Для PMTiles нужен byte-range доступ.';
+    return 'Сервер проигнорировал Range и начал отдавать большой файл целиком. Для файла офлайн-карты нужен byte-range доступ.';
   }
-  if (diag.range?.bytes != null && diag.range.bytes < 127) return 'Получено меньше 127 байт; PMTiles header неполный.';
-  if (diag.range?.magic && !/^PMTiles/.test(diag.range.magic)) return 'Первые байты не похожи на PMTiles header; возможно URL ведёт не на .pmtiles, а на HTML/redirect/error page.';
+  if (diag.range?.bytes != null && diag.range.bytes < 127) return 'Получено меньше 127 байт; header файла карты неполный.';
+  if (diag.range?.magic && !/^PMTiles/.test(diag.range.magic)) return 'Первые байты не похожи на header файла карты; возможно URL ведёт не на файл карты, а на HTML/redirect/error page.';
   return null;
 }
 
@@ -3015,7 +3015,7 @@ async function runLocalPmtilesFileDiagnostics(file, packageInfo = null) {
       accessControlAllowOrigin: 'not-needed-local-file',
       error: null
     },
-    hint: ok ? 'Локальный File API работает: CORS/redirect/HTTP Range не используются.' : 'Первые байты локального файла не похожи на PMTiles header.'
+    hint: ok ? 'Локальный File API работает: CORS/redirect/HTTP Range не используются.' : 'Первые байты локального файла не похожи на header файла карты.'
   };
 }
 
@@ -3105,7 +3105,7 @@ function renderPmtilesProbeDetails() {
   const pkg = getSelectedOfflineMapPackage(true);
   const diag = pmtilesRuntimeProbe.diagnostics;
   if (!diag) {
-    el.textContent = `Проверка: выбран пакет “${pkg.name}”. Нажми “Проверить выбранный PMTiles”, чтобы увидеть HTTP/Range диагностику.`;
+    el.textContent = `Проверка: выбран пакет “${pkg.name}”. Нажми “Проверить выбранный файл карты”, чтобы увидеть HTTP/Range диагностику.`;
     return;
   }
   const parts = [`Проверка: ${diag.summary || diag.status}`];
@@ -3121,7 +3121,7 @@ async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null)
   const localFileMode = isLocalPmtilesPackage(packageInfo);
   const localFile = localFileMode ? localPmtilesFileState.file : null;
   if (localFileMode && !localFile) {
-    throw Object.assign(new Error('Локальный PMTiles-файл не выбран в этой сессии. Выбери файл заново.'), { code: 'PMTILES_LOCAL_FILE_MISSING' });
+    throw Object.assign(new Error('Локальный файл офлайн-карты не выбран в этой сессии. Выбери файл заново.'), { code: 'PMTILES_LOCAL_FILE_MISSING' });
   }
   const transportDiagnostics = localFileMode
     ? await runLocalPmtilesFileDiagnostics(localFile, packageInfo)
@@ -3208,7 +3208,7 @@ async function runPmtilesRuntimeProbe() {
 
     await startMapLibreSmokeTest();
 
-    setPmtilesProbeState({ status: 'checking-package' }, 'MapLibre smoke test passed; checking PMTiles package');
+    setPmtilesProbeState({ status: 'checking-package' }, 'MapLibre smoke test passed; checking пакет карты');
     try {
       const result = await readPmtilesPackage(url, activePackage);
       setPmtilesProbeState({
@@ -3217,9 +3217,9 @@ async function runPmtilesRuntimeProbe() {
         header: result.header,
         metadata: result.metadata,
         error: null
-      }, 'PMTiles package header/metadata read');
-      setMapProviderState({ offlinePackageStatus: 'metadata-ready-runtime-experimental' }, 'PMTiles package metadata ready; Leaflet remains primary');
-      setCurrentPmtilesProbeButtonStatus('готово', 'PMTiles header/metadata прочитаны');
+      }, 'пакет карты header/metadata read');
+      setMapProviderState({ offlinePackageStatus: 'metadata-ready-runtime-experimental' }, 'пакет карты metadata ready; Leaflet remains primary');
+      setCurrentPmtilesProbeButtonStatus('готово', 'header/metadata файла карты прочитаны');
       updateMapDebugUi(true);
       return true;
     } catch (err) {
@@ -3231,13 +3231,13 @@ async function runPmtilesRuntimeProbe() {
           status: 'maplibre-ready-no-package',
           packageFound: false,
           error: `${url} not found`
-        }, 'MapLibre/PMTiles runtime ready, but selected PMTiles package is not available');
+        }, 'MapLibre/PMTiles runtime ready, but selected offline map package is not available');
         setMapProviderState({ offlinePackageStatus: 'not-installed' }, 'PMTiles runtime ready; selected package missing');
-        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, выбранный PMTiles не найден');
+        setCurrentPmtilesProbeButtonStatus('готово', 'runtime готов, выбранный файл карты не найден');
         updateMapDebugUi(true);
         return false;
       }
-      setPmtilesProbeState({ status: 'package-error', error: err?.message || String(err), diagnostics: err?.diagnostics || pmtilesRuntimeProbe.diagnostics || null }, 'PMTiles package read failed');
+      setPmtilesProbeState({ status: 'package-error', error: err?.message || String(err), diagnostics: err?.diagnostics || pmtilesRuntimeProbe.diagnostics || null }, 'пакет карты read failed');
       setCurrentPmtilesProbeButtonStatus('ошибка', err?.message || String(err));
       updateMapDebugUi(true);
       return false;
@@ -3480,7 +3480,7 @@ function setMapAdvancedControlsVisibility(enabled, options = {}) {
   const hint = $('mapAdvancedToggleHint');
   if (hint) {
     hint.textContent = next
-      ? 'Включено: доступны инженерные действия, диагностика, ремонт карты, кэш и Supabase cleanup.'
+      ? 'Включено: доступны инженерные действия, диагностика, ремонт карты, кэш и чистка БД.'
       : 'Выключено: технические действия скрыты, обычные сценарии остаются на виду.';
   }
 
@@ -3517,21 +3517,21 @@ function renderSettingsDiagnostics() {
     ? `есть позиция, точность ${meters(currentPosition.accuracy)}`
     : 'геопозиция ещё не запускалась';
   const mapText = provider.mapProvider === MAP_PROVIDER_NO_BASEMAP || provider.fallbackActive
-    ? 'подложка недоступна, точки работают'
+    ? 'подложка недоступна, точки и GPS продолжают работать'
     : provider.mapSourceStatus === 'online-ready'
-      ? 'online-raster работает'
+      ? 'онлайн-подложка работает'
       : provider.mapSourceStatus || 'проверяется';
   const supabaseText = cfg
-    ? (apiDebugEvents.length ? `настроен, запросов: ${apiDebugEvents.length}` : 'настроен, запросов ещё не было')
-    : 'не настроен';
+    ? (apiDebugEvents.length ? `настроена, запросов: ${apiDebugEvents.length}` : 'настроена, запросов ещё не было')
+    : 'не настроена';
   const pmtilesText = localPmtilesFileState.status === 'selected'
     ? `выбран файл: ${getUserFacingOfflineMapState().title}`
     : offlinePackageStatus === 'preview-ready-runtime-experimental'
       ? 'предпросмотр готов'
       : 'файл карты не выбран';
   const swText = 'serviceWorker' in navigator
-    ? ('caches' in window ? 'Service Worker и Cache API доступны' : 'Service Worker доступен, Cache API недоступен')
-    : 'Service Worker недоступен';
+    ? ('caches' in window ? 'кэш приложения доступен' : 'service worker доступен, Cache API недоступен')
+    : 'кэш приложения недоступен';
 
   const setText = (id, value) => {
     const element = $(id);
@@ -3639,7 +3639,7 @@ function updateMapDebugUi(forceText = false) {
   } else if (snapshot.providerState.mapSourceStatus === 'online-stale-offline') {
     setMapStatus('Карта: офлайн, показаны загруженные тайлы', 'warn');
   } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
-    setMapStatus('Карта: подложка недоступна, точки работают', 'warn');
+    setMapStatus('Карта: подложка недоступна, точки и GPS продолжают работать', 'warn');
   } else if (snapshot.providerState.mapSourceStatus === 'online-ready' || snapshot.tileDom.loaded > 0) {
     setMapStatus('Карта: онлайн', 'on');
   } else if (snapshot.providerState.mapSourceStatus === 'offline-not-installed') {
@@ -3667,17 +3667,17 @@ function updateMapDebugUi(forceText = false) {
     } else if (snapshot.providerState.mapSourceStatus === 'online-stale-offline') {
       hint.textContent = 'Интернет выключен. Приложение удерживает уже загруженные тайлы, чтобы карта не исчезала до перезагрузки. Новые участки подложки без офлайн-пакета не догрузятся, но точки и GPS продолжают работать.';
     } else if (snapshot.providerState.mapProvider === MAP_PROVIDER_NO_BASEMAP || snapshot.providerState.fallbackActive) {
-      hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустой карты.';
+      hint.textContent = 'Подложка карты недоступна. GPS, сохранённые точки, выбранная точка, чат-точки и live-маркеры продолжают работать поверх пустого фона.';
     } else if (snapshot.providerState.offlinePackageStatus === 'preview-ready-runtime-experimental') {
-      hint.textContent = 'PMTiles preview отрисован отдельным MapLibre-контейнером из выбранного manifest-пакета. Это не замена основной карты: Leaflet online-raster, точки, GPS и чат остаются рабочим слоем.';
+      hint.textContent = 'Предпросмотр офлайн-карты отрисован отдельным MapLibre-контейнером из выбранного пакета. Это не замена основной карты: Leaflet online-raster, точки, GPS и чат остаются рабочим слоем.';
     } else if (snapshot.providerState.offlinePackageStatus === 'metadata-ready-runtime-experimental') {
-      hint.textContent = 'Выбранный PMTiles-пакет читается экспериментальным MapLibre/PMTiles probe. Если это GitHub Release asset, приложение проверяет URL из manifest без автоскачивания большой карты; основная карта пока остаётся на Leaflet online-raster.';
+      hint.textContent = 'Выбранный файл офлайн-карты читается экспериментальным модулем предпросмотра. Если это внешний asset, приложение проверяет URL из списка карт без автоскачивания большой карты; основная карта пока остаётся на Leaflet online-raster.';
     } else if (snapshot.tileStats.error > 0) {
       hint.textContent = `Есть ошибки загрузки тайлов: ${snapshot.tileStats.error}. Открой “!” и скопируй диагностику.`;
     } else if (snapshot.tileDom.total > 0 && snapshot.tileDom.loaded === 0) {
       hint.textContent = 'Тайлы созданы, но не загрузились. Проверь интернет или нажми “Починить карту”.';
     } else {
-      hint.textContent = 'Сейчас используется online raster provider. Офлайн-пакет PMTiles ещё не установлен; точки и GPS отделены от подложки.';
+      hint.textContent = 'Сейчас используется online raster provider. Файл офлайн-карты ещё не выбран; точки и GPS отделены от подложки.';
     }
   }
 }
@@ -3981,7 +3981,7 @@ function setPickedMapPoint(latlng, source = 'map') {
   recordMapDebug('picked map point', pickedMapPoint);
   setSelectedMapObject('picked', { source });
   updatePickedMapPointUi();
-  renderPmtilesPreviewUserLayers('picked point mirrored to PMTiles preview');
+  renderPmtilesPreviewUserLayers('picked point mirrored to offline map preview');
 }
 
 function clearPickedMapPoint(showStatus = false) {
@@ -3993,7 +3993,7 @@ function clearPickedMapPoint(showStatus = false) {
   if (selectedMapObject?.kind === 'picked') clearSelectedMapObjectOnly();
   updatePickedMapPointUi();
   if (showStatus) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'clearPickedMapPointBtn', label: getButtonDiagnosticLabel('clearPickedMapPointBtn') }, 'готово', 'выбранная точка сброшена');
-  renderPmtilesPreviewUserLayers('picked point cleared from PMTiles preview');
+  renderPmtilesPreviewUserLayers('picked point cleared from offline map preview');
 }
 
 function cancelMapLongPress() {
@@ -4137,7 +4137,7 @@ function clearChatPreviewPoint(showStatus = false) {
   chatPreviewPoint = null;
   if (selectedMapObject?.kind === 'chat') clearSelectedMapObjectOnly();
   if (showStatus) setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'mapObjectClearBtn', label: 'Сбросить выбор' }, 'готово', 'точка из чата скрыта');
-  renderPmtilesPreviewUserLayers('chat point cleared from PMTiles preview');
+  renderPmtilesPreviewUserLayers('chat point cleared from offline map preview');
 }
 
 function describeSelectedMapObject() {
@@ -4495,7 +4495,7 @@ function updateUserPosition(pos, center=false) {
   }
   updateSelectedDetails();
   renderList();
-  renderPmtilesPreviewUserLayers('GPS mirrored to PMTiles preview');
+  renderPmtilesPreviewUserLayers('GPS mirrored to offline map preview');
 }
 
 function startGps(center=true) {
@@ -4512,8 +4512,9 @@ function startGps(center=true) {
     },
     (err) => {
       finishApiRequest(requestId, 'ошибка', err.message);
-      $('gpsStatus').textContent = 'ошибка';
-      alert(`GPS ошибка: ${err.message}`);
+      $('gpsStatus').textContent = err.code === 1 ? 'доступ запрещён' : 'ошибка';
+      setText('saveFlowDescription', err.code === 1 ? 'GPS запрещён в браузере. Можно сохранить выбранную точку вручную: зажми место на карте примерно на секунду.' : 'GPS не дал координаты. Можно попробовать ещё раз или выбрать точку на карте вручную.');
+      alert(`GPS ошибка: ${err.message}. Можно сохранить место вручную долгим нажатием на карте.`);
     },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
@@ -4823,7 +4824,7 @@ function renderMarkers() {
     spotMarkers.set(spot.id, marker);
   }
   safeInvalidateMap(0, 'render/update');
-  renderPmtilesPreviewUserLayers('saved spots mirrored to PMTiles preview');
+  renderPmtilesPreviewUserLayers('saved spots mirrored to offline map preview');
 }
 
 function canSendSpotToChat() {
@@ -5029,7 +5030,7 @@ function selectSpot(id, center=false) {
   updateSelectedDetails();
   renderList();
   updateActionButtonsUi();
-  renderPmtilesPreviewUserLayers('selected spot mirrored to PMTiles preview');
+  renderPmtilesPreviewUserLayers('selected spot mirrored to offline map preview');
 }
 window.selectSpotFromPopup = (id) => {
   selectSpot(id, false);
@@ -5200,7 +5201,7 @@ function getSupabaseConfig() {
 
 async function supabaseFetch(path, options = {}) {
   const cfg = getSupabaseConfig();
-  if (!cfg) throw new Error('Supabase не настроен. Заполни SUPABASE_URL и SUPABASE_ANON_KEY в config.js.');
+  if (!cfg) throw new Error('БД не настроена. Заполни настройки БД в config.js.');
   const headers = {
     apikey: cfg.key,
     Authorization: `Bearer ${cfg.key}`,
@@ -5209,7 +5210,7 @@ async function supabaseFetch(path, options = {}) {
   };
   const method = options.method || 'GET';
   const requestUrl = `${cfg.url}/rest/v1/${path}`;
-  const requestId = beginApiRequest('Supabase REST', method, requestUrl);
+  const requestId = beginApiRequest('БД REST', method, requestUrl);
   let res;
   const controller = new AbortController();
   const timeoutMs = Number(options.timeoutMs || SUPABASE_TIMEOUT_MS);
@@ -5226,7 +5227,7 @@ async function supabaseFetch(path, options = {}) {
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     finishApiRequest(requestId, `HTTP ${res.status}`, text || res.statusText);
-    throw new Error(`Supabase ${res.status}: ${text || res.statusText}`);
+    throw new Error(`БД ${res.status}: ${text || res.statusText}`);
   }
   finishApiRequest(requestId, `HTTP ${res.status}`, res.statusText || 'OK');
   if (res.status === 204) return null;
@@ -5288,7 +5289,7 @@ async function createGroup() {
     await joinGroup(true);
     $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   } else {
-    $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Для live-режима нужен Supabase в config.js.';
+    $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Для live-режима нужны настройки БД в config.js.';
     updateChatUi();
   }
 }
@@ -5334,7 +5335,7 @@ function clearFriendMarkers() {
   friendMarkers.clear();
   if (selectedMapObject?.kind === 'friend') clearSelectedMapObjectOnly();
   pmtilesPreviewLiveRows = [];
-  renderPmtilesPreviewUserLayers('live friends cleared from PMTiles preview');
+  renderPmtilesPreviewUserLayers('live friends cleared from offline map preview');
 }
 
 async function joinGroup(silent = false) {
@@ -5358,8 +5359,8 @@ async function joinGroup(silent = false) {
   clearInterval(memberSyncTimer);
 
   if (!getSupabaseConfig()) {
-    setMemberSyncPending(true, 'Supabase не настроен');
-    $('liveHint').textContent = 'Группа открыта локально. Для синхронизации участников нужен Supabase URL и anon public key в config.js.';
+    setMemberSyncPending(true, 'БД не настроена');
+    $('liveHint').textContent = 'Группа открыта локально. Для синхронизации участников нужны настройки БД в config.js.';
     return true;
   }
 
@@ -5405,7 +5406,7 @@ async function publishMyLocation() {
   if (!group || !name) throw new Error('Укажи имя и ID группы.');
   if (!currentPosition) {
     startGps(false);
-    $('liveHint').textContent = 'Жду GPS-координаты перед отправкой позиции…';
+    $('liveHint').textContent = 'Жду GPS-координаты перед отправкой позиции. Пока GPS не готов, группа и чат могут работать, но твой маркер не отправится.';
     return;
   }
   const payload = {
@@ -5459,11 +5460,11 @@ function updateDbCleanupUi() {
   if ($('cleanMyEverywhereDbBtn')) $('cleanMyEverywhereDbBtn').disabled = !hasSupabase;
 
   if (!hasSupabase) {
-    setDbCleanupHint('Чистка БД недоступна: нужен Supabase URL и anon public key в config.js. Локальные грибные точки не затрагиваются.');
+    setDbCleanupHint('Чистка БД недоступна: нужны настройки БД в config.js. Локальные грибные точки не затрагиваются.');
   } else if (!hasGroup) {
     setDbCleanupHint('Для чистки текущей группы вставь или создай ID группы. Можно удалить “меня из всех групп” по локальному user_id.');
   } else {
-    setDbCleanupHint('Готово к чистке live_locations. “Меня” = локальный user_id этого браузера; грибные точки IndexedDB не удаляются.');
+    setDbCleanupHint('Готово к чистке live-локаций в БД. “Меня” = локальный user_id этого браузера; грибные точки IndexedDB не удаляются.');
   }
 }
 
@@ -5474,16 +5475,16 @@ function getCurrentGroupForCleanup() {
 }
 
 function requireGroupTypedConfirmation(group, actionText) {
-  const typed = prompt(`${actionText}\n\nЭто удалит live-записи из Supabase, но не тронет локальные грибные точки.\n\nДля подтверждения введи ID группы полностью:`, '');
+  const typed = prompt(`${actionText}\n\nЭто удалит live-записи из БД, но не тронет локальные грибные точки.\n\nДля подтверждения введи ID группы полностью:`, '');
   return typed === group;
 }
 
 function confirmDbCleanup(actionText) {
-  return confirm(`${actionText}\n\nБудут удалены только live-записи из таблицы live_locations. Локальные грибные точки, заметки и фото не затрагиваются.`);
+  return confirm(`${actionText}\n\nБудут удалены только live-записи из БД. Локальные грибные точки, заметки и фото не затрагиваются.`);
 }
 
 async function deleteLiveRows(filterQuery, label, options = {}) {
-  if (!getSupabaseConfig()) throw new Error('Supabase не настроен в config.js.');
+  if (!getSupabaseConfig()) throw new Error('БД не настроена в config.js.');
   const select = options.select || 'group_id,user_id,user_name,updated_at';
   const path = `live_locations?${filterQuery}&select=${select}`;
   const rows = await supabaseFetch(path, {
@@ -5603,7 +5604,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
   }
   if ($('groupStateHint')) {
     if (!hasSupabase) {
-      $('groupStateHint').textContent = 'Группа может открыться локально, но синхронизация участников и чат требуют config.js с Supabase.';
+      $('groupStateHint').textContent = 'Группа может открыться локально, но синхронизация участников и чат требуют настроенной БД в config.js.';
     } else if (!group) {
       $('groupStateHint').textContent = 'Создай группу или вставь ID от друга.';
     } else if (groupJoined) {
@@ -5621,7 +5622,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
     } else if (groupJoined) {
       $('myLiveStateHint').textContent = 'Ты видишь группу, но твой маркер не появляется у друзей до запуска live-позиции.';
     } else {
-      $('myLiveStateHint').textContent = 'Сначала войди в группу. Маркер на карте появляется только из live_locations.';
+      $('myLiveStateHint').textContent = 'Сначала войди в группу. Маркер на карте появляется только из live-локаций, а не из списка участников.';
     }
   }
   if ($('groupHint')) {
@@ -5653,7 +5654,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
     }
   }
   if ($('liveLocationsHint')) {
-    $('liveLocationsHint').textContent = 'На карте появляются только активные live-локации из Supabase, а не все участники группы.';
+    $('liveLocationsHint').textContent = 'На карте появляются только активные live-локации из БД, а не все участники группы.';
   }
   if ($('friendsList') && !$('friendsList').children.length) {
     $('friendsList').innerHTML = groupJoined
@@ -5726,13 +5727,13 @@ function updateChatUi() {
   updateChatCounter();
 
   if (!hasSupabase) {
-    setChatHint('Чат недоступен: нужен Supabase URL и anon public key в config.js.');
+    setChatHint('Чат недоступен: нужны настройки БД в config.js.');
   } else if (!group) {
     setChatHint('Создай группу или открой приглашение, чтобы читать и писать в чат группы.');
   } else if (!groupJoined) {
     setChatHint('Чат заблокирован: сначала нажми “Войти в группу” или открой приглашение.');
   } else if (!chatMessages.length) {
-    setChatHint('Чат готов. Сообщения хранятся в Supabase group_messages и привязаны к текущему ID группы.');
+    setChatHint('Чат готов. Сообщения хранятся в БД и привязаны к текущему ID группы.');
   }
 }
 
@@ -5854,7 +5855,7 @@ function parseSpotChatBody(body) {
 }
 
 function requireGroupChatReady(actionLabel = 'Отправка точки в чат') {
-  if (!getSupabaseConfig()) { markButtonBlocked('Supabase не настроен'); alert('Для отправки точки в чат нужен Supabase в config.js.'); return false; }
+  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); alert('Для отправки точки в чат нужны настройки БД в config.js.'); return false; }
   if (!currentGroupId()) { markButtonBlocked('нет ID группы'); alert('Сначала создай группу или открой приглашение.'); return false; }
   if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); alert('Сначала войди в группу.'); return false; }
   return true;
@@ -5896,7 +5897,7 @@ function showChatSpotOnMap(payload) {
     note: payload.d || '',
     shownAt: new Date().toISOString()
   };
-  renderPmtilesPreviewUserLayers('chat point mirrored to PMTiles preview');
+  renderPmtilesPreviewUserLayers('chat point mirrored to offline map preview');
   setSelectedMapObject('chat');
   switchAppScreen('map', { scrollTop: false });
   if (!canUseMapRuntime()) {
@@ -5948,7 +5949,7 @@ function renderGroupChat(rows = chatMessages) {
   list.innerHTML = '';
 
   if (!getSupabaseConfig()) {
-    list.innerHTML = '<p class="hint">Чат недоступен: не настроен Supabase.</p>';
+    list.innerHTML = '<p class="hint">Чат недоступен: БД не настроена.</p>';
     return;
   }
   if (!currentGroupId()) {
@@ -6039,7 +6040,7 @@ async function refreshGroupChat(showManualHint = true) {
 async function sendOrUpdateChatMessage() {
   const group = currentGroupId();
   if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай группу или открой приглашение.'); }
-  if (!getSupabaseConfig()) { markButtonBlocked('Supabase не настроен'); return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.'); }
+  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала настрой БД в config.js и переопубликуй сайт.'); }
   if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); return alert('Сначала войди в группу.'); }
 
   const input = $('chatMessageInput');
@@ -6335,7 +6336,7 @@ function renderFriends(data) {
 
   safeInvalidateMap(0, 'render/update');
   pmtilesPreviewLiveRows = previewLiveRows;
-  renderPmtilesPreviewUserLayers('live friends mirrored to PMTiles preview');
+  renderPmtilesPreviewUserLayers('live friends mirrored to offline map preview');
 
   if (rows.length && fromCache && memberList) {
     const cacheNote = document.createElement('p');
@@ -6370,13 +6371,13 @@ async function refreshFriends() {
     return true;
   } catch (err) {
     const usedCache = group ? renderCachedFriends(group, `Ошибка обновления: ${err.message}`) : false;
-    if (!usedCache) $('liveHint').textContent = `Ошибка участников: ${err.message}`;
+    if (!usedCache) $('liveHint').textContent = `Ошибка участников: ${err.message}. Если связи нет, группа остаётся открытой локально.`;
     return false;
   }
 }
 
 async function startLiveSharing() {
-  if (!getSupabaseConfig()) { markButtonBlocked('Supabase не настроен'); return alert('Сначала вставь Supabase URL и anon public key в config.js и переопубликуй сайт.'); }
+  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала настрой БД в config.js и переопубликуй сайт.'); }
   const name = $('liveName').value.trim();
   const group = $('groupId').value.trim();
   if (!name) { markButtonBlocked('не указано имя'); return alert('Укажи своё имя.'); }
@@ -6417,11 +6418,11 @@ async function stopLiveSharing(keepWatching = true) {
 async function testSupabaseConnection() {
   try {
     const cfg = getSupabaseConfig();
-    if (!cfg) throw new Error('Supabase не настроен в config.js.');
+    if (!cfg) throw new Error('БД не настроена в config.js.');
     const rows = await supabaseFetch('live_locations?select=id&limit=1', { method: 'GET' });
-    $('liveHint').textContent = `Supabase OK. URL=${cfg.url}. Ответ: ${Array.isArray(rows) ? rows.length : 'ok'}`;
+    $('liveHint').textContent = `БД доступна. Ответ: ${Array.isArray(rows) ? rows.length : 'ok'}`;
   } catch (err) {
-    $('liveHint').textContent = `Supabase test failed: ${err.message}`;
+    $('liveHint').textContent = `Проверка БД не прошла: ${err.message}`;
   }
 }
 
@@ -6544,7 +6545,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.15.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.16.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
@@ -6563,7 +6564,7 @@ async function init() {
   await refreshSpots();
   if (!getSupabaseConfig()) {
     updateLiveUi();
-    $('liveHint').textContent = 'Для live-режима нужен Supabase URL и anon public key в файле config.js.';
+    $('liveHint').textContent = 'Для live-режима нужны настройки БД в файле config.js.';
   } else if ($('groupId').value.trim()) {
     await joinGroup(true);
     $('liveHint').textContent = groupFromUrl
