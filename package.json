@@ -1,0 +1,13 @@
+{
+  "name": "mushroom-spots-pwa",
+  "version": "0.7.6",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:syntax": "node --check app.js && node --check sw.js && node --check leaflet-offline-lite.js && node --check geo.js && node --check export.js && node --check map.js && node --check db.js && node --check ci-checks.mjs && node --check package-checks.mjs && node --check geo.test.mjs",
+    "check:source": "node ci-checks.mjs",
+    "check:package": "node package-checks.mjs",
+    "test": "node --test geo.test.mjs",
+    "ci": "npm run check:syntax && npm run check:source && npm test"
+  }
+}

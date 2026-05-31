@@ -1,9 +1,9 @@
-const CACHE_NAME = 'mushroom-spots-v0.7.4-sprint5.4';
-const APP_ASSET_VERSION = '0.7.4';
+const CACHE_NAME = 'mushroom-spots-v0.7.6-sprint5.6';
+const APP_ASSET_VERSION = '0.7.6';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.
-// config.js, user offline-map-packages.json, and .pmtiles packages are intentionally not pre-cached.
+// config.js/config.json, user offline-map-packages.json, and .pmtiles packages are intentionally not pre-cached.
 // This keeps GitHub Pages uploads from overwriting or depending on user map manifests.
 const APP_SHELL = [
   './',
@@ -96,6 +96,7 @@ self.addEventListener('fetch', (event) => {
     req.headers.has('range') ||
     url.pathname.endsWith('.pmtiles') ||
     url.pathname.endsWith('/config.js') ||
+    url.pathname.endsWith('/config.json') ||
     url.pathname.endsWith('/offline-map-packages.json')
   ) {
     return;
