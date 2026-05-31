@@ -1081,6 +1081,36 @@ body {
 .map-object-actions button {
   min-height: 42px;
 }
+
+/* Sprint 5.19 — Selected Place Context Sheet */
+.map-object-card {
+  position: relative;
+  overflow: hidden;
+  border-width: 1.5px;
+  box-shadow: 0 14px 34px rgba(36, 75, 47, 0.10);
+}
+.map-object-card::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(36, 75, 47, 0.22);
+}
+.map-object-card[data-object-kind="picked"] {
+  background: linear-gradient(180deg, #fff8e8, #fffdf7);
+}
+.map-object-card[data-object-kind="saved"] {
+  background: linear-gradient(180deg, #eff8ed, #fffdf7);
+}
+.map-object-card[data-object-kind="picked"]::before {
+  background: rgba(112, 80, 0, 0.28);
+}
+.map-object-card[data-object-kind="saved"]::before {
+  background: rgba(36, 131, 64, 0.32);
+}
 .map-dot-spot { background:#248340; }
 .map-dot-spot-selected {
   background:#14532d;

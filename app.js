@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.17-hotfix.4';
+const APP_VERSION = '0.7.20';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -845,8 +845,10 @@ function updateActionButtonsUi() {
   setDisabled('shareSpotBtn', !hasSelected);
   setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
   setDisabled('spotListSendToChatBtn', !hasSelected || !canUseChat);
+  setDisabled('saveResultShareBtn', !lastSavedSpotId || !canUseChat);
   setHidden('sendSelectedSpotToChatBtn', !canUseChat);
   setHidden('spotListSendToChatBtn', !canUseChat);
+  setHidden('saveResultShareBtn', !canUseChat);
   setDisabled('deleteSpotBtn', !hasSelected);
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
@@ -4149,18 +4151,19 @@ function describeSelectedMapObject() {
     if (!spot) return null;
     return {
       kind: 'saved',
-      title: 'Сохранённая грибная точка',
+      title: 'Сохранённая точка',
       subtitle: spot.name || 'Грибная точка',
-      pill: 'локальная точка',
+      pill: 'сохранена',
       secondaryVisible: canSendSpotToChat(),
       primary: 'Открыть карточку',
-      secondary: 'Отправить в чат',
+      secondary: 'Поделиться в группе',
+      clear: 'Закрыть',
       rows: [
         ['Название', escapeHtml(spot.name || 'Грибная точка')],
         ['Тип', escapeHtml(spot.mushroomType || 'не указан')],
         ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(spot)],
-        ['Источник', escapeHtml(spotSourceLabel(spot.source))]
+        ['Действие', 'можно открыть карточку или отправить группе']
       ]
     };
   }
@@ -4169,17 +4172,18 @@ function describeSelectedMapObject() {
     if (!pickedMapPoint) return null;
     return {
       kind: 'picked',
-      title: 'Выбранное место на карте',
-      subtitle: 'Это ещё не сохранённая точка. Заполни анкету и нажми сохранение.',
+      title: 'Выбранное место',
+      subtitle: 'Это черновик точки. Заполни анкету ниже, затем сохрани или сохрани и отправь группе.',
       pill: 'черновик',
       secondaryVisible: canSendSpotToChat(),
-      primary: 'Сохранить это место',
-      secondary: 'Отправить в чат',
+      primary: 'Сохранить',
+      secondary: 'Сохранить и поделиться',
+      clear: 'Отмена',
       rows: [
-        ['Состояние', 'выбрано долгим нажатием'],
+        ['Состояние', 'выбрано на карте'],
         ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(pickedMapPoint)],
-        ['Что дальше', 'можно сохранить как грибную точку или сбросить выбор']
+        ['Действие', 'после сохранения точка появится во вкладке “Точки”']
       ]
     };
   }
@@ -4194,6 +4198,7 @@ function describeSelectedMapObject() {
       secondaryVisible: false,
       primary: 'Показать здесь',
       secondary: '',
+      clear: 'Закрыть',
       rows: [
         ['Название', escapeHtml(chatPreviewPoint.title || 'Точка из чата')],
         ['Тип', escapeHtml(chatPreviewPoint.mushroomType || 'не указан')],
@@ -4215,6 +4220,7 @@ function describeSelectedMapObject() {
       secondaryVisible: false,
       primary: 'Показать на карте',
       secondary: '',
+      clear: 'Закрыть',
       rows: [
         ['Имя', escapeHtml(selectedMapObject.name || 'Без имени')],
         ['Координаты', `${fmtCoord(loc.lat)}, ${fmtCoord(loc.lon)}`],
@@ -4248,7 +4254,8 @@ function renderMapObjectPanel() {
     details.innerHTML = model.rows.map(([label, value]) => mapObjectDetailRow(label, value)).join('');
   }
   setText('mapObjectPrimaryBtn', model.primary);
-  setText('mapObjectSecondaryBtn', model.secondary || 'Отправить в чат');
+  setText('mapObjectSecondaryBtn', model.secondary || 'Поделиться в группе');
+  setText('mapObjectClearBtn', model.clear || 'Сбросить выбор');
   setHidden('mapObjectSecondaryBtn', !model.secondaryVisible);
 }
 
@@ -4291,7 +4298,7 @@ function runSelectedMapObjectPrimaryAction() {
 function runSelectedMapObjectSecondaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') return sendSelectedSpotToChat();
-  if (selectedMapObject.kind === 'picked') return sendPickedMapPointToChat();
+  if (selectedMapObject.kind === 'picked') return savePickedMapPointAndShare();
   return false;
 }
 
@@ -4666,8 +4673,9 @@ function showSaveResult(spot, source) {
   if (!card || !spot) return;
   const sourceText = source === 'map-picked' ? 'выбранная точка на карте' : 'текущая GPS-позиция';
   setText('saveResultTitle', 'Точка сохранена');
-  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText}. Теперь её можно открыть на карте или найти во вкладке “Точки”.`);
+  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText}. Теперь её можно открыть в “Точках”${canSendSpotToChat() ? ' или отправить группе' : ''}.`);
   card.hidden = false;
+  updateActionButtonsUi();
 }
 
 function hideSaveResult() {
@@ -4683,6 +4691,17 @@ function showLastSavedSpotOnMap() {
 function showLastSavedSpotInList() {
   if (lastSavedSpotId) selectSpot(lastSavedSpotId, false);
   switchAppScreen('spots');
+}
+
+async function shareLastSavedSpotToChat() {
+  if (!lastSavedSpotId) { markButtonBlocked('нет последней сохранённой точки'); return false; }
+  selectSpot(lastSavedSpotId, false);
+  return sendSelectedSpotToChat();
+}
+
+function closeSaveResult() {
+  hideSaveResult();
+  return true;
 }
 
 function prepareNextSpotSave() {
@@ -4718,6 +4737,19 @@ async function savePickedMapPoint() {
     return;
   }
   return saveSpotFromPosition(pickedMapPoint, 'map-picked');
+}
+
+async function savePickedMapPointAndShare() {
+  if (!pickedMapPoint) {
+    markButtonBlocked('точка на карте не выбрана');
+    alert('Сначала зажми место на карте пальцем примерно на секунду.');
+    return false;
+  }
+  if (!requireGroupChatReady()) return false;
+  const spot = await saveSpotFromPosition(pickedMapPoint, 'map-picked');
+  if (!spot) return false;
+  selectedSpotId = spot.id;
+  return sendSelectedSpotToChat();
 }
 
 async function averageAndSave() {
@@ -6435,9 +6467,9 @@ function bindUi() {
   if ($('saveCurrentGpsOnlyBtn')) $('saveCurrentGpsOnlyBtn').onclick = withButtonDiagnostics('saveCurrentGpsOnlyBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
   if ($('sharePickedMapPointToChatBtn')) $('sharePickedMapPointToChatBtn').onclick = withButtonDiagnostics('sharePickedMapPointToChatBtn', sendPickedMapPointToChat);
-  if ($('saveResultMapBtn')) $('saveResultMapBtn').onclick = withButtonDiagnostics('saveResultMapBtn', showLastSavedSpotOnMap);
+  if ($('saveResultShareBtn')) $('saveResultShareBtn').onclick = withButtonDiagnostics('saveResultShareBtn', shareLastSavedSpotToChat);
   if ($('saveResultListBtn')) $('saveResultListBtn').onclick = withButtonDiagnostics('saveResultListBtn', showLastSavedSpotInList);
-  if ($('saveResultNewBtn')) $('saveResultNewBtn').onclick = withButtonDiagnostics('saveResultNewBtn', prepareNextSpotSave);
+  if ($('saveResultCloseBtn')) $('saveResultCloseBtn').onclick = withButtonDiagnostics('saveResultCloseBtn', closeSaveResult);
   if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
@@ -6546,7 +6578,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.17.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.20`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

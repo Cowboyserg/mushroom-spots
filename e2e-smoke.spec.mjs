@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+const EXPECTED_APP_VERSION = /v0\.7\.20 · Sprint 5\.20/;
+
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
   'cdn.jsdelivr.net',
@@ -44,7 +46,7 @@ async function bootApp(page, options = {}) {
   });
 
   await page.goto(options.path || '/');
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -239,10 +241,85 @@ test('leaving group clears persisted group after reload', async ({ page }) => {
   expect(persisted.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
 
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
   await expect(page.locator('#groupId')).toHaveValue('');
+});
+
+
+
+test('map screen keeps GPS controls but does not duplicate bottom navigation in map content', async ({ page }) => {
+  await bootApp(page);
+
+  const mapScreen = page.locator('#screen-map');
+  await expect(mapScreen).toBeVisible();
+  await expect(mapScreen.getByRole('button', { name: /^GPS$/ })).toBeVisible();
+  await expect(mapScreen.getByRole('button', { name: /^Ко мне$/ })).toBeVisible();
+  await expect(page.locator('#mapObjectCard')).toBeHidden();
+
+  for (const forbiddenNavName of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
+    await expect(mapScreen.getByRole('button', { name: new RegExp(`^${forbiddenNavName}$`) })).toHaveCount(0);
+  }
+});
+
+test('picked map point context sheet exposes object actions without app-nav duplicates', async ({ page }) => {
+  await bootApp(page);
+  await pickMapPoint(page);
+
+  const card = page.locator('#mapObjectCard');
+  await expect(card).toBeVisible();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
+  await expect(page.locator('#mapObjectSubtitle')).toContainText('черновик точки');
+  await expect(page.locator('#mapObjectPill')).toHaveText('черновик');
+  await expect(page.locator('#mapObjectDetails')).toContainText('выбрано на карте');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Сохранить');
+  await expect(page.locator('#mapObjectSecondaryBtn')).toBeHidden();
+  await expect(page.locator('#mapObjectClearBtn')).toHaveText('Отмена');
+
+  for (const forbiddenNavName of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
+    await expect(card.getByRole('button', { name: new RegExp(`^${forbiddenNavName}$`) })).toHaveCount(0);
+  }
+
+  await page.locator('#mapObjectClearBtn').click();
+  await expect(card).toBeHidden();
+  await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
+});
+
+test('picked map point context sheet enables share action only when group chat is ready', async ({ page }) => {
+  await bootApp(page, { fakeSupabase: true });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#groupId').fill('e2e-context-sheet-group');
+  await page.locator('#joinGroupBtn').click();
+  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await pickMapPoint(page);
+  await expect(page.locator('#mapObjectSecondaryBtn')).toBeVisible();
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
+});
+
+test('picked map point context primary save creates result actions and spots handoff', async ({ page }) => {
+  await bootApp(page);
+  await pickMapPoint(page);
+
+  await page.locator('#spotName').fill('Context sheet тестовая точка');
+  await page.locator('#mushroomType').fill('Белые');
+  await page.locator('#spotNote').fill('Сохранено через контекстную карточку выбранного места');
+  await page.locator('#mapObjectPrimaryBtn').click();
+
+  await expect(page.locator('#saveResultCard')).toBeVisible();
+  await expect(page.locator('#saveResultText')).toContainText('Context sheet тестовая точка');
+  await expect(page.locator('#mapObjectTitle')).toContainText('Сохранённая точка');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Открыть карточку');
+  await expect(page.locator('#saveResultListBtn')).toBeVisible();
+  await expect(page.locator('#saveResultCloseBtn')).toBeVisible();
+
+  await page.locator('#saveResultListBtn').click();
+  await expect(page.locator('#screen-spots')).toBeVisible();
+  await expect(page.locator('#spotsList')).toContainText('Context sheet тестовая точка');
 });
 
 test('selected map point can be saved without GPS and save action stays inside spot form', async ({ page }) => {
@@ -286,7 +363,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -314,7 +391,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.17(?:-hotfix\.\d+)? · Sprint 5\.17(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -323,12 +400,12 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await savedSpot.getByRole('button', { name: 'Показать на карте' }).click();
   await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('#mapObjectCard')).toBeVisible();
-  await expect(page.locator('#mapObjectTitle')).toContainText('Сохранённая грибная точка');
+  await expect(page.locator('#mapObjectTitle')).toContainText('Сохранённая точка');
   await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья');
 
   await pickMapPoint(page);
-  await expect(page.locator('#mapObjectTitle')).toContainText('Выбранное место на карте');
-  await expect(page.locator('#mapObjectSubtitle')).toContainText('ещё не сохранённая точка');
+  await expect(page.locator('#mapObjectTitle')).toContainText('Выбранное место');
+  await expect(page.locator('#mapObjectSubtitle')).toContainText('черновик точки');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
