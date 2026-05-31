@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.23 · Sprint 5\.23/;
+const EXPECTED_APP_VERSION = /v0\.7\.23-hotfix\.1 · Sprint 5\.23\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -57,8 +57,11 @@ async function pickMapPoint(page) {
   const box = await map.boundingBox();
   expect(box, 'map must have visible bounds').not.toBeNull();
   await map.click({ button: 'right', position: { x: Math.floor(box.width / 2), y: Math.floor(box.height / 2) } });
-  await expect(page.locator('#saveFlowTitle')).toContainText('Будет сохранена выбранная точка');
-  await expect(page.locator('#saveSpotDetails #saveSpotBtn')).toHaveText('Сохранить выбранную точку');
+  await expect(page.locator('#saveFlowTitle')).toContainText('Выбрано место на карте');
+  await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('☆ Сохранить');
+  await expect(page.locator('#saveSpotDetails #saveSpotBtn')).toHaveText('Сохранить выбранное место');
 }
 
 async function seedSpots(page) {
