@@ -183,7 +183,12 @@ test('settings screen groups diagnostics and advanced actions', async ({ page })
   await expect(page.getByRole('button', { name: 'Сбросить кэш приложения' })).toBeHidden();
   await page.locator('#showMapAdvancedToggle').check();
   await expect(page.locator('#advancedModePill')).toContainText('включен');
+
+  const cacheDangerSummary = page.locator('.settings-danger-panel summary').getByText('Опасные действия с кэшем', { exact: true });
+  await expect(cacheDangerSummary).toBeVisible();
+  await cacheDangerSummary.click();
   await expect(page.getByRole('button', { name: 'Сбросить кэш приложения' })).toBeVisible();
+
   await expect(page.locator('.maintenance-card[data-advanced-only] summary').getByText('Supabase cleanup', { exact: true })).toBeVisible();
 });
 
