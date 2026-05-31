@@ -10,12 +10,32 @@ const EXTERNAL_RUNTIME_HOSTS = [
   'd.basemaps.cartocdn.com'
 ];
 
-async function bootApp(page) {
+async function bootApp(page, options = {}) {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
+
+    if (options.fakeSupabase && url.pathname.endsWith('/config.js')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: `window.MUSHROOM_CONFIG = { SUPABASE_URL: 'https://fake.supabase.test', SUPABASE_ANON_KEY: 'fake-anon-key' };`
+      });
+      return;
+    }
+
+    if (options.fakeSupabase && url.hostname === 'fake.supabase.test' && url.pathname.startsWith('/rest/v1/')) {
+      const method = route.request().method();
+      if (method === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      } else {
+        await route.fulfill({ status: 204, body: '' });
+      }
+      return;
+    }
+
     if (EXTERNAL_RUNTIME_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
       await route.abort();
       return;
@@ -23,8 +43,8 @@ async function bootApp(page) {
     await route.continue();
   });
 
-  await page.goto('/');
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13 · Sprint 5.13');
+  await page.goto(options.path || '/');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -57,7 +77,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T08:00:00.000Z',
         updatedAt: '2026-05-31T08:00:00.000Z',
-        appVersion: '0.7.13'
+        appVersion: '0.7.13-hotfix.1'
       },
       {
         id: 'e2e-chanterelle-spot',
@@ -71,7 +91,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T09:00:00.000Z',
         updatedAt: '2026-05-31T09:00:00.000Z',
-        appVersion: '0.7.13'
+        appVersion: '0.7.13-hotfix.1'
       },
       {
         id: 'e2e-birch-spot',
@@ -85,7 +105,7 @@ async function seedSpots(page) {
         photo: null,
         createdAt: '2026-05-31T07:00:00.000Z',
         updatedAt: '2026-05-31T07:00:00.000Z',
-        appVersion: '0.7.13'
+        appVersion: '0.7.13-hotfix.1'
       }
     ];
 
@@ -145,6 +165,35 @@ test('group screen separates overview members live locations and chat empty stat
   await expect(page.locator('#groupChatList')).toContainText('Чат появится после входа в группу');
 });
 
+test('leaving group clears persisted group after reload', async ({ page }) => {
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-leave-group' });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await expect(page.locator('#groupId')).toHaveValue('e2e-leave-group');
+
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#joinGroupBtn').click();
+  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+
+  await page.locator('#leaveGroupBtn').click();
+  await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
+  await expect(page.locator('#groupId')).toHaveValue('');
+  expect(page.url()).not.toContain('group=');
+
+  const persisted = await page.evaluate(() => ({
+    legacyGroup: localStorage.getItem('mushroom_live_group_id'),
+    profiles: JSON.parse(localStorage.getItem('mushroom_people_profiles_v1') || '[]')
+  }));
+  expect(persisted.legacyGroup).toBeNull();
+  expect(persisted.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
+
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
+  await expect(page.locator('#groupId')).toHaveValue('');
+});
+
 test('selected map point can be saved without GPS and save action stays inside spot form', async ({ page }) => {
   await bootApp(page);
   await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
@@ -186,7 +235,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13 · Sprint 5.13');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -214,7 +263,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText('v0.7.13 · Sprint 5.13');
+  await expect(page.locator('#appVersion')).toContainText('v0.7.13-hotfix.1 · Sprint 5.13.1');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');

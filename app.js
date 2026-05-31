@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.13';
+const APP_VERSION = '0.7.13-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -374,6 +374,31 @@ function applyProfileToInputs(profile, keepCurrentGroup = false) {
   localStorage.setItem('mushroom_live_user_id', profile.id);
   localStorage.setItem('mushroom_live_name', profile.displayName || '');
   localStorage.setItem('mushroom_live_group_id', $('groupId')?.value?.trim() || profile.lastGroupId || '');
+}
+
+function clearGroupInviteFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('group')) return;
+    url.searchParams.delete('group');
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, '', next || './');
+  } catch (err) {
+    console.warn('Could not clear group invite URL', err);
+  }
+}
+
+function clearPersistedGroupSelection() {
+  if ($('groupId')) $('groupId').value = '';
+  localStorage.removeItem('mushroom_live_group_id');
+  const profile = getActiveProfile();
+  if (profile) {
+    profile.lastGroupId = '';
+    profile.updatedAt = new Date().toISOString();
+    savePeopleProfiles();
+  }
+  clearGroupInviteFromUrl();
+  renderPeopleProfiles();
 }
 
 function resetRuntimeGroupSession() {
@@ -5185,13 +5210,12 @@ async function leaveGroup() {
   clearInterval(friendsTimer);
   friendsTimer = null;
   clearFriendMarkers();
+  clearPersistedGroupSelection();
   if ($('friendsList')) $('friendsList').innerHTML = '<p class="hint">Ты вышел из группы.</p>';
   if ($('liveLocationsList')) $('liveLocationsList').innerHTML = '<p class="hint">Live-локации скрыты после выхода из группы.</p>';
   updateGroupScreenUi(0, 0);
-  $('groupId').value = '';
-  localStorage.removeItem('mushroom_live_group_id');
   updateLiveUi();
-  $('liveHint').textContent = 'Ты вышел из группы. Приглашение можно открыть заново.';
+  $('liveHint').textContent = 'Ты вышел из группы. Чтобы вернуться, создай группу или открой приглашение заново.';
 }
 
 async function publishMyLocation() {
@@ -6340,7 +6364,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.13`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.13.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
