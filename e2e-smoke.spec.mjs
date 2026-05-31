@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.20-hotfix\.2 · Sprint 5\.20\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.21 · Sprint 5\.21/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -268,7 +268,16 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await pickMapPoint(page);
 
   const card = page.locator('#mapObjectCard');
+  const inMapCard = page.locator('.map-wrap-home #mapObjectCard');
   await expect(card).toBeVisible();
+  await expect(inMapCard).toBeVisible();
+  const mapBox = await page.locator('.map-wrap-home').boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(mapBox, 'map viewport must have visible bounds').not.toBeNull();
+  expect(cardBox, 'in-map context sheet must have visible bounds').not.toBeNull();
+  expect(cardBox.height, 'in-map context sheet must stay compact').toBeLessThan(mapBox.height * 0.7);
+  expect(cardBox.y, 'context sheet must sit inside the map viewport').toBeGreaterThanOrEqual(mapBox.y);
+  expect(cardBox.y + cardBox.height, 'context sheet must not overflow below map viewport').toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
   await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
   await expect(page.locator('#mapObjectSubtitle')).toContainText('черновик точки');
   await expect(page.locator('#mapObjectPill')).toHaveText('черновик');
@@ -299,6 +308,7 @@ test('picked map point context sheet enables share action only when group chat i
 
   await page.getByRole('button', { name: 'Карта' }).click();
   await pickMapPoint(page);
+  await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
 });
@@ -401,7 +411,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   const savedSpot = page.locator('.spot-item').filter({ hasText: 'Белые у ручья' });
   await savedSpot.getByRole('button', { name: 'Показать на карте' }).click();
   await expect(page.locator('#screen-map')).toBeVisible();
-  await expect(page.locator('#mapObjectCard')).toBeVisible();
+  await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
   await expect(page.locator('#mapObjectTitle')).toContainText('Сохранённая точка');
   await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья');
 
