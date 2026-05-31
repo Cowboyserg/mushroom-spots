@@ -44,7 +44,7 @@ async function bootApp(page, options = {}) {
   });
 
   await page.goto(options.path || '/');
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.14(?:-hotfix\.\d+)? · Sprint 5\.14(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.15(?:-hotfix\.\d+)? · Sprint 5\.15(?:\.\d+)?/);
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
 }
@@ -160,6 +160,33 @@ test('offline maps screen presents map manager structure', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Проверить выбранный PMTiles' })).toBeHidden();
 });
 
+test('settings screen groups diagnostics and advanced actions', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Настройки' }).click();
+  await expect(page.locator('#screen-settings')).toBeVisible();
+
+  await expect(page.getByRole('heading', { name: 'Приложение' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Версия' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Кэш' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Офлайн-режим' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Расширенный режим' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Диагностика' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Открыть debug “!”' })).toBeVisible();
+
+  await expect(page.locator('#settingsGpsDiagnostic')).toBeVisible();
+  await expect(page.locator('#settingsMapDiagnostic')).toBeVisible();
+  await expect(page.locator('#settingsSupabaseDiagnostic')).toBeVisible();
+  await expect(page.locator('#settingsPmtilesDiagnostic')).toBeVisible();
+  await expect(page.locator('#settingsServiceWorkerDiagnostic')).toBeVisible();
+
+  await expect(page.getByRole('button', { name: 'Сбросить кэш приложения' })).toBeHidden();
+  await page.locator('#showMapAdvancedToggle').check();
+  await expect(page.locator('#advancedModePill')).toContainText('включен');
+  await expect(page.getByRole('button', { name: 'Сбросить кэш приложения' })).toBeVisible();
+  await expect(page.locator('.maintenance-card[data-advanced-only] summary').getByText('Supabase cleanup', { exact: true })).toBeVisible();
+});
+
 test('group screen separates overview members live locations and chat empty states', async ({ page }) => {
   await bootApp(page);
 
@@ -205,7 +232,7 @@ test('leaving group clears persisted group after reload', async ({ page }) => {
   expect(persisted.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
 
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.14(?:-hotfix\.\d+)? · Sprint 5\.14(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.15(?:-hotfix\.\d+)? · Sprint 5\.15(?:\.\d+)?/);
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
   await expect(page.locator('#groupId')).toHaveValue('');
@@ -252,7 +279,7 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.14(?:-hotfix\.\d+)? · Sprint 5\.14(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.15(?:-hotfix\.\d+)? · Sprint 5\.15(?:\.\d+)?/);
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');
@@ -280,7 +307,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
-  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.14(?:-hotfix\.\d+)? · Sprint 5\.14(?:\.\d+)?/);
+  await expect(page.locator('#appVersion')).toContainText(/v0\.7\.15(?:-hotfix\.\d+)? · Sprint 5\.15(?:\.\d+)?/);
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotCount')).toHaveText('3');

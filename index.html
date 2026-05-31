@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.14-hotfix.3" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.14-hotfix.3" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.15" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.15" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.14-hotfix.3" />
+  <link rel="stylesheet" href="styles.css?v=0.7.15" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.14-hotfix.3 · Sprint 5.14.3</p>
+      <p id="appVersion">v0.7.15 · Sprint 5.15</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost" title="Диагностика карты и API">!</button>
@@ -429,74 +429,155 @@
     <section class="app-screen" id="screen-settings" data-app-screen="settings" aria-labelledby="screenTitleSettings" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleSettings">Настройки</h2>
-        <p class="hint">Кэш, резервные копии, техническое обслуживание, диагностика и версия.</p>
+        <p class="hint">Приложение, версия, кэш, офлайн-режим, диагностика и расширенные действия.</p>
       </div>
-    <section class="card settings-summary-card">
-      <div class="section-title">
-        <h2>Настройки</h2>
-        <span class="pill">v0.7.14-hotfix.3 · Sprint 5.14.3</span>
-      </div>
-      <p class="hint">Здесь собраны обслуживание, диагностика, версия и backup. Быстрый debug также остаётся доступен через кнопку “!” в верхней панели.</p>
-      <label class="settings-toggle-row" for="showMapAdvancedToggle">
-        <input id="showMapAdvancedToggle" type="checkbox" />
-        <span>
-          <strong>Показывать расширенные кнопки на карте</strong>
-          <small id="mapAdvancedToggleHint">Выключено: карта остаётся чище, инженерные действия скрыты.</small>
-        </span>
-      </label>
-      <div class="row">
-        <button id="settingsMapDebugBtn" class="secondary">Открыть диагностику “!”</button>
-      </div>
-    </section>
-    <section class="card maintenance-card">
-      <details>
-        <summary>
-          <span>Техническое обслуживание</span>
-          <span class="pill">кэш / live_locations</span>
-        </summary>
-        <p class="hint">Здесь можно сбросить кэш приложения или очистить live-таблицу Supabase. Локальные грибные места, заметки, фото, имя, ID группы и backup не удаляются.</p>
-        <div class="storage-state maintenance-state">
-          <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
-          <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
+
+      <section class="card settings-summary-card">
+        <div class="section-title">
+          <h2>Приложение</h2>
+          <span class="pill">v0.7.15 · Sprint 5.15</span>
         </div>
-        <div class="row maintenance-actions">
-          <button id="resetAppCacheBtn" class="secondary">Сбросить кэш приложения</button>
+        <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
+        <div class="settings-info-grid">
+          <div><span class="label">Режим интерфейса</span><strong>полевое приложение</strong></div>
+          <div><span class="label">Основная карта</span><strong>Leaflet + online-raster</strong></div>
+          <div><span class="label">Офлайн-карты</span><strong id="settingsOfflineModeStatus">файл карты не выбран</strong></div>
         </div>
-        <p class="hint">Сброс кэша удаляет Cache Storage и Service Worker, затем перезагружает страницу с обходом старых app.js/styles.css. Пользовательские данные остаются на телефоне. Если Android PWA всё ещё показывает старую версию, закрой приложение из списка последних и открой снова.</p>
-        <div class="row maintenance-actions">
-          <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
-          <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
-          <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
-          <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
+      </section>
+
+      <section class="card settings-version-card">
+        <div class="section-title compact-title">
+          <h2>Версия</h2>
+          <span class="pill on">актуальная сборка</span>
         </div>
-        <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки Supabase.</p>
-      </details>
-    </section>
-    <section class="card">
-      <h2>Хранилище и резервная копия</h2>
-      <div class="storage-state" id="storageState">
-        <div><span class="label">Основное хранилище</span><strong>IndexedDB на этом телефоне</strong></div>
-        <div><span class="label">Резервная папка</span><strong id="folderStatus">не выбрана</strong></div>
-        <div><span class="label">Последняя резервная копия</span><strong id="lastBackupStatus">—</strong></div>
-      </div>
-      <div class="row">
-        <button id="exportAllBtn" class="secondary">Скачать backup JSON</button>
-        <label class="file-button">
-          Импорт JSON
-          <input id="importFile" type="file" accept="application/json,.json" />
+        <div class="storage-state">
+          <div><span class="label">Версия приложения</span><strong>v0.7.15</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.15 — Settings and Diagnostics UX</strong></div>
+          <div><span class="label">Service Worker cache</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.15</strong></div>
+        </div>
+      </section>
+
+      <section class="card settings-advanced-card">
+        <div class="section-title compact-title">
+          <h2>Расширенный режим</h2>
+          <span id="advancedModePill" class="pill warn">выключен</span>
+        </div>
+        <label class="settings-toggle-row" for="showMapAdvancedToggle">
+          <input id="showMapAdvancedToggle" type="checkbox" />
+          <span>
+            <strong>Включить расширенный режим</strong>
+            <small id="mapAdvancedToggleHint">Выключено: технические действия скрыты, обычные сценарии остаются на виду.</small>
+          </span>
         </label>
-      </div>
-      <div class="row storage-actions">
-        <button id="chooseFolderBtn" class="secondary">Выбрать папку для backup</button>
-        <button id="saveFolderBackupBtn" class="secondary">Сохранить backup в папку</button>
-        <button id="requestPersistentBtn" class="secondary">Запросить постоянное хранение</button>
-      </div>
-      <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
-    </section>
-    <section class="card">
-      <h2>Sprint 5.14.3</h2>
-      <p class="hint">Экран офлайн-карт стал менеджером карт: мои карты, текущая карта, понятный выбор файла, предпросмотр и диагностика спрятана в технический блок.</p>
-    </section>
+        <p class="hint">Инвариант: ничего не удалено. Расширенный режим только показывает инженерные действия — ремонт карты, очистку кэша, Supabase cleanup и подробную диагностику.</p>
+      </section>
+
+      <section class="card settings-diagnostics-card">
+        <div class="section-title compact-title">
+          <h2>Диагностика</h2>
+          <span class="pill">сводка</span>
+        </div>
+        <div class="settings-diagnostics-grid">
+          <div><span class="label">GPS</span><strong id="settingsGpsDiagnostic">ожидает запуска геолокации</strong></div>
+          <div><span class="label">Карта / basemap</span><strong id="settingsMapDiagnostic">проверяется</strong></div>
+          <div><span class="label">Supabase</span><strong id="settingsSupabaseDiagnostic">не настроен или не проверен</strong></div>
+          <div><span class="label">PMTiles / офлайн-карта</span><strong id="settingsPmtilesDiagnostic">файл карты не выбран</strong></div>
+          <div><span class="label">Service Worker / cache</span><strong id="settingsServiceWorkerDiagnostic">проверяется</strong></div>
+        </div>
+        <div class="row">
+          <button id="settingsMapDebugBtn" class="secondary">Открыть debug “!”</button>
+        </div>
+        <details class="settings-advanced-panel" data-advanced-only hidden>
+          <summary>
+            <span>Подробная диагностика</span>
+            <span class="pill warn">advanced</span>
+          </summary>
+          <p class="hint">Разделение по слоям: GPS, карта/basemap, Supabase, PMTiles и Service Worker/cache. Полный JSON остаётся в debug “!”.</p>
+          <div class="settings-diagnostics-grid">
+            <div><span class="label">Последний экран</span><strong id="settingsActiveScreenDiagnostic">—</strong></div>
+            <div><span class="label">Интернет</span><strong id="settingsOnlineDiagnostic">—</strong></div>
+            <div><span class="label">Map provider</span><strong id="settingsMapProviderDiagnostic">—</strong></div>
+            <div><span class="label">PMTiles runtime</span><strong id="settingsPmtilesRuntimeDiagnostic">—</strong></div>
+          </div>
+        </details>
+      </section>
+
+      <section class="card settings-cache-card">
+        <div class="section-title compact-title">
+          <h2>Кэш</h2>
+          <span class="pill warn">осторожно</span>
+        </div>
+        <p class="hint">Кэш помогает приложению открываться в лесу. Сброс нужен только если после обновления GitHub Pages показывается старая версия.</p>
+        <details class="settings-danger-panel" data-advanced-only hidden>
+          <summary>
+            <span>Опасные действия с кэшем</span>
+            <span class="pill bad">danger</span>
+          </summary>
+          <p class="hint danger-copy">Сброс удаляет Cache Storage и Service Worker, затем перезагружает страницу с обходом старых app.js/styles.css. Локальные грибные точки, фото, имя, ID группы и backup-настройки остаются на телефоне.</p>
+          <div class="row maintenance-actions">
+            <button id="resetAppCacheBtn" class="danger">Сбросить кэш приложения</button>
+          </div>
+        </details>
+      </section>
+
+      <section class="card settings-offline-card">
+        <div class="section-title compact-title">
+          <h2>Офлайн-режим</h2>
+          <span class="pill">карты</span>
+        </div>
+        <p class="hint">Офлайн-карты выбираются на экране “Офлайн”. Без выбранного файла можно пользоваться GPS и сохранёнными точками, но подложка карты может не загрузиться без интернета.</p>
+        <div class="row">
+          <button class="secondary" type="button" data-screen-target="offline">Открыть офлайн-карты</button>
+        </div>
+      </section>
+
+      <section class="card maintenance-card" data-advanced-only hidden>
+        <details>
+          <summary>
+            <span>Supabase cleanup</span>
+            <span class="pill bad">advanced / danger</span>
+          </summary>
+          <p class="hint danger-copy">Эти действия меняют live-таблицы Supabase. Они не удаляют локальные грибные точки, но могут убрать live-записи из группы.</p>
+          <div class="storage-state maintenance-state">
+            <div><span class="label">Мой live user_id</span><strong id="myLiveUserId">—</strong></div>
+            <div><span class="label">Текущая группа</span><strong id="cleanupGroupMirror">смотри поле ID группы выше</strong></div>
+          </div>
+          <div class="row maintenance-actions">
+            <button id="cleanMyDbBtn" class="danger">Удалить меня из БД</button>
+            <button id="cleanMyEverywhereDbBtn" class="danger">Удалить меня из всех групп</button>
+            <button id="cleanStaleGroupDbBtn" class="secondary">Удалить старые записи группы</button>
+            <button id="cleanCurrentGroupDbBtn" class="danger">Очистить текущую группу</button>
+          </div>
+          <p class="hint" id="dbCleanupHint">Чистка БД станет доступна после настройки Supabase.</p>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>Хранилище и резервная копия</h2>
+        <div class="storage-state" id="storageState">
+          <div><span class="label">Основное хранилище</span><strong>IndexedDB на этом телефоне</strong></div>
+          <div><span class="label">Резервная папка</span><strong id="folderStatus">не выбрана</strong></div>
+          <div><span class="label">Последняя резервная копия</span><strong id="lastBackupStatus">—</strong></div>
+        </div>
+        <div class="row">
+          <button id="exportAllBtn" class="secondary">Скачать backup JSON</button>
+          <label class="file-button">
+            Импорт JSON
+            <input id="importFile" type="file" accept="application/json,.json" />
+          </label>
+        </div>
+        <div class="row storage-actions">
+          <button id="chooseFolderBtn" class="secondary">Выбрать папку для backup</button>
+          <button id="saveFolderBackupBtn" class="secondary">Сохранить backup в папку</button>
+          <button id="requestPersistentBtn" class="secondary">Запросить постоянное хранение</button>
+        </div>
+        <p class="hint" id="storageHint">Точки хранятся локально. На iPhone папка обычно недоступна, поэтому надёжный режим — периодически скачивать backup JSON.</p>
+      </section>
+
+      <section class="card">
+        <h2>Sprint 5.15</h2>
+        <p class="hint">Настройки стали центром управления: версия, кэш, офлайн-режим, диагностика, debug и расширенный режим без удаления старых технических действий.</p>
+      </section>
     </section>
   </main>
 
@@ -530,10 +611,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.14-hotfix.3"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.15"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.14-hotfix.3"></script>
-  <script src="app.js?v=0.7.14-hotfix.3"></script>
+  <script src="config.js?v=0.7.15"></script>
+  <script src="app.js?v=0.7.15"></script>
 </body>
 </html>

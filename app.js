@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.14-hotfix.3';
+const APP_VERSION = '0.7.15';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -20,7 +20,7 @@ const REMEMBERED_PMTILES_MAPS_KEY = 'mushroom_remembered_pmtiles_maps_v1';
 const BBOX_EXPORT_OUTPUT_FILE = 'mushroom-medium-z14.pmtiles';
 const BBOX_EXPORT_MAX_ZOOM = 14;
 const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
-const MAP_ADVANCED_CONTROLS_KEY = 'mushroom_show_map_advanced_controls_v1';
+const APP_ADVANCED_MODE_KEY = 'mushroom_advanced_mode_v1';
 const APP_SCREENS = ['map', 'spots', 'group', 'offline', 'settings'];
 const APP_CACHE_RESET_MARKER_KEY = 'mushroom_app_cache_reset_marker_v1';
 
@@ -3452,6 +3452,7 @@ function switchAppScreen(screen, options = {}) {
   }
 
   resizeActiveScreenMaps(`active screen: ${next}`);
+  renderSettingsDiagnostics();
   return next;
 }
 
@@ -3469,29 +3470,85 @@ function setMapAdvancedControlsVisibility(enabled, options = {}) {
   const panel = $('mapAdvancedPanel');
   if (panel) panel.hidden = !next;
 
+  document.querySelectorAll('[data-advanced-only]').forEach((element) => {
+    element.hidden = !next;
+  });
+
   const toggle = $('showMapAdvancedToggle');
   if (toggle) toggle.checked = next;
 
   const hint = $('mapAdvancedToggleHint');
   if (hint) {
     hint.textContent = next
-      ? 'Включено: на экране карты доступны ремонт, уточнение GPS и редкие действия.'
-      : 'Выключено: карта остаётся чище, инженерные действия скрыты.';
+      ? 'Включено: доступны инженерные действия, диагностика, ремонт карты, кэш и Supabase cleanup.'
+      : 'Выключено: технические действия скрыты, обычные сценарии остаются на виду.';
+  }
+
+  const pill = $('advancedModePill');
+  if (pill) {
+    pill.textContent = next ? 'включен' : 'выключен';
+    pill.className = next ? 'pill on' : 'pill warn';
   }
 
   document.body.classList.toggle('map-advanced-enabled', next);
 
   if (persist) {
-    try { localStorage.setItem(MAP_ADVANCED_CONTROLS_KEY, next ? '1' : '0'); } catch {}
+    try { localStorage.setItem(APP_ADVANCED_MODE_KEY, next ? '1' : '0'); } catch {}
   }
 
-  if (activeAppScreen === 'map') resizeActiveScreenMaps('map advanced controls changed');
+  renderSettingsDiagnostics();
+  if (activeAppScreen === 'map') resizeActiveScreenMaps('advanced mode changed');
 }
 
 function restoreMapAdvancedControlsPreference() {
   let saved = '0';
-  try { saved = localStorage.getItem(MAP_ADVANCED_CONTROLS_KEY) || '0'; } catch {}
+  try {
+    saved = localStorage.getItem(APP_ADVANCED_MODE_KEY)
+      || localStorage.getItem('mushroom_show_map_advanced_controls_v1')
+      || '0';
+  } catch {}
   setMapAdvancedControlsVisibility(saved === '1', { persist: false });
+}
+
+function renderSettingsDiagnostics() {
+  const provider = mapProviderSnapshot();
+  const cfg = typeof getSupabaseConfig === 'function' ? getSupabaseConfig() : null;
+  const gpsText = currentPosition
+    ? `есть позиция, точность ${meters(currentPosition.accuracy)}`
+    : 'геопозиция ещё не запускалась';
+  const mapText = provider.mapProvider === MAP_PROVIDER_NO_BASEMAP || provider.fallbackActive
+    ? 'подложка недоступна, точки работают'
+    : provider.mapSourceStatus === 'online-ready'
+      ? 'online-raster работает'
+      : provider.mapSourceStatus || 'проверяется';
+  const supabaseText = cfg
+    ? (apiDebugEvents.length ? `настроен, запросов: ${apiDebugEvents.length}` : 'настроен, запросов ещё не было')
+    : 'не настроен';
+  const pmtilesText = localPmtilesFileState.status === 'selected'
+    ? `выбран файл: ${getUserFacingOfflineMapState().title}`
+    : offlinePackageStatus === 'preview-ready-runtime-experimental'
+      ? 'предпросмотр готов'
+      : 'файл карты не выбран';
+  const swText = 'serviceWorker' in navigator
+    ? ('caches' in window ? 'Service Worker и Cache API доступны' : 'Service Worker доступен, Cache API недоступен')
+    : 'Service Worker недоступен';
+
+  const setText = (id, value) => {
+    const element = $(id);
+    if (element) element.textContent = value;
+  };
+
+  setText('settingsOfflineModeStatus', pmtilesText);
+  setText('settingsCacheStatus', `mushroom-spots-v${APP_VERSION}`);
+  setText('settingsGpsDiagnostic', gpsText);
+  setText('settingsMapDiagnostic', mapText);
+  setText('settingsSupabaseDiagnostic', supabaseText);
+  setText('settingsPmtilesDiagnostic', pmtilesText);
+  setText('settingsServiceWorkerDiagnostic', swText);
+  setText('settingsActiveScreenDiagnostic', activeAppScreen);
+  setText('settingsOnlineDiagnostic', navigator.onLine ? 'онлайн' : 'офлайн');
+  setText('settingsMapProviderDiagnostic', `${provider.mapProvider} / ${provider.mapSourceStatus}`);
+  setText('settingsPmtilesRuntimeDiagnostic', `${offlinePackageStatus} / ${pmtilesRuntimeProbe.status}`);
 }
 
 function bindAppNavigationShell() {
@@ -3502,7 +3559,6 @@ function bindAppNavigationShell() {
   if ($('showMapAdvancedToggle')) {
     $('showMapAdvancedToggle').addEventListener('change', (event) => {
       setMapAdvancedControlsVisibility(event.target.checked);
-      if (event.target.checked) switchAppScreen('map');
     });
   }
 }
@@ -3601,6 +3657,8 @@ function updateMapDebugUi(forceText = false) {
   if (textEl && (forceText || $('mapDebugDialog')?.open)) {
     textEl.textContent = formatDiagnosticsText();
   }
+
+  renderSettingsDiagnostics();
 
   const hint = $('mapHint');
   if (hint) {
@@ -6486,7 +6544,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.14.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.15`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();

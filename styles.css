@@ -1219,3 +1219,55 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Sprint 5.15 settings and diagnostics UX. */
+.settings-info-grid,
+.settings-diagnostics-grid {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.settings-info-grid > div,
+.settings-diagnostics-grid > div {
+  padding: 10px 12px;
+  border: 1px solid rgba(36,75,47,.12);
+  border-radius: 14px;
+  background: rgba(250,248,239,.78);
+}
+.settings-info-grid strong,
+.settings-diagnostics-grid strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.settings-advanced-panel,
+.settings-danger-panel,
+.maintenance-card[data-advanced-only] {
+  border: 1px dashed rgba(155,44,44,.28);
+  border-radius: 16px;
+  background: #fffaf0;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.settings-advanced-panel summary,
+.settings-danger-panel summary,
+.maintenance-card[data-advanced-only] summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 850;
+  color: var(--green);
+}
+.danger-copy {
+  color: #7a1f1f;
+}
+@media (min-width: 720px) {
+  .settings-info-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .settings-diagnostics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
