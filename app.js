@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.9-hotfix.2';
+const APP_VERSION = '0.7.9-hotfix.3';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -764,13 +764,13 @@ function getSaveSpotTarget() {
     kind: 'none',
     source: null,
     position: null,
-    title: navigator.geolocation ? 'Сначала включи GPS' : 'GPS недоступен',
+    title: navigator.geolocation ? 'Выбери место или включи GPS' : 'GPS недоступен',
     description: navigator.geolocation
-      ? 'Нажми “GPS” или выбери место на карте, затем заполни анкету и нажми кнопку сохранения под ней.'
-      : 'Этот браузер не даёт доступ к геолокации. Точку можно будет сохранить после выбора места на карте.',
+      ? 'Сохранить можно выбранную точку без GPS: зажми место на карте примерно на секунду. GPS нужен только если хочешь сохранить своё текущее место.'
+      : 'GPS недоступен, но можно сохранить выбранную точку: зажми место на карте примерно на секунду.',
     pill: navigator.geolocation ? 'ждём GPS' : 'GPS недоступен',
     pillState: 'warn',
-    button: navigator.geolocation ? 'Включить GPS для сохранения' : 'Сохранить место'
+    button: navigator.geolocation ? 'Включить GPS' : 'Выбери место на карте'
   };
 }
 
@@ -4258,8 +4258,8 @@ function prepareNextSpotSave() {
 async function saveSmartSpot() {
   const target = getSaveSpotTarget();
   if (target.kind === 'none') {
-    markButtonBlocked('GPS ещё не готов');
-    setText('saveFlowDescription', 'Запрашиваю GPS. Когда появятся координаты, нажми “Сохранить моё место”.');
+    markButtonBlocked('место ещё не выбрано');
+    setText('saveFlowDescription', 'Запрашиваю GPS для сохранения текущего места. Если нужно сохранить не своё место, выбери точку на карте долгим нажатием.');
     startGps(true);
     return false;
   }
@@ -5977,7 +5977,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.9.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.9.3`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
