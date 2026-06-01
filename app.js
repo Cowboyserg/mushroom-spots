@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.1';
+const APP_VERSION = '0.7.27-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -73,6 +73,7 @@ let showMapAdvancedControls = false;
 let watchId = null;
 let spots = [];
 let customSpotCollections = [];
+let activeSpotCollection = null;
 let spotMarkers = new Map();
 let selectedSpotId = null;
 let lastSavedSpotId = null;
@@ -7495,7 +7496,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -7526,8 +7527,8 @@ async function init() {
   }
 }
 
+window.addEventListener('pagehide', closeDbConnection);
 window.addEventListener('beforeunload', closeDbConnection);
-window.addEventListener('mushroom:e2e-close-db', closeDbConnection);
 
 init().catch(err => {
   console.error(err);

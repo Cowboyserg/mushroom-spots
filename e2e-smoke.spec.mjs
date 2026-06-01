@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.27 · Sprint 5\.27/;
+const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.2 · Sprint 5\.27\.2/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -66,7 +66,7 @@ async function pickMapPoint(page) {
 
 async function seedSpots(page) {
   await page.evaluate(async () => {
-    window.dispatchEvent(new Event('mushroom:e2e-close-db'));
+    window.dispatchEvent(new Event('pagehide'));
     const DB_NAME = 'mushroom-spots-db';
     const DB_VERSION = 2;
     const SPOTS_STORE = 'spots';
