@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.28';
+const APP_VERSION = '0.7.29';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -6355,9 +6355,35 @@ function showNavigationLine() {
   map.fitBounds(navLine.getBounds(), { padding: [40, 40] });
 }
 
-function exportAll() {
-  downloadJson(`mushroom-spots-backup-${new Date().toISOString().slice(0,10)}.json`, buildBackupPayload());
+function getBackupUserSummary(payload) {
+  const spotCount = payload?.validation?.spotCount ?? payload?.data?.spots?.length ?? 0;
+  const folderCount = payload?.validation?.customCollectionCount ?? payload?.data?.settings?.customCollections?.length ?? 0;
+  return { spotCount, folderCount };
 }
+
+function getBackupUserSummaryText(payload) {
+  const { spotCount, folderCount } = getBackupUserSummary(payload);
+  return `Точек: ${spotCount}. Пользовательских папок: ${folderCount}. Карты, группы, чат и ключи не входят в JSON.`;
+}
+
+function setBackupStatus(message) {
+  setText('backupOperationStatus', message || '—');
+}
+
+async function markManualBackupExported(payload) {
+  const now = new Date().toISOString();
+  await setSetting('lastManualBackupAt', now);
+  await setSetting('lastBackupSummary', getBackupUserSummaryText(payload));
+  await updateStorageUi();
+  setBackupStatus(`Экспорт готов. ${getBackupUserSummaryText(payload)} Сохрани файл вне браузера.`);
+}
+
+async function exportAll() {
+  const payload = buildBackupPayload();
+  downloadJson(`mushroom-spots-backup-${new Date().toISOString().slice(0,10)}.json`, payload);
+  await markManualBackupExported(payload);
+}
+
 
 function exportSelected() {
   const spot = spots.find(s => s.id === selectedSpotId);
@@ -6437,8 +6463,17 @@ function commitValidatedBackupImport(validated) {
   });
 }
 
+function formatBackupImportSuccess(validated) {
+  return `Импорт завершён. Восстановлено точек: ${validated.spots.length}. Восстановлено пользовательских папок: ${validated.customCollections.length}. Существующие данные не очищались.`;
+}
+
+function formatBackupImportError(error) {
+  return `Импорт отклонён: ${error.message}. Данные на устройстве не изменены.`;
+}
+
 async function importJson(file) {
   if (!file) return;
+  setBackupStatus('Проверяю файл резервной копии…');
   const text = await file.text();
   let parsed;
   try {
@@ -6447,13 +6482,19 @@ async function importJson(file) {
     throw new Error('JSON повреждён или имеет неправильный формат');
   }
   const validated = validateBackupPayload(parsed);
+  setBackupStatus(`Файл проверен. Готовлю восстановление: точек ${validated.spots.length}, папок ${validated.customCollections.length}.`);
   await commitValidatedBackupImport(validated);
   await loadSpotCollections();
   await afterDataChanged();
   updateSpotCollectionFilterOptions();
   updateSpotCollectionUi(activeSpotCollection);
-  alert(`Импортировано точек: ${validated.spots.length}. Восстановлено папок: ${validated.customCollections.length}`);
+  const message = formatBackupImportSuccess(validated);
+  await setSetting('lastImportSummary', message);
+  await updateStorageUi();
+  setBackupStatus(message);
+  alert(message);
 }
+
 
 async function deleteSelected() {
   const spot = spots.find(s => s.id === selectedSpotId);
@@ -6533,13 +6574,20 @@ async function updateStorageUi() {
     $('folderStatus').textContent = 'не выбрана';
     $('saveFolderBackupBtn').disabled = true;
   }
-  const last = await getSetting('lastFolderBackupAt');
+  const lastFolder = await getSetting('lastFolderBackupAt');
+  const lastManual = await getSetting('lastManualBackupAt');
+  const last = [lastFolder, lastManual].filter(Boolean).sort().pop();
   $('lastBackupStatus').textContent = last ? fmtDate(last) : '—';
+  const lastBackupSummary = await getSetting('lastBackupSummary');
+  const lastImportSummary = await getSetting('lastImportSummary');
+  if (lastImportSummary) setBackupStatus(lastImportSummary);
+  else if (lastBackupSummary) setBackupStatus(`Последний экспорт: ${lastBackupSummary}`);
+  else setBackupStatus('Backup JSON сохраняет точки и пользовательские папки. Карты, группы, чат и ключи не входят в файл.');
   if (navigator.storage && navigator.storage.estimate) {
     try {
       const estimate = await navigator.storage.estimate();
       const used = estimate.usage ? Math.round(estimate.usage / 1024 / 1024) : 0;
-      $('storageHint').textContent = `Сохранено точек: ${spots.length}. Пользовательских папок: ${customSpotCollections.length}. Примерно занято локально: ${used} МБ. На iPhone основной надёжный способ — периодический backup JSON.`;
+      $('storageHint').textContent = `Сейчас локально: точек ${spots.length}, пользовательских папок ${customSpotCollections.length}. Примерно занято: ${used} МБ. На iPhone скачивай JSON вручную и храни файл вне браузера/iCloud-вкладки.`;
     } catch {}
   }
 }
@@ -7863,7 +7911,7 @@ function bindUi() {
   if ($('sendSelectedSpotToChatBtn')) $('sendSelectedSpotToChatBtn').onclick = withButtonDiagnostics('sendSelectedSpotToChatBtn', sendSelectedSpotToChat);
   if ($('spotListSendToChatBtn')) $('spotListSendToChatBtn').onclick = withButtonDiagnostics('spotListSendToChatBtn', sendSelectedSpotToChat);
   $('exportAllBtn').onclick = withButtonDiagnostics('exportAllBtn', exportAll);
-  $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { alert(`Ошибка импорта: ${err.message}`); } finally { e.target.value = ''; } };
+  $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { const message = formatBackupImportError(err); setBackupStatus(message); alert(message); } finally { e.target.value = ''; } };
   $('chooseFolderBtn').onclick = withButtonDiagnostics('chooseFolderBtn', chooseBackupFolder);
   $('saveFolderBackupBtn').onclick = withButtonDiagnostics('saveFolderBackupBtn', () => saveBackupToFolder(true).catch(err => alert(`Ошибка backup: ${err.message}`)));
   $('requestPersistentBtn').onclick = withButtonDiagnostics('requestPersistentBtn', requestPersistentStorage);
@@ -7954,7 +8002,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.28`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.29`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

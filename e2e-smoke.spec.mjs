@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.28 · Sprint 5\.28/;
+const EXPECTED_APP_VERSION = /v0\.7\.29 · Sprint 5\.29/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -848,7 +848,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.28');
+  expect(backup.appVersion).toBe('0.7.29');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -861,6 +861,35 @@ test('local JSON backup export creates validated spots and custom folders withou
   expect(JSON.stringify(backup)).not.toContain('SUPABASE_ANON_KEY');
   expect(JSON.stringify(backup)).not.toContain('backupFolderHandle');
   expect(JSON.stringify(backup)).not.toContain('.pmtiles');
+});
+
+
+
+test('backup settings explains export scope and updates user-visible export summary', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  const backup = await exportBackupViaSettings(page);
+  expect(backup.validation.spotCount).toBe(3);
+  await expect(page.locator('#backupOperationStatus')).toContainText('Экспорт готов. Точек: 3. Пользовательских папок: 0. Карты, группы, чат и ключи не входят в JSON. Сохрани файл вне браузера.');
+  await expect(page.locator('#storageHint')).toContainText('На iPhone скачивай JSON вручную');
+  await expect(page.locator('#lastBackupStatus')).not.toHaveText('—');
+});
+
+test('backup settings keeps clear rejected-import status without erasing data', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  const before = await readLocalBackupState(page);
+
+  await importJsonFileViaSettings(page, '{ bad backup json', /Импорт отклонён: JSON повреждён/);
+  await expect(page.locator('#backupOperationStatus')).toContainText('Импорт отклонён: JSON повреждён или имеет неправильный формат. Данные на устройстве не изменены.');
+
+  const after = await readLocalBackupState(page);
+  expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
 });
 
 test('local JSON backup import restores spots and empty custom folders on every platform', async ({ page }) => {
@@ -883,7 +912,8 @@ test('local JSON backup import restores spots and empty custom folders on every 
   expect(state.spots).toEqual([]);
   expect(state.customCollections).toEqual([]);
 
-  await importJsonFileViaSettings(page, backup, /Импортировано точек: 3\. Восстановлено папок: 1/);
+  await importJsonFileViaSettings(page, backup, /Импорт завершён\. Восстановлено точек: 3\. Восстановлено пользовательских папок: 1\. Существующие данные не очищались\./);
+  await expect(page.locator('#backupOperationStatus')).toContainText('Импорт завершён. Восстановлено точек: 3. Восстановлено пользовательских папок: 1. Существующие данные не очищались.');
   state = await readLocalBackupState(page);
   expect(state.spots.map((spot) => spot.name).sort()).toEqual([
     'Белые у ручья',
@@ -907,7 +937,7 @@ test('local JSON backup import rejects malformed JSON without erasing existing d
   const before = await readLocalBackupState(page);
   expect(before.spots.map((spot) => spot.name)).toContain('Белые у ручья');
 
-  await importJsonFileViaSettings(page, '{ this is not valid json', /Ошибка импорта: JSON повреждён/);
+  await importJsonFileViaSettings(page, '{ this is not valid json', /Импорт отклонён: JSON повреждён/);
 
   const after = await readLocalBackupState(page);
   expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
@@ -930,7 +960,7 @@ test('local JSON backup import rejects unsupported schema before any write', asy
       spots: [{ id: 'bad-future-spot', name: 'Не должен появиться', lat: 56, lon: 24 }],
       settings: { customCollections: [] }
     }
-  }, /Ошибка импорта: Версия схемы backup не поддерживается/);
+  }, /Импорт отклонён: Версия схемы backup не поддерживается/);
 
   const after = await readLocalBackupState(page);
   expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
@@ -947,14 +977,14 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.28',
+    appVersion: '0.7.29',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
       spots: [{ id: 'bad-coords-spot', name: 'Опасная точка', lat: 'not-a-number', lon: 24 }],
       settings: { customCollections: ['Опасная папка'] }
     }
-  }, /Ошибка импорта: Точка #1 содержит неправильные координаты/);
+  }, /Импорт отклонён: Точка #1 содержит неправильные координаты/);
 
   const after = await readLocalBackupState(page);
   expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
