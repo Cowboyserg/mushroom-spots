@@ -1953,8 +1953,41 @@ select {
     font-size: 14px;
   }
 
+  .save-flow-state-top {
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    border-radius: 16px;
+  }
+
+  .save-flow-state-top .save-flow-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+
+  .save-flow-state-top .hint {
+    margin: 2px 0 0;
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .save-flow-state-top .save-flow-coords {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  #screen-map .map-home-shell {
+    gap: 6px;
+  }
+
   #screen-map .map-wrap-home {
-    height: clamp(340px, calc(100dvh - 380px - env(safe-area-inset-bottom)), 580px);
+    height: clamp(348px, calc(100dvh - 340px - env(safe-area-inset-bottom)), 600px);
     min-height: 0;
     max-height: none;
     border-radius: 22px;
@@ -1984,7 +2017,7 @@ select {
   }
   @media (max-width: 560px) {
     #screen-map .map-wrap-home {
-      height: clamp(340px, calc(100vh - 380px - env(safe-area-inset-bottom)), 580px);
+      height: clamp(348px, calc(100vh - 340px - env(safe-area-inset-bottom)), 600px);
     }
   }
 }
