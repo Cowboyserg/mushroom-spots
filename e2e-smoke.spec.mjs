@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.2 · Sprint 5\.27\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.3 · Sprint 5\.27\.3/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -516,6 +516,16 @@ test('spots screen opens as folder list and filters marks inside folder', async 
   await expect(page.locator('#spotFoldersList')).toContainText('Разведка');
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
 
+  await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
+  await expect(page.locator('#spotFolderDetailView')).toBeVisible();
+  await expect(page.locator('#activeSpotCollectionTitle')).toHaveText('Разведка');
+  await expect(page.locator('#spotCount')).toHaveText('1');
+  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
+  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
+
+  await page.goBack();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await expect(page.locator('#spotFolderDetailView')).toBeHidden();
   await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
   await expect(page.locator('#spotFolderDetailView')).toBeVisible();
   await expect(page.locator('#activeSpotCollectionTitle')).toHaveText('Разведка');

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.2';
+const APP_VERSION = '0.7.27-hotfix.3';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -74,6 +74,8 @@ let watchId = null;
 let spots = [];
 let customSpotCollections = [];
 let activeSpotCollection = null;
+let suppressSpotHistorySync = false;
+const SPOTS_HISTORY_STATE_KEY = 'mushroomSpotsUiState';
 let spotMarkers = new Map();
 let selectedSpotId = null;
 let lastSavedSpotId = null;
@@ -5636,6 +5638,73 @@ function renderSpotListItem(spot, canUseChat) {
   return item;
 }
 
+
+function makeSpotHistoryState(level, overrides = {}) {
+  return {
+    ...(window.history && typeof window.history.state === 'object' && window.history.state ? window.history.state : {}),
+    [SPOTS_HISTORY_STATE_KEY]: true,
+    screen: 'spots',
+    spotsLevel: level,
+    collection: overrides.collection ?? activeSpotCollection ?? null,
+    selectedSpotId: overrides.selectedSpotId ?? selectedSpotId ?? null
+  };
+}
+
+function replaceSpotHistoryState(level, overrides = {}) {
+  if (suppressSpotHistorySync || !window.history?.replaceState) return false;
+  try {
+    window.history.replaceState(makeSpotHistoryState(level, overrides), '', window.location.href);
+    return true;
+  } catch (err) {
+    console.warn('Could not replace spots history state', err);
+    return false;
+  }
+}
+
+function pushSpotHistoryState(level, overrides = {}) {
+  if (suppressSpotHistorySync || !window.history?.pushState) return false;
+  try {
+    window.history.pushState(makeSpotHistoryState(level, overrides), '', window.location.href);
+    return true;
+  } catch (err) {
+    console.warn('Could not push spots history state', err);
+    return false;
+  }
+}
+
+function handleSpotHistoryPopState(event) {
+  const state = event?.state || null;
+  if (!state || state[SPOTS_HISTORY_STATE_KEY] !== true || state.screen !== 'spots') return;
+
+  suppressSpotHistorySync = true;
+  try {
+    if (activeAppScreen !== 'spots') switchAppScreen('spots', { persist: true, scrollTop: false });
+
+    if (state.spotsLevel === 'details' && state.selectedSpotId) {
+      activeSpotCollection = normalizeSpotCollectionName(state.collection) || SPOT_DEFAULT_COLLECTION;
+      selectedSpotId = null;
+      spotListEditorOpen = false;
+      renderList();
+      openSpotDetailsFromList(state.selectedSpotId, { pushHistory: false });
+      return;
+    }
+
+    if (state.spotsLevel === 'collection' && state.collection) {
+      activeSpotCollection = normalizeSpotCollectionName(state.collection) || SPOT_DEFAULT_COLLECTION;
+      selectedSpotId = null;
+      spotListEditorOpen = false;
+      closeSpotFolderPanels();
+      setHidden('spotListDetailsCard', true);
+      renderList();
+      return;
+    }
+
+    backToSpotCollections();
+  } finally {
+    suppressSpotHistorySync = false;
+  }
+}
+
 function renderSpotFolderCard(collection, count) {
   const card = document.createElement('button');
   card.type = 'button';
@@ -5679,9 +5748,12 @@ function renderSpotFolders() {
     : 'Пока нет сохранённых меток. Папки уже готовы: новые точки появятся внутри выбранной папки.';
 }
 
-function openSpotCollection(collection) {
+function openSpotCollection(collection, options = {}) {
   const normalized = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
   if (!spotCollectionExists(normalized)) return false;
+  if (options.pushHistory !== false) {
+    replaceSpotHistoryState('folders', { collection: null, selectedSpotId: null });
+  }
   activeSpotCollection = normalized;
   selectedSpotId = null;
   spotListEditorOpen = false;
@@ -5690,16 +5762,22 @@ function openSpotCollection(collection) {
   const filter = $('spotCollectionFilter');
   if (filter) filter.value = normalized;
   renderList();
+  if (options.pushHistory !== false) {
+    pushSpotHistoryState('collection', { collection: normalized, selectedSpotId: null });
+  }
   return true;
 }
 
-function backToSpotCollections() {
+function backToSpotCollections(options = {}) {
   activeSpotCollection = null;
   selectedSpotId = null;
   spotListEditorOpen = false;
   closeSpotFolderPanels();
   setHidden('spotListDetailsCard', true);
   renderList();
+  if (options.replaceHistory !== false) {
+    replaceSpotHistoryState('folders', { collection: null, selectedSpotId: null });
+  }
   return true;
 }
 
@@ -5915,10 +5993,14 @@ function showSelectedSpotOnMap() {
   return true;
 }
 
-function openSpotDetailsFromList(id) {
+function openSpotDetailsFromList(id, options = {}) {
   const spot = spots.find((item) => item.id === id);
   if (!spot) return false;
-  activeSpotCollection = normalizedSpotCollection(spot);
+  const collection = normalizedSpotCollection(spot);
+  if (options.pushHistory !== false) {
+    replaceSpotHistoryState('collection', { collection, selectedSpotId: null });
+  }
+  activeSpotCollection = collection;
   spotListEditorOpen = false;
   selectSpot(id, false);
   const card = $('spotListDetailsCard');
@@ -5926,6 +6008,9 @@ function openSpotDetailsFromList(id) {
     card.hidden = false;
     renderSpotListDetailsState();
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  if (options.pushHistory !== false) {
+    pushSpotHistoryState('details', { collection, selectedSpotId: id });
   }
   return true;
 }
@@ -7465,6 +7550,7 @@ function bindUi() {
   if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = withButtonDiagnostics('copyMapDebugBtn', copyMapDebug);
   if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = withButtonDiagnostics('closeMapDebugBtn', () => $('mapDebugDialog').close());
 
+  window.addEventListener('popstate', handleSpotHistoryPopState);
   window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
   window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateMapDebugUi(true); });
   window.addEventListener('resize', () => safeInvalidateMap(150, 'resize'));
@@ -7496,7 +7582,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.3`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
