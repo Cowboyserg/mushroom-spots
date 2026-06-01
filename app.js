@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.8';
+const APP_VERSION = '0.7.27-hotfix.9';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -3979,12 +3979,28 @@ async function copyBboxCommand() {
   }
 }
 
+function getBboxExportLatLngFromDomEvent(event) {
+  if (!map) return null;
+  const sourceEvent = event?.changedTouches?.[0] || event?.touches?.[0] || event;
+  if (!sourceEvent) return null;
+  if (typeof map.mouseEventToLatLng === 'function') {
+    return map.mouseEventToLatLng(sourceEvent);
+  }
+  if (typeof map.containerPointToLatLng !== 'function') return null;
+  const mapEl = $('map');
+  const rect = mapEl?.getBoundingClientRect?.();
+  if (!rect) return null;
+  const x = Number(sourceEvent.clientX) - rect.left;
+  const y = Number(sourceEvent.clientY) - rect.top;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return map.containerPointToLatLng({ x, y });
+}
+
 function handleBboxExportDomSelectionEvent(event) {
-  if (bboxExportState.mode !== 'selecting' || !map || !map.mouseEventToLatLng) return;
-  const sourceEvent = event?.changedTouches?.[0] || event;
-  if (!sourceEvent) return;
+  if (bboxExportState.mode !== 'selecting' || !map) return;
   try {
-    const latlng = map.mouseEventToLatLng(sourceEvent);
+    const latlng = getBboxExportLatLngFromDomEvent(event);
+    if (!latlng) return;
     handleBboxExportMapClick({ latlng });
   } catch (err) {
     bboxExportState = { ...bboxExportState, error: err?.message || 'не удалось прочитать координаты касания' };
@@ -7649,7 +7665,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.8`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.9`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
