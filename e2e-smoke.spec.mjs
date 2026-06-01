@@ -211,9 +211,9 @@ test('offline map region rectangle creates a pmtiles bbox command', async ({ pag
   await expect(overlay).toContainText('противоположный угол');
   await overlay.click({ position: { x: Math.floor(box.width * 0.72), y: Math.floor(box.height * 0.68) } });
   await expect(page.locator('#bboxSelectionOverlay')).toBeHidden();
+  await expect(page.locator('#screen-offline')).toBeVisible();
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeHidden();
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
   await expect(page.locator('#bboxExportStatus')).toContainText('Регион готов');
   await expect(page.locator('#bboxCommandOutput')).toHaveValue(/[\s\S]*--bbox=/);
   await expect(page.locator('#bboxCommandOutput')).toHaveValue(/[\s\S]*--maxzoom=14/);

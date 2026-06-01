@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.11';
+const APP_VERSION = '0.7.27-hotfix.12';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -3884,6 +3884,19 @@ function updateBboxExportUi() {
   updateMapDebugUi(false);
 }
 
+function revealBboxExportResult(source = 'manual') {
+  if (!bboxExportState.command) return;
+  if (source === 'manual-two-corners') {
+    switchAppScreen('offline', { scrollTop: false });
+    window.setTimeout(() => {
+      const panel = document.querySelector('.bbox-export-panel');
+      try { panel?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); } catch {}
+      const output = $('bboxCommandOutput');
+      try { output?.focus?.({ preventScroll: true }); } catch {}
+    }, 0);
+  }
+}
+
 function setBboxExportBounds(bounds, source = 'manual') {
   if (!bounds) {
     bboxExportState = {
@@ -3912,6 +3925,7 @@ function setBboxExportBounds(bounds, source = 'manual') {
   drawBboxExportLayer(bounds, false);
   recordMapDebug('bbox export ready', getBboxExportSnapshot());
   updateBboxExportUi();
+  revealBboxExportResult(source);
   return true;
 }
 
@@ -7813,7 +7827,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.11`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.12`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
