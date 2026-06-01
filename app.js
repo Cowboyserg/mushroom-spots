@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27';
+const APP_VERSION = '0.7.27-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -4655,37 +4655,69 @@ function openDb() {
         database.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const database = req.result;
+      database.onversionchange = () => {
+        try { database.close(); } catch {}
+      };
+      resolve(database);
+    };
     req.onerror = () => reject(req.error);
   });
+}
+
+function closeDbConnection() {
+  if (!db) return;
+  try { db.close(); } catch {}
+  db = null;
 }
 
 function store(name, mode='readonly') {
   return db.transaction(name, mode).objectStore(name);
 }
 
-function getAllSpots() {
+function readAllFromStore(storeName) {
   return new Promise((resolve, reject) => {
-    const req = store(SPOTS_STORE).getAll();
-    req.onsuccess = () => resolve(req.result.sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))));
+    const transaction = db.transaction(storeName, 'readonly');
+    const objectStore = transaction.objectStore(storeName);
+    const req = objectStore.getAll();
+    let rows = [];
+    req.onsuccess = () => { rows = Array.isArray(req.result) ? req.result : []; };
     req.onerror = () => reject(req.error);
+    transaction.oncomplete = () => resolve(rows);
+    transaction.onerror = () => reject(transaction.error || req.error);
+    transaction.onabort = () => reject(transaction.error || new Error('IndexedDB read transaction aborted'));
   });
+}
+
+function writeToStore(storeName, operation) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const objectStore = transaction.objectStore(storeName);
+    try {
+      operation(objectStore);
+    } catch (err) {
+      try { transaction.abort(); } catch {}
+      reject(err);
+      return;
+    }
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('IndexedDB write transaction failed'));
+    transaction.onabort = () => reject(transaction.error || new Error('IndexedDB write transaction aborted'));
+  });
+}
+
+function getAllSpots() {
+  return readAllFromStore(SPOTS_STORE)
+    .then((rows) => rows.sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))));
 }
 
 function putSpot(spot) {
-  return new Promise((resolve, reject) => {
-    const req = store(SPOTS_STORE, 'readwrite').put(spot);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  return writeToStore(SPOTS_STORE, (objectStore) => objectStore.put(spot));
 }
 
 function removeSpot(id) {
-  return new Promise((resolve, reject) => {
-    const req = store(SPOTS_STORE, 'readwrite').delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  return writeToStore(SPOTS_STORE, (objectStore) => objectStore.delete(id));
 }
 
 function getSetting(key) {
@@ -4697,11 +4729,7 @@ function getSetting(key) {
 }
 
 function setSetting(key, value) {
-  return new Promise((resolve, reject) => {
-    const req = store(SETTINGS_STORE, 'readwrite').put({ key, value, updatedAt: new Date().toISOString() });
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  return writeToStore(SETTINGS_STORE, (objectStore) => objectStore.put({ key, value, updatedAt: new Date().toISOString() }));
 }
 
 function updateGpsStatusPanel(position) {
@@ -7467,7 +7495,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -7497,6 +7525,9 @@ async function init() {
     updateLiveUi();
   }
 }
+
+window.addEventListener('beforeunload', closeDbConnection);
+window.addEventListener('mushroom:e2e-close-db', closeDbConnection);
 
 init().catch(err => {
   console.error(err);

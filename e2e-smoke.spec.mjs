@@ -66,7 +66,9 @@ async function pickMapPoint(page) {
 
 async function seedSpots(page) {
   await page.evaluate(async () => {
+    window.dispatchEvent(new Event('mushroom:e2e-close-db'));
     const DB_NAME = 'mushroom-spots-db';
+    const DB_VERSION = 2;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
     const spots = [
@@ -118,7 +120,7 @@ async function seedSpots(page) {
     ];
 
     await new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 2);
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(SPOTS_STORE)) db.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
@@ -131,9 +133,28 @@ async function seedSpots(page) {
         const store = tx.objectStore(SPOTS_STORE);
         for (const spot of spots) store.put(spot);
         tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error || new Error('Seed write transaction failed'));
+        tx.onabort = () => reject(tx.error || new Error('Seed write transaction aborted'));
       };
     });
+
+    const savedCount = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(SPOTS_STORE, 'readonly');
+        const store = tx.objectStore(SPOTS_STORE);
+        const countReq = store.count();
+        let count = 0;
+        countReq.onsuccess = () => { count = countReq.result; };
+        countReq.onerror = () => reject(countReq.error);
+        tx.oncomplete = () => { db.close(); resolve(count); };
+        tx.onerror = () => reject(tx.error || countReq.error);
+        tx.onabort = () => reject(tx.error || new Error('Seed verification transaction aborted'));
+      };
+    });
+    if (savedCount < spots.length) throw new Error(`Seed verification failed: ${savedCount}/${spots.length} spots written`);
   });
 }
 
