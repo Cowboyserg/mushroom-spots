@@ -1,8 +1,9 @@
-const APP_VERSION = '0.7.29-hotfix.1';
+const APP_VERSION = '0.7.30';
 const DB_NAME = 'mushroom-spots-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SPOTS_STORE = 'spots';
 const SETTINGS_STORE = 'settings';
+const TRACKS_STORE = 'tracks';
 const BACKUP_FILE_NAME = 'mushroom-spots-backup.json';
 const BACKUP_SCHEMA = 'mushroom-spots.local-json-backup';
 const BACKUP_SCHEMA_VERSION = 1;
@@ -109,6 +110,10 @@ let bboxExportPointerStart = null;
 let lastBboxExportDomSelectionAt = 0;
 let lastBboxExportDomSelectionPoint = null;
 let navLine = null;
+let tracks = [];
+let trackLines = new Map();
+let activeTrackLine = null;
+let trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null };
 let folderHandle = null;
 let groupJoined = false;
 let liveEnabled = false;
@@ -855,6 +860,8 @@ function updateActionButtonsUi() {
   const canUseChat = canSendSpotToChat();
   const canRequestGps = Boolean(navigator.geolocation);
 
+  setDisabled('startTrackBtn', trackRecording.active || !canRequestGps);
+  setDisabled('stopTrackBtn', !trackRecording.active);
   setDisabled('saveSpotBtn', !hasPickedMapPoint && !hasPosition && !canRequestGps);
   setDisabled('saveCurrentGpsOnlyBtn', !hasPosition);
   setDisabled('savePickedMapPointBtn', !hasPickedMapPoint);
@@ -4871,6 +4878,10 @@ function openDb() {
       if (!database.objectStoreNames.contains(SETTINGS_STORE)) {
         database.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
       }
+      if (!database.objectStoreNames.contains(TRACKS_STORE)) {
+        const trackStore = database.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
+        trackStore.createIndex('createdAt', 'createdAt');
+      }
     };
     req.onsuccess = () => {
       const database = req.result;
@@ -4935,6 +4946,19 @@ function putSpot(spot) {
 
 function removeSpot(id) {
   return writeToStore(SPOTS_STORE, (objectStore) => objectStore.delete(id));
+}
+
+function getAllTracks() {
+  return readAllFromStore(TRACKS_STORE)
+    .then((rows) => rows.map(normalizeTrackForStorage).filter(Boolean).sort((a, b) => String(b.startedAt || b.createdAt).localeCompare(String(a.startedAt || a.createdAt))));
+}
+
+function putTrack(track) {
+  return writeToStore(TRACKS_STORE, (objectStore) => objectStore.put(track));
+}
+
+function removeTrack(id) {
+  return writeToStore(TRACKS_STORE, (objectStore) => objectStore.delete(id));
 }
 
 function getSetting(key) {
@@ -5027,6 +5051,7 @@ function updateUserPosition(pos, center=false) {
     satellites: null
   };
   updateGpsStatusPanel(currentPosition);
+  recordTrackPointFromCurrentPosition(currentPosition);
   updateActionButtonsUi();
 
   const latlng = [latitude, longitude];
@@ -5045,6 +5070,355 @@ function updateUserPosition(pos, center=false) {
   renderList();
   renderPmtilesPreviewUserLayers('GPS mirrored to offline map preview');
 }
+
+function normalizeTrackPoint(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const lat = Number(raw.lat);
+  const lon = Number(raw.lon ?? raw.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const timestamp = typeof raw.timestamp === 'string' && raw.timestamp ? raw.timestamp : new Date().toISOString();
+  return {
+    lat,
+    lon,
+    accuracy: raw.accuracy == null || Number.isNaN(Number(raw.accuracy)) ? null : Number(raw.accuracy),
+    altitude: raw.altitude == null || Number.isNaN(Number(raw.altitude)) ? null : Number(raw.altitude),
+    altitudeAccuracy: raw.altitudeAccuracy == null || Number.isNaN(Number(raw.altitudeAccuracy)) ? null : Number(raw.altitudeAccuracy),
+    speed: raw.speed == null || Number.isNaN(Number(raw.speed)) ? null : Number(raw.speed),
+    heading: raw.heading == null || Number.isNaN(Number(raw.heading)) ? null : Number(raw.heading),
+    timestamp
+  };
+}
+
+function positionToTrackPoint(pos) {
+  if (!pos?.coords) return null;
+  return normalizeTrackPoint({
+    lat: pos.coords.latitude,
+    lon: pos.coords.longitude,
+    accuracy: pos.coords.accuracy,
+    altitude: pos.coords.altitude,
+    altitudeAccuracy: pos.coords.altitudeAccuracy,
+    speed: pos.coords.speed,
+    heading: pos.coords.heading,
+    timestamp: new Date(pos.timestamp || Date.now()).toISOString()
+  });
+}
+
+function getTrackDistanceMeters(points = []) {
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    total += distanceMeters(points[index - 1], points[index]);
+  }
+  return Math.round(total);
+}
+
+function getTrackDurationSeconds(trackOrPoints, fallbackStoppedAt = null) {
+  const startedAt = Array.isArray(trackOrPoints) ? trackOrPoints[0]?.timestamp : trackOrPoints?.startedAt;
+  const stoppedAt = Array.isArray(trackOrPoints)
+    ? (fallbackStoppedAt || trackOrPoints.at(-1)?.timestamp)
+    : (trackOrPoints?.stoppedAt || trackOrPoints?.updatedAt || trackOrPoints?.startedAt);
+  const start = startedAt ? new Date(startedAt).getTime() : NaN;
+  const stop = stoppedAt ? new Date(stoppedAt).getTime() : Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(stop)) return 0;
+  return Math.max(0, Math.round((stop - start) / 1000));
+}
+
+function formatTrackDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours) return `${hours} ч ${String(minutes).padStart(2, '0')} мин`;
+  return `${minutes} мин ${String(secs).padStart(2, '0')} сек`;
+}
+
+function formatTrackDistance(metersValue) {
+  const value = Math.max(0, Number(metersValue) || 0);
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} км`;
+  return `${Math.round(value)} м`;
+}
+
+function normalizeTrackForStorage(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const points = Array.isArray(raw.points) ? raw.points.map(normalizeTrackPoint).filter(Boolean) : [];
+  const startedAt = typeof raw.startedAt === 'string' && raw.startedAt ? raw.startedAt : (points[0]?.timestamp || new Date().toISOString());
+  const stoppedAt = typeof raw.stoppedAt === 'string' && raw.stoppedAt ? raw.stoppedAt : (points.at(-1)?.timestamp || startedAt);
+  const durationSeconds = Number.isFinite(Number(raw.durationSeconds)) ? Math.max(0, Math.round(Number(raw.durationSeconds))) : getTrackDurationSeconds({ startedAt, stoppedAt });
+  const distanceMetersValue = Number.isFinite(Number(raw.distanceMeters)) ? Math.max(0, Math.round(Number(raw.distanceMeters))) : getTrackDistanceMeters(points);
+  return {
+    id: String(raw.id || uid()),
+    name: String(raw.name || `Маршрут ${tracks.length + 1}`),
+    points,
+    startedAt,
+    stoppedAt,
+    durationSeconds,
+    distanceMeters: distanceMetersValue,
+    pointCount: points.length,
+    createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : startedAt,
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt ? raw.updatedAt : new Date().toISOString(),
+    appVersion: String(raw.appVersion || APP_VERSION)
+  };
+}
+
+function buildTrackFromRecording(stoppedAt = new Date().toISOString()) {
+  const points = trackRecording.points.map(normalizeTrackPoint).filter(Boolean);
+  if (points.length === 1) {
+    points.push({ ...points[0], timestamp: stoppedAt });
+  }
+  return normalizeTrackForStorage({
+    id: trackRecording.id || uid(),
+    name: `Маршрут ${tracks.length + 1}`,
+    points,
+    startedAt: trackRecording.startedAt || points[0]?.timestamp || stoppedAt,
+    stoppedAt,
+    createdAt: trackRecording.startedAt || stoppedAt,
+    updatedAt: stoppedAt,
+    appVersion: APP_VERSION
+  });
+}
+
+function recordTrackPoint(point, options = {}) {
+  if (!trackRecording.active) return false;
+  const normalized = normalizeTrackPoint(point);
+  if (!normalized) return false;
+  const last = trackRecording.points.at(-1);
+  if (!options.force && last && last.timestamp === normalized.timestamp && last.lat === normalized.lat && last.lon === normalized.lon) return false;
+  trackRecording.points.push(normalized);
+  renderTrackRecorderUi();
+  renderTrackLines();
+  return true;
+}
+
+function recordTrackPointFromCurrentPosition(position) {
+  if (!trackRecording.active || !position) return false;
+  return recordTrackPoint(position);
+}
+
+function clearTrackWatch() {
+  if (trackRecording.watchId == null || !navigator.geolocation?.clearWatch) return;
+  try { navigator.geolocation.clearWatch(trackRecording.watchId); } catch {}
+  trackRecording.watchId = null;
+}
+
+function startTrackWatch() {
+  if (!navigator.geolocation || trackRecording.watchId != null) return;
+  const watchRequestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', 'route recorder');
+  trackRecording.watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      finishApiRequest(watchRequestId, 'готово', `route GPS ${meters(pos.coords.accuracy)}`);
+      updateUserPosition(pos, false);
+    },
+    (err) => {
+      finishApiRequest(watchRequestId, 'ошибка', err.message);
+      trackRecording.lastError = err.message || 'GPS ошибка';
+      renderTrackRecorderUi();
+    },
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 2000 }
+  );
+}
+
+async function startTrackRecording() {
+  if (trackRecording.active) return false;
+  if (!navigator.geolocation) {
+    markButtonBlocked('геолокация не поддерживается');
+    alert('Запись маршрута требует GPS. Этот браузер не поддерживает геолокацию.');
+    return false;
+  }
+  const startedAt = new Date().toISOString();
+  trackRecording = { active: true, id: uid(), startedAt, points: [], watchId: null, lastError: null };
+  setText('trackStatusText', 'Запрашиваю GPS для записи маршрута…');
+  renderTrackRecorderUi();
+  const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'route recorder start');
+  try {
+    await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          finishApiRequest(requestId, 'готово', `route GPS ${meters(pos.coords.accuracy)}`);
+          updateUserPosition(pos, false);
+          resolve();
+        },
+        (err) => {
+          finishApiRequest(requestId, 'ошибка', err.message);
+          reject(err);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+    startTrackWatch();
+    renderTrackRecorderUi();
+    return true;
+  } catch (err) {
+    clearTrackWatch();
+    trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: err.message || 'GPS ошибка' };
+    renderTrackRecorderUi();
+    alert(`GPS ошибка: ${err.message}. Маршрут не начат.`);
+    return false;
+  }
+}
+
+async function stopTrackRecording() {
+  if (!trackRecording.active) return false;
+  const stoppedAt = new Date().toISOString();
+  clearTrackWatch();
+  if (currentPosition && trackRecording.points.length === 1) {
+    recordTrackPoint({ ...currentPosition, timestamp: stoppedAt }, { force: true });
+  }
+  const track = buildTrackFromRecording(stoppedAt);
+  trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null };
+  if (!track || track.points.length === 0) {
+    renderTrackRecorderUi();
+    alert('Маршрут не сохранён: GPS не дал ни одной точки.');
+    return false;
+  }
+  await putTrack(track);
+  await afterTrackDataChanged();
+  setText('trackStatusText', `Маршрут сохранён: ${track.pointCount} GPS-точек, ${formatTrackDistance(track.distanceMeters)}.`);
+  return true;
+}
+
+async function afterTrackDataChanged() {
+  await refreshTracks();
+  if (folderHandle) {
+    try { await saveBackupToFolder(false); } catch (err) { console.warn('Folder backup failed', err); }
+  }
+  await updateStorageUi();
+}
+
+async function refreshTracks() {
+  tracks = await getAllTracks();
+  renderTrackRecorderUi();
+  renderTrackLines();
+}
+
+function getTrackDisplayStats(trackOrPoints) {
+  const points = Array.isArray(trackOrPoints) ? trackOrPoints : (Array.isArray(trackOrPoints?.points) ? trackOrPoints.points : []);
+  const distance = Array.isArray(trackOrPoints) ? getTrackDistanceMeters(points) : Number(trackOrPoints?.distanceMeters ?? getTrackDistanceMeters(points));
+  const duration = Array.isArray(trackOrPoints) ? getTrackDurationSeconds(points) : Number(trackOrPoints?.durationSeconds ?? getTrackDurationSeconds(trackOrPoints));
+  return { pointCount: points.length, distanceMeters: distance, durationSeconds: duration };
+}
+
+function renderTrackRecorderUi() {
+  if (!$('trackRecorderCard')) return;
+  const activeStats = {
+    ...getTrackDisplayStats(trackRecording.points),
+    durationSeconds: trackRecording.active ? getTrackDurationSeconds({ startedAt: trackRecording.startedAt, stoppedAt: new Date().toISOString() }) : getTrackDisplayStats(trackRecording.points).durationSeconds
+  };
+  const latestTrack = tracks[0] || null;
+  const shownStats = trackRecording.active ? activeStats : (latestTrack ? getTrackDisplayStats(latestTrack) : { pointCount: 0, distanceMeters: 0, durationSeconds: 0 });
+  setText('trackDurationValue', formatTrackDuration(shownStats.durationSeconds));
+  setText('trackDistanceValue', formatTrackDistance(shownStats.distanceMeters));
+  setText('trackPointCountValue', String(shownStats.pointCount));
+  setText('trackRecorderPill', trackRecording.active ? 'запись идёт' : `${tracks.length} сохранено`);
+  setPillState('trackRecorderPill', trackRecording.active ? 'on' : (tracks.length ? 'warn' : ''));
+  setDisabled('startTrackBtn', trackRecording.active || !navigator.geolocation);
+  setDisabled('stopTrackBtn', !trackRecording.active);
+  if (trackRecording.active) {
+    setText('trackStatusText', trackRecording.lastError
+      ? `Запись активна, но GPS сообщил ошибку: ${trackRecording.lastError}`
+      : `Запись активна. Пока собрано GPS-точек: ${trackRecording.points.length}.`);
+  } else if (latestTrack) {
+    setText('trackStatusText', `Последний маршрут: ${fmtDate(latestTrack.stoppedAt || latestTrack.updatedAt)} · ${latestTrack.pointCount} GPS-точек.`);
+  } else {
+    setText('trackStatusText', navigator.geolocation ? 'Маршрутов пока нет. Нажми “Начать маршрут”, когда приложение открыто и видит GPS.' : 'Маршрут требует GPS. В этом браузере геолокация недоступна.');
+  }
+  const list = $('trackList');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!tracks.length) {
+    list.innerHTML = '<p class="hint">Сохранённых маршрутов пока нет.</p>';
+    return;
+  }
+  for (const track of tracks) {
+    const item = document.createElement('article');
+    item.className = 'track-item';
+    item.dataset.trackId = track.id;
+    item.innerHTML = `
+      <div class="track-item-main">
+        <strong>${escapeHtml(track.name || 'Маршрут')}</strong>
+        <p class="hint">${formatTrackDistance(track.distanceMeters)} · ${formatTrackDuration(track.durationSeconds)} · ${track.pointCount} GPS-точек</p>
+        <p class="track-date">${fmtDate(track.startedAt)} → ${fmtDate(track.stoppedAt)}</p>
+      </div>
+      <div class="row track-actions">
+        <button class="secondary btn-secondary small-btn" type="button" data-track-action="show">Показать</button>
+        <button class="danger btn-danger small-btn" type="button" data-track-action="delete">Удалить</button>
+      </div>
+    `;
+    item.querySelector('[data-track-action="show"]').onclick = withButtonDiagnostics('showTrackOnMapBtn', () => showTrackOnMap(track.id));
+    item.querySelector('[data-track-action="delete"]').onclick = withButtonDiagnostics('deleteTrackBtn', () => deleteTrack(track.id));
+    list.appendChild(item);
+  }
+}
+
+function removeTrackLinesFromMap() {
+  for (const line of trackLines.values()) {
+    try { line.remove(); } catch {}
+  }
+  trackLines.clear();
+  if (activeTrackLine) {
+    try { activeTrackLine.remove(); } catch {}
+    activeTrackLine = null;
+  }
+  const mapEl = $('map');
+  if (mapEl) mapEl.dataset.trackLineCount = '0';
+}
+
+function drawTrackPolyline(points, options = {}) {
+  if (!canUseMapRuntime() || !Array.isArray(points) || points.length < 2) return null;
+  const latLngs = points.map((point) => [point.lat, point.lon]);
+  const line = L.polyline(latLngs, { weight: options.weight || 4, opacity: options.opacity || 0.78, className: options.className || 'mushroom-track-line' }).addTo(map);
+  if (line._path) {
+    line._path.setAttribute('data-track-layer', options.active ? 'active' : 'saved');
+    if (options.id) line._path.setAttribute('data-track-id', options.id);
+  }
+  return line;
+}
+
+function renderTrackLines() {
+  if (!canUseMapRuntime()) return;
+  removeTrackLinesFromMap();
+  let lineCount = 0;
+  for (const track of tracks) {
+    const line = drawTrackPolyline(track.points, { id: track.id, className: 'mushroom-track-line saved-track-line' });
+    if (line) {
+      trackLines.set(track.id, line);
+      lineCount += 1;
+    }
+  }
+  if (trackRecording.active) {
+    activeTrackLine = drawTrackPolyline(trackRecording.points, { active: true, weight: 5, className: 'mushroom-track-line active-track-line' });
+    if (activeTrackLine) lineCount += 1;
+  }
+  const mapEl = $('map');
+  if (mapEl) mapEl.dataset.trackLineCount = String(lineCount);
+  safeInvalidateMap(0, 'render/tracks');
+}
+
+function showTrackOnMap(id) {
+  const track = tracks.find((item) => item.id === id);
+  if (!track) return false;
+  switchAppScreen('map', { scrollTop: false });
+  renderTrackLines();
+  const line = trackLines.get(id);
+  if (line && typeof line.getBounds === 'function') {
+    try { map.fitBounds(line.getBounds(), { padding: [40, 40] }); } catch {}
+  } else if (track.points[0] && canUseMapRuntime()) {
+    map.setView([track.points[0].lat, track.points[0].lon], Math.max(map.getZoom(), 16));
+  }
+  setText('trackStatusText', `Показан маршрут: ${track.name}.`);
+  return true;
+}
+
+async function deleteTrack(id) {
+  const track = tracks.find((item) => item.id === id);
+  if (!track) return false;
+  if (!confirm(`Удалить маршрут «${track.name}»?`)) return false;
+  await removeTrack(id);
+  await afterTrackDataChanged();
+  setText('trackStatusText', 'Маршрут удалён. Грибные точки не изменялись.');
+  return true;
+}
+
+window.showTrackOnMap = showTrackOnMap;
+window.deleteTrack = deleteTrack;
 
 function startGps(center=true) {
   if (!navigator.geolocation) {
@@ -5160,9 +5534,18 @@ function sanitizeSpotForBackup(raw) {
   };
 }
 
+function sanitizeTrackForBackup(raw) {
+  const normalized = normalizeTrackForStorage(raw);
+  if (!normalized) return null;
+  return normalized;
+}
+
 function buildBackupPayload(options = {}) {
   const backupSpots = (options.spotsOverride || spots)
     .map(sanitizeSpotForBackup)
+    .filter(Boolean);
+  const backupTracks = (options.tracksOverride || tracks)
+    .map(sanitizeTrackForBackup)
     .filter(Boolean);
   const customCollections = dedupeSpotCollections(
     options.customCollectionsOverride || customSpotCollections,
@@ -5170,6 +5553,7 @@ function buildBackupPayload(options = {}) {
   );
   const data = {
     spots: backupSpots,
+    tracks: backupTracks,
     settings: {
       customCollections
     }
@@ -5181,6 +5565,7 @@ function buildBackupPayload(options = {}) {
     appVersion: APP_VERSION,
     validation: {
       spotCount: backupSpots.length,
+      trackCount: backupTracks.length,
       customCollectionCount: customCollections.length,
       checksum: getBackupChecksum(data)
     },
@@ -5464,6 +5849,7 @@ function renderMarkers() {
   }
   safeInvalidateMap(0, 'render/update');
   renderPmtilesPreviewUserLayers('saved spots mirrored to offline map preview');
+  renderTrackLines();
 }
 
 function canSendSpotToChat() {
@@ -6357,13 +6743,14 @@ function showNavigationLine() {
 
 function getBackupUserSummary(payload) {
   const spotCount = payload?.validation?.spotCount ?? payload?.data?.spots?.length ?? 0;
+  const routeCount = payload?.validation?.trackCount ?? payload?.data?.tracks?.length ?? 0;
   const folderCount = payload?.validation?.customCollectionCount ?? payload?.data?.settings?.customCollections?.length ?? 0;
-  return { spotCount, folderCount };
+  return { spotCount, routeCount, folderCount };
 }
 
 function getBackupUserSummaryText(payload) {
-  const { spotCount, folderCount } = getBackupUserSummary(payload);
-  return `Точек: ${spotCount}. Пользовательских папок: ${folderCount}. Карты, группы, чат и ключи не входят в JSON.`;
+  const { spotCount, routeCount, folderCount } = getBackupUserSummary(payload);
+  return `Точек: ${spotCount}. Маршрутов: ${routeCount}. Пользовательских папок: ${folderCount}. Карты, группы, чат и ключи не входят в JSON.`;
 }
 
 function setBackupStatus(message) {
@@ -6390,7 +6777,7 @@ function exportSelected() {
   if (!spot) return alert('Сначала выбери точку.');
   downloadJson(
     `mushroom-spot-${spot.name.replace(/[^a-zа-яё0-9]+/gi,'-')}.json`,
-    buildBackupPayload({ spotsOverride: [spot], customCollectionsOverride: [] })
+    buildBackupPayload({ spotsOverride: [spot], tracksOverride: [], customCollectionsOverride: [] })
   );
 }
 
@@ -6412,6 +6799,21 @@ function validateBackupSpot(raw, index) {
   return normalized;
 }
 
+function validateBackupTrack(raw, index) {
+  assertPlainObject(raw, `Маршрут #${index + 1} имеет неправильную структуру`);
+  if (!Array.isArray(raw.points)) throw new Error(`Маршрут #${index + 1} не содержит массив GPS-точек`);
+  const points = raw.points.map((point, pointIndex) => {
+    const normalized = normalizeTrackPoint(point);
+    if (!normalized) throw new Error(`Маршрут #${index + 1}, GPS-точка #${pointIndex + 1} имеет неправильные координаты`);
+    return normalized;
+  });
+  const normalized = normalizeTrackForStorage({ ...raw, points, updatedAt: new Date().toISOString(), appVersion: APP_VERSION });
+  if (!normalized) throw new Error(`Маршрут #${index + 1} не прошёл проверку`);
+  normalized.updatedAt = new Date().toISOString();
+  normalized.appVersion = APP_VERSION;
+  return normalized;
+}
+
 function validateBackupPayload(payload) {
   assertPlainObject(payload, 'JSON должен быть объектом резервной копии');
   if (payload.schema !== BACKUP_SCHEMA) throw new Error('JSON не является резервной копией этого приложения');
@@ -6420,8 +6822,10 @@ function validateBackupPayload(payload) {
   assertPlainObject(payload.data.settings, 'В backup нет секции data.settings');
   if (!Array.isArray(payload.data.spots)) throw new Error('В backup нет массива data.spots');
   if (!Array.isArray(payload.data.settings.customCollections)) throw new Error('В backup нет массива data.settings.customCollections');
+  const rawTracks = Array.isArray(payload.data.tracks) ? payload.data.tracks : [];
 
   const normalizedSpots = payload.data.spots.map((spot, index) => validateBackupSpot(spot, index));
+  const normalizedTracks = rawTracks.map((track, index) => validateBackupTrack(track, index));
   const normalizedCollections = dedupeSpotCollections(payload.data.settings.customCollections.map((item, index) => {
     if (typeof item !== 'string') throw new Error(`Папка #${index + 1} имеет неправильную структуру`);
     return item;
@@ -6429,20 +6833,23 @@ function validateBackupPayload(payload) {
 
   assertPlainObject(payload.validation, 'В backup нет validation metadata');
   if (payload.validation.spotCount !== normalizedSpots.length) throw new Error('Количество точек в backup не совпадает с metadata');
+  if (payload.validation.trackCount != null && payload.validation.trackCount !== normalizedTracks.length) throw new Error('Количество маршрутов в backup не совпадает с metadata');
   if (payload.validation.customCollectionCount !== normalizedCollections.length) throw new Error('Количество папок в backup не совпадает с metadata');
   const expectedChecksum = getBackupChecksum(payload.data);
   if (payload.validation.checksum !== expectedChecksum) throw new Error('Контрольная сумма backup не совпадает');
 
-  return { spots: normalizedSpots, customCollections: normalizedCollections };
+  return { spots: normalizedSpots, tracks: normalizedTracks, customCollections: normalizedCollections };
 }
 
 function commitValidatedBackupImport(validated) {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([SPOTS_STORE, SETTINGS_STORE], 'readwrite');
+    const transaction = db.transaction([SPOTS_STORE, SETTINGS_STORE, TRACKS_STORE], 'readwrite');
     const spotStore = transaction.objectStore(SPOTS_STORE);
     const settingStore = transaction.objectStore(SETTINGS_STORE);
+    const trackStore = transaction.objectStore(TRACKS_STORE);
     try {
       for (const spot of validated.spots) spotStore.put(spot);
+      for (const track of validated.tracks || []) trackStore.put(track);
       const mergedCollections = dedupeSpotCollections([
         ...customSpotCollections,
         ...validated.customCollections
@@ -6464,7 +6871,7 @@ function commitValidatedBackupImport(validated) {
 }
 
 function formatBackupImportSuccess(validated) {
-  return `Импорт завершён. Восстановлено точек: ${validated.spots.length}. Восстановлено пользовательских папок: ${validated.customCollections.length}. Существующие данные не очищались.`;
+  return `Импорт завершён. Восстановлено точек: ${validated.spots.length}. Восстановлено маршрутов: ${(validated.tracks || []).length}. Восстановлено пользовательских папок: ${validated.customCollections.length}. Существующие данные не очищались.`;
 }
 
 function formatBackupImportError(error) {
@@ -6482,10 +6889,11 @@ async function importJson(file) {
     throw new Error('JSON повреждён или имеет неправильный формат');
   }
   const validated = validateBackupPayload(parsed);
-  setBackupStatus(`Файл проверен. Готовлю восстановление: точек ${validated.spots.length}, папок ${validated.customCollections.length}.`);
+  setBackupStatus(`Файл проверен. Готовлю восстановление: точек ${validated.spots.length}, маршрутов ${(validated.tracks || []).length}, папок ${validated.customCollections.length}.`);
   await commitValidatedBackupImport(validated);
   await loadSpotCollections();
   await afterDataChanged();
+  await refreshTracks();
   updateSpotCollectionFilterOptions();
   updateSpotCollectionUi(activeSpotCollection);
   const message = formatBackupImportSuccess(validated);
@@ -6582,12 +6990,12 @@ async function updateStorageUi() {
   const lastImportSummary = await getSetting('lastImportSummary');
   if (lastImportSummary) setBackupStatus(lastImportSummary);
   else if (lastBackupSummary) setBackupStatus(`Последний экспорт: ${lastBackupSummary}`);
-  else setBackupStatus('Backup JSON сохраняет точки и пользовательские папки. Карты, группы, чат и ключи не входят в файл.');
+  else setBackupStatus('Backup JSON сохраняет точки, маршруты и пользовательские папки. Карты, группы, чат и ключи не входят в файл.');
   if (navigator.storage && navigator.storage.estimate) {
     try {
       const estimate = await navigator.storage.estimate();
       const used = estimate.usage ? Math.round(estimate.usage / 1024 / 1024) : 0;
-      $('storageHint').textContent = `Сейчас локально: точек ${spots.length}, пользовательских папок ${customSpotCollections.length}. Примерно занято: ${used} МБ. На iPhone скачивай JSON вручную и храни файл вне браузера.`;
+      $('storageHint').textContent = `Сейчас локально: точек ${spots.length}, маршрутов ${tracks.length}, пользовательских папок ${customSpotCollections.length}. Примерно занято: ${used} МБ. На iPhone скачивай JSON вручную и храни файл вне браузера.`;
     } catch {}
   }
 }
@@ -7867,6 +8275,8 @@ function bindUi() {
   bindAppNavigationShell();
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
+  if ($('startTrackBtn')) $('startTrackBtn').onclick = withButtonDiagnostics('startTrackBtn', startTrackRecording);
+  if ($('stopTrackBtn')) $('stopTrackBtn').onclick = withButtonDiagnostics('stopTrackBtn', stopTrackRecording);
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveSmartSpot);
   if ($('saveCurrentGpsOnlyBtn')) $('saveCurrentGpsOnlyBtn').onclick = withButtonDiagnostics('saveCurrentGpsOnlyBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
@@ -8002,7 +8412,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.29.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.30`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -8020,6 +8430,7 @@ async function init() {
   renderPeopleProfiles();
   scheduleMemberSyncRetry();
   await refreshSpots();
+  await refreshTracks();
   if (!getSupabaseConfig()) {
     updateLiveUi();
     $('liveHint').textContent = 'Для live-режима нужно подключение к БД.';
@@ -8033,8 +8444,8 @@ async function init() {
   }
 }
 
-window.addEventListener('pagehide', closeDbConnection);
-window.addEventListener('beforeunload', closeDbConnection);
+window.addEventListener('pagehide', () => { clearTrackWatch(); closeDbConnection(); });
+window.addEventListener('beforeunload', () => { clearTrackWatch(); closeDbConnection(); });
 
 init().catch(err => {
   console.error(err);

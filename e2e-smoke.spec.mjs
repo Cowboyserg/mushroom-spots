@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.29-hotfix\.1 · Sprint 5\.29\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.30 · Sprint 5\.30/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -72,9 +72,10 @@ async function seedSpots(page) {
   await page.evaluate(async () => {
     window.dispatchEvent(new Event('pagehide'));
     const DB_NAME = 'mushroom-spots-db';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
+    const TRACKS_STORE = 'tracks';
     const spots = [
       {
         id: 'e2e-white-spot',
@@ -129,6 +130,7 @@ async function seedSpots(page) {
         const db = req.result;
         if (!db.objectStoreNames.contains(SPOTS_STORE)) db.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
         if (!db.objectStoreNames.contains(SETTINGS_STORE)) db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
+        if (!db.objectStoreNames.contains(TRACKS_STORE)) db.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
       };
       req.onerror = () => reject(req.error);
       req.onsuccess = () => {
@@ -166,10 +168,11 @@ async function seedSpots(page) {
 async function readLocalBackupState(page) {
   return page.evaluate(async () => {
     const DB_NAME = 'mushroom-spots-db';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
     const CUSTOM_COLLECTIONS_KEY = 'spot_custom_collections_v1';
+    const TRACKS_STORE = 'tracks';
 
     const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -184,18 +187,23 @@ async function readLocalBackupState(page) {
 
     try {
       return await new Promise((resolve, reject) => {
-        const tx = db.transaction([SPOTS_STORE, SETTINGS_STORE], 'readonly');
+        const tx = db.transaction([SPOTS_STORE, SETTINGS_STORE, TRACKS_STORE], 'readonly');
         const spotStore = tx.objectStore(SPOTS_STORE);
         const settingStore = tx.objectStore(SETTINGS_STORE);
+        const trackStore = tx.objectStore(TRACKS_STORE);
         const spotsReq = spotStore.getAll();
         const customReq = settingStore.get(CUSTOM_COLLECTIONS_KEY);
+        const tracksReq = trackStore.getAll();
         let spots = [];
         let customCollections = [];
+        let tracks = [];
         spotsReq.onsuccess = () => { spots = Array.isArray(spotsReq.result) ? spotsReq.result : []; };
         customReq.onsuccess = () => { customCollections = Array.isArray(customReq.result?.value) ? customReq.result.value : []; };
+        tracksReq.onsuccess = () => { tracks = Array.isArray(tracksReq.result) ? tracksReq.result : []; };
         spotsReq.onerror = () => reject(spotsReq.error);
         customReq.onerror = () => reject(customReq.error);
-        tx.oncomplete = () => resolve({ spots, customCollections });
+        tracksReq.onerror = () => reject(tracksReq.error);
+        tx.oncomplete = () => resolve({ spots, tracks, customCollections });
         tx.onerror = () => reject(tx.error || new Error('State read failed'));
         tx.onabort = () => reject(tx.error || new Error('State read aborted'));
       });
@@ -208,10 +216,11 @@ async function readLocalBackupState(page) {
 async function resetLocalSpotsAndCollections(page) {
   await page.evaluate(async () => {
     const DB_NAME = 'mushroom-spots-db';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
     const CUSTOM_COLLECTIONS_KEY = 'spot_custom_collections_v1';
+    const TRACKS_STORE = 'tracks';
 
     const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -226,8 +235,9 @@ async function resetLocalSpotsAndCollections(page) {
 
     try {
       await new Promise((resolve, reject) => {
-        const tx = db.transaction([SPOTS_STORE, SETTINGS_STORE], 'readwrite');
+        const tx = db.transaction([SPOTS_STORE, SETTINGS_STORE, TRACKS_STORE], 'readwrite');
         tx.objectStore(SPOTS_STORE).clear();
+        tx.objectStore(TRACKS_STORE).clear();
         tx.objectStore(SETTINGS_STORE).delete(CUSTOM_COLLECTIONS_KEY);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error || new Error('State reset failed'));
@@ -710,6 +720,50 @@ test('GPS point can be saved with mocked geolocation', async ({ page, context })
   await expect(page.locator('#spotsList')).toContainText('GPS smoke точка');
 });
 
+
+test('track recorder saves, reloads, draws and deletes a mocked GPS route', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 56.9496, longitude: 24.1052, accuracy: 11 });
+  await bootApp(page);
+
+  await expect(page.locator('#trackRecorderCard')).toContainText('работает только пока приложение открыто');
+  await expect(page.locator('#trackRecorderCard')).toContainText('не полноценная фоновая запись');
+
+  await page.locator('#startTrackBtn').click();
+  await expect(page.locator('#trackRecorderPill')).toContainText('запись идёт');
+  await expect(page.locator('#trackStatusText')).toContainText('Запись активна');
+
+  await context.setGeolocation({ latitude: 56.9502, longitude: 24.1061, accuracy: 10 });
+  await page.locator('#stopTrackBtn').click();
+  await expect(page.locator('#trackStatusText')).toContainText('Маршрут сохранён');
+  await expect(page.locator('#trackList')).toContainText('Маршрут 1');
+  await expect(page.locator('#trackPointCountValue')).not.toHaveText('0');
+
+  let state = await readLocalBackupState(page);
+  expect(state.tracks).toHaveLength(1);
+  expect(state.tracks[0].pointCount).toBeGreaterThanOrEqual(2);
+  expect(state.tracks[0].points.length).toBeGreaterThanOrEqual(2);
+
+  await page.locator('.track-item').filter({ hasText: 'Маршрут 1' }).getByRole('button', { name: 'Показать' }).click();
+  await expect(page.locator('#screen-map')).toBeVisible();
+  await expect(page.locator('#map')).toHaveAttribute('data-track-line-count', /[1-9]/);
+
+  const backup = await exportBackupViaSettings(page);
+  expect(backup.validation.trackCount).toBe(1);
+  expect(backup.data.tracks[0].points.length).toBeGreaterThanOrEqual(2);
+
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  await expect(page.locator('#trackList')).toContainText('Маршрут 1');
+  await expect(page.locator('#map')).toHaveAttribute('data-track-line-count', /[1-9]/);
+
+  page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await page.locator('.track-item').filter({ hasText: 'Маршрут 1' }).getByRole('button', { name: 'Удалить' }).click();
+  await expect(page.locator('#trackList')).toContainText('Сохранённых маршрутов пока нет');
+  state = await readLocalBackupState(page);
+  expect(state.tracks).toEqual([]);
+});
+
 test('spots screen opens as folder list and filters marks inside folder', async ({ page }) => {
   await bootApp(page);
   await seedSpots(page);
@@ -848,9 +902,9 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.29-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.30');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
-  expect(backup.validation).toMatchObject({ spotCount: 3, customCollectionCount: 1 });
+  expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
   expect(backup.data.spots.map((spot) => spot.name).sort()).toEqual([
     'Белые у ручья',
@@ -873,7 +927,7 @@ test('backup settings explains export scope and updates user-visible export summ
 
   const backup = await exportBackupViaSettings(page);
   expect(backup.validation.spotCount).toBe(3);
-  await expect(page.locator('#backupOperationStatus')).toContainText('Экспорт готов. Точек: 3. Пользовательских папок: 0. Карты, группы, чат и ключи не входят в JSON. Сохрани файл вне браузера.');
+  await expect(page.locator('#backupOperationStatus')).toContainText('Экспорт готов. Точек: 3. Маршрутов: 0. Пользовательских папок: 0. Карты, группы, чат и ключи не входят в JSON. Сохрани файл вне браузера.');
   await expect(page.locator('#storageHint')).toContainText('На iPhone скачивай JSON вручную');
   await expect(page.locator('#lastBackupStatus')).not.toHaveText('—');
 });
@@ -912,8 +966,8 @@ test('local JSON backup import restores spots and empty custom folders on every 
   expect(state.spots).toEqual([]);
   expect(state.customCollections).toEqual([]);
 
-  await importJsonFileViaSettings(page, backup, /Импорт завершён\. Восстановлено точек: 3\. Восстановлено пользовательских папок: 1\. Существующие данные не очищались\./);
-  await expect(page.locator('#backupOperationStatus')).toContainText('Импорт завершён. Восстановлено точек: 3. Восстановлено пользовательских папок: 1. Существующие данные не очищались.');
+  await importJsonFileViaSettings(page, backup, /Импорт завершён\. Восстановлено точек: 3\. Восстановлено маршрутов: 0\. Восстановлено пользовательских папок: 1\. Существующие данные не очищались\./);
+  await expect(page.locator('#backupOperationStatus')).toContainText('Импорт завершён. Восстановлено точек: 3. Восстановлено маршрутов: 0. Восстановлено пользовательских папок: 1. Существующие данные не очищались.');
   state = await readLocalBackupState(page);
   expect(state.spots.map((spot) => spot.name).sort()).toEqual([
     'Белые у ручья',
@@ -977,7 +1031,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.29-hotfix.1',
+    appVersion: '0.7.30',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

@@ -1,6 +1,7 @@
 const DB_NAME = 'mushroom-spots-db';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const SPOTS_STORE = 'spots';
+const TRACKS_STORE = 'tracks';
 
 let dbPromise = null;
 

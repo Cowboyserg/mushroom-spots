@@ -2408,3 +2408,77 @@ select {
 .bbox-selection-overlay[data-phase="second-corner"] span {
   background: rgba(255, 247, 225, 0.96);
 }
+
+
+/* Sprint 5.30 — Track Recorder MVP */
+.track-recorder-card {
+  border-color: rgba(36,75,47,.20);
+  background: #fffdf7;
+}
+.track-recorder-header {
+  align-items: flex-start;
+}
+.track-recorder-header .hint {
+  margin: -4px 0 0;
+}
+.track-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+.track-stats-grid > div {
+  padding: 9px 10px;
+  border: 1px solid rgba(36,75,47,.12);
+  border-radius: 14px;
+  background: rgba(250,248,239,.86);
+}
+.track-recorder-actions {
+  margin-top: 10px;
+}
+.track-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.track-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: white;
+}
+.track-item-main strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.track-item-main .hint {
+  margin: 0;
+}
+.track-date {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.track-actions {
+  justify-content: flex-start;
+}
+.saved-track-line,
+.active-track-line,
+.mushroom-track-line {
+  color: var(--green);
+  stroke: currentColor;
+}
+.active-track-line {
+  opacity: .95;
+}
+@media (min-width: 720px) {
+  .track-stats-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+  .track-item {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+}
