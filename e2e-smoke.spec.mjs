@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.11 · Sprint 5\.27\.11/;
+const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.12 · Sprint 5\.27\.12/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
