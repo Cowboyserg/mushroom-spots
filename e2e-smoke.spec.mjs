@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.30 · Sprint 5\.30/;
+const EXPECTED_APP_VERSION = /v0\.7\.30-hotfix\.1 · Sprint 5\.30\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -755,9 +755,12 @@ test('track recorder saves, reloads, draws and deletes a mocked GPS route', asyn
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await expect(page.locator('#trackList')).toContainText('Маршрут 1');
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('#map')).toHaveAttribute('data-track-line-count', /[1-9]/);
 
   page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await expect(page.locator('.track-item').filter({ hasText: 'Маршрут 1' }).getByRole('button', { name: 'Удалить' })).toBeVisible();
   await page.locator('.track-item').filter({ hasText: 'Маршрут 1' }).getByRole('button', { name: 'Удалить' }).click();
   await expect(page.locator('#trackList')).toContainText('Сохранённых маршрутов пока нет');
   state = await readLocalBackupState(page);
@@ -902,7 +905,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.30');
+  expect(backup.appVersion).toBe('0.7.30-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1031,7 +1034,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.30',
+    appVersion: '0.7.30-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
