@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.9';
+const APP_VERSION = '0.7.27-hotfix.10';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -102,6 +102,9 @@ let bboxExportState = {
 };
 let bboxExportLayer = null;
 let lastBboxExportClick = null;
+let bboxExportPointerStart = null;
+let lastBboxExportDomSelectionAt = 0;
+let lastBboxExportDomSelectionPoint = null;
 let navLine = null;
 let folderHandle = null;
 let groupJoined = false;
@@ -3860,6 +3863,11 @@ function startBboxExportSelection() {
     updateBboxExportUi();
     return false;
   }
+  cancelMapLongPress();
+  lastBboxExportClick = null;
+  bboxExportPointerStart = null;
+  lastBboxExportDomSelectionAt = 0;
+  lastBboxExportDomSelectionPoint = null;
   bboxExportState = {
     mode: 'selecting',
     firstCorner: null,
@@ -3979,6 +3987,18 @@ async function copyBboxCommand() {
   }
 }
 
+function getBboxExportDomPoint(event) {
+  const sourceEvent = event?.changedTouches?.[0] || event?.touches?.[0] || event;
+  if (!sourceEvent) return null;
+  const mapEl = $('map');
+  const rect = mapEl?.getBoundingClientRect?.();
+  if (!rect) return null;
+  const x = Number(sourceEvent.clientX) - rect.left;
+  const y = Number(sourceEvent.clientY) - rect.top;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y, clientX: Number(sourceEvent.clientX), clientY: Number(sourceEvent.clientY) };
+}
+
 function getBboxExportLatLngFromDomEvent(event) {
   if (!map) return null;
   const sourceEvent = event?.changedTouches?.[0] || event?.touches?.[0] || event;
@@ -3987,24 +4007,82 @@ function getBboxExportLatLngFromDomEvent(event) {
     return map.mouseEventToLatLng(sourceEvent);
   }
   if (typeof map.containerPointToLatLng !== 'function') return null;
-  const mapEl = $('map');
-  const rect = mapEl?.getBoundingClientRect?.();
-  if (!rect) return null;
-  const x = Number(sourceEvent.clientX) - rect.left;
-  const y = Number(sourceEvent.clientY) - rect.top;
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return map.containerPointToLatLng({ x, y });
+  const point = getBboxExportDomPoint(event);
+  if (!point) return null;
+  return map.containerPointToLatLng({ x: point.x, y: point.y });
+}
+
+function stopBboxExportDomEvent(event) {
+  try { event?.preventDefault?.(); } catch {}
+  try { event?.stopPropagation?.(); } catch {}
+  try { event?.stopImmediatePropagation?.(); } catch {}
+}
+
+function shouldAcceptBboxExportPointer(event) {
+  if (event?.pointerType === 'mouse') return event.button === 0 || event.button == null;
+  if (event?.type?.startsWith?.('mouse')) return event.button === 0 || event.button == null;
+  return true;
+}
+
+function rememberBboxExportPointerStart(event) {
+  if (bboxExportState.mode !== 'selecting') return;
+  if (!shouldAcceptBboxExportPointer(event)) return;
+  const point = getBboxExportDomPoint(event);
+  if (!point) return;
+  bboxExportPointerStart = {
+    x: point.clientX,
+    y: point.clientY,
+    pointerId: event?.pointerId ?? null,
+    at: Date.now()
+  };
+  stopBboxExportDomEvent(event);
+}
+
+function isBboxExportTapGesture(event) {
+  if (!bboxExportPointerStart) return true;
+  if (bboxExportPointerStart.pointerId != null && event?.pointerId != null && bboxExportPointerStart.pointerId !== event.pointerId) return false;
+  const point = getBboxExportDomPoint(event);
+  if (!point) return false;
+  const dx = Math.abs(point.clientX - bboxExportPointerStart.x);
+  const dy = Math.abs(point.clientY - bboxExportPointerStart.y);
+  return dx <= 14 && dy <= 14;
 }
 
 function handleBboxExportDomSelectionEvent(event) {
-  if (bboxExportState.mode !== 'selecting' || !map) return;
+  if (bboxExportState.mode !== 'selecting' || !map) return false;
+  if (!shouldAcceptBboxExportPointer(event)) return false;
+
+  stopBboxExportDomEvent(event);
+  const now = Date.now();
+  const eventPoint = getBboxExportDomPoint(event);
+  if (eventPoint && lastBboxExportDomSelectionPoint && now - lastBboxExportDomSelectionAt < 420) {
+    const dx = Math.abs(eventPoint.clientX - lastBboxExportDomSelectionPoint.x);
+    const dy = Math.abs(eventPoint.clientY - lastBboxExportDomSelectionPoint.y);
+    if (dx <= 4 && dy <= 4) return true;
+  }
+  if (!isBboxExportTapGesture(event)) {
+    bboxExportPointerStart = null;
+    return true;
+  }
+
   try {
     const latlng = getBboxExportLatLngFromDomEvent(event);
-    if (!latlng) return;
-    handleBboxExportMapClick({ latlng });
+    bboxExportPointerStart = null;
+    if (!latlng) {
+      bboxExportState = { ...bboxExportState, error: 'не удалось прочитать координаты касания' };
+      updateBboxExportUi();
+      return true;
+    }
+    lastBboxExportDomSelectionAt = now;
+    const selectedPoint = eventPoint || getBboxExportDomPoint(event);
+    lastBboxExportDomSelectionPoint = selectedPoint ? { x: selectedPoint.clientX, y: selectedPoint.clientY } : null;
+    handleBboxExportMapClick({ latlng, originalEvent: event });
+    return true;
   } catch (err) {
+    bboxExportPointerStart = null;
     bboxExportState = { ...bboxExportState, error: err?.message || 'не удалось прочитать координаты касания' };
     updateBboxExportUi();
+    return true;
   }
 }
 
@@ -4014,8 +4092,10 @@ function setupBboxExportSelection() {
   map.on('mousemove', handleBboxExportMouseMove);
   const mapEl = $('map');
   if (mapEl) {
-    mapEl.addEventListener('click', handleBboxExportDomSelectionEvent, { passive: true });
-    mapEl.addEventListener('touchend', handleBboxExportDomSelectionEvent, { passive: true });
+    const captureOptions = { passive: false, capture: true };
+    ['pointerdown', 'mousedown', 'touchstart'].forEach((type) => mapEl.addEventListener(type, rememberBboxExportPointerStart, captureOptions));
+    ['pointerup', 'mouseup', 'touchend', 'click'].forEach((type) => mapEl.addEventListener(type, handleBboxExportDomSelectionEvent, captureOptions));
+    ['pointercancel', 'touchcancel', 'mouseout'].forEach((type) => mapEl.addEventListener(type, () => { bboxExportPointerStart = null; }, captureOptions));
   }
   updateBboxExportUi();
 }
@@ -7665,7 +7745,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.9`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.10`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
