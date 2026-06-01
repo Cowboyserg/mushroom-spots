@@ -1,6 +1,7 @@
 :root { --bg:#f4f2ea; --card:#fffdf7; --text:#1d241d; --muted:#687466; --green:#244b2f; --green2:#3c6f49; --danger:#9b2c2c; --border:#ddd6c7; }
 * { box-sizing: border-box; }
-body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
+html { max-width: 100%; overflow-x: hidden; }
+body { margin:0; max-width:100%; overflow-x:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
 .topbar { position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:var(--green); color:white; box-shadow:0 2px 12px #0002; }
 .topbar-actions { display:flex; gap:8px; align-items:center; }
 h1 { margin:0; font-size:22px; } .topbar p { margin:2px 0 0; opacity:.8; font-size:12px; }
@@ -464,8 +465,10 @@ body {
 .bottom-nav {
   position: fixed;
   left: 0;
-  right: 0;
+  right: auto;
   bottom: 0;
+  width: 100vw;
+  max-width: 100dvw;
   z-index: 30;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -530,8 +533,10 @@ body {
   }
   .bottom-nav {
     left: 50%;
+    right: auto;
     transform: translateX(-50%);
     width: min(920px, calc(100% - 24px));
+    max-width: calc(100% - 24px);
     bottom: 12px;
     border: 1px solid var(--border);
     border-radius: 22px;
