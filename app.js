@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.7';
+const APP_VERSION = '0.7.27-hotfix.8';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -101,6 +101,7 @@ let bboxExportState = {
   error: null
 };
 let bboxExportLayer = null;
+let lastBboxExportClick = null;
 let navLine = null;
 let folderHandle = null;
 let groupJoined = false;
@@ -3874,10 +3875,24 @@ function startBboxExportSelection() {
   return true;
 }
 
+function isDuplicateBboxExportClick(latlng) {
+  if (!latlng || !lastBboxExportClick) return false;
+  const now = Date.now();
+  const sameLat = Math.abs(Number(latlng.lat) - Number(lastBboxExportClick.lat)) < 0.000001;
+  const sameLng = Math.abs(Number(latlng.lng) - Number(lastBboxExportClick.lng)) < 0.000001;
+  return sameLat && sameLng && now - lastBboxExportClick.at < 350;
+}
+
+function rememberBboxExportClick(latlng) {
+  lastBboxExportClick = { lat: Number(latlng.lat), lng: Number(latlng.lng), at: Date.now() };
+}
+
 function handleBboxExportMapClick(event) {
   if (bboxExportState.mode !== 'selecting') return;
   const latlng = event?.latlng;
   if (!latlng || !Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) return;
+  if (isDuplicateBboxExportClick(latlng)) return;
+  rememberBboxExportClick(latlng);
 
   if (!bboxExportState.firstCorner) {
     bboxExportState = {
@@ -3964,10 +3979,28 @@ async function copyBboxCommand() {
   }
 }
 
+function handleBboxExportDomSelectionEvent(event) {
+  if (bboxExportState.mode !== 'selecting' || !map || !map.mouseEventToLatLng) return;
+  const sourceEvent = event?.changedTouches?.[0] || event;
+  if (!sourceEvent) return;
+  try {
+    const latlng = map.mouseEventToLatLng(sourceEvent);
+    handleBboxExportMapClick({ latlng });
+  } catch (err) {
+    bboxExportState = { ...bboxExportState, error: err?.message || 'не удалось прочитать координаты касания' };
+    updateBboxExportUi();
+  }
+}
+
 function setupBboxExportSelection() {
   if (!map) return;
   map.on('click', handleBboxExportMapClick);
   map.on('mousemove', handleBboxExportMouseMove);
+  const mapEl = $('map');
+  if (mapEl) {
+    mapEl.addEventListener('click', handleBboxExportDomSelectionEvent, { passive: true });
+    mapEl.addEventListener('touchend', handleBboxExportDomSelectionEvent, { passive: true });
+  }
   updateBboxExportUi();
 }
 
@@ -7616,7 +7649,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.7`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.8`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
