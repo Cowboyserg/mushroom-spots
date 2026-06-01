@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.6';
+const APP_VERSION = '0.7.27-hotfix.7';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -110,6 +110,7 @@ let friendsTimer = null;
 let chatTimer = null;
 let chatMessages = [];
 let chatEditingMessageId = null;
+let chatSendPending = false;
 let userId = null;
 let friendMarkers = new Map();
 let baseTileLayer = null;
@@ -6713,11 +6714,13 @@ function updateChatUi() {
   const editState = $('chatEditState');
 
   if (sendBtn) {
-    sendBtn.disabled = !canUseChat;
-    sendBtn.textContent = chatEditingMessageId ? 'Сохранить правку' : 'Отправить';
+    sendBtn.disabled = !canUseChat || chatSendPending;
+    sendBtn.textContent = chatSendPending
+      ? (chatEditingMessageId ? 'Сохранение…' : 'Отправка…')
+      : (chatEditingMessageId ? 'Сохранить правку' : 'Отправить');
   }
-  if (refreshBtn) refreshBtn.disabled = !canUseChat;
-  if (input) input.disabled = !canUseChat;
+  if (refreshBtn) refreshBtn.disabled = !canUseChat || chatSendPending;
+  if (input) input.disabled = !canUseChat || chatSendPending;
   if (cancelBtn) cancelBtn.hidden = !chatEditingMessageId;
   if (editState) {
     editState.hidden = !chatEditingMessageId;
@@ -6756,13 +6759,18 @@ function updateChatUi() {
 
 function resetChatComposer(clearText = false) {
   chatEditingMessageId = null;
-  if (clearText && $('chatMessageInput')) $('chatMessageInput').value = '';
+  const input = $('chatMessageInput');
+  if (clearText && input) {
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
   updateChatUi();
 }
 
 function stopChatAutoRefresh(clearList = false) {
   clearInterval(chatTimer);
   chatTimer = null;
+  chatSendPending = false;
   resetChatComposer(clearList);
   if (clearList) {
     chatMessages = [];
@@ -6879,6 +6887,11 @@ function requireGroupChatReady(actionLabel = 'Отправка точки в ч�
 }
 
 async function sendSpotPayloadToChat(payload, sourceLabel) {
+  if (chatSendPending) {
+    markButtonBlocked('сообщение уже отправляется');
+    setChatHint('Дождись завершения текущей отправки.', true);
+    return false;
+  }
   if (!requireGroupChatReady()) return false;
   const body = encodeSpotChatBody(payload);
   const name = currentChatName();
@@ -6886,11 +6899,18 @@ async function sendSpotPayloadToChat(payload, sourceLabel) {
     $('liveName').value = name;
     saveLiveInputs();
   }
-  await createChatMessage(body, name);
-  setChatHint(`${sourceLabel} отправлена в чат как кликабельная карточка.`);
-  await refreshGroupChat(false);
-  startChatAutoRefresh();
-  return true;
+  chatSendPending = true;
+  updateChatUi();
+  try {
+    await createChatMessage(body, name);
+    setChatHint(`${sourceLabel} отправлена в чат как кликабельная карточка.`);
+    await refreshGroupChat(false);
+    startChatAutoRefresh();
+    return true;
+  } finally {
+    chatSendPending = false;
+    updateChatUi();
+  }
 }
 
 async function sendPickedMapPointToChat() {
@@ -7055,6 +7075,12 @@ async function refreshGroupChat(showManualHint = true) {
 }
 
 async function sendOrUpdateChatMessage() {
+  if (chatSendPending) {
+    markButtonBlocked('сообщение уже отправляется');
+    setChatHint('Дождись завершения текущей отправки.', true);
+    return false;
+  }
+
   const group = currentGroupId();
   if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай группу или открой приглашение.'); }
   if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала подключи БД и переопубликуй сайт.'); }
@@ -7071,14 +7097,22 @@ async function sendOrUpdateChatMessage() {
     saveLiveInputs();
   }
 
-  if (chatEditingMessageId) {
-    await updateChatMessage(chatEditingMessageId, body, name);
-  } else {
-    await createChatMessage(body, name);
+  chatSendPending = true;
+  updateChatUi();
+  try {
+    if (chatEditingMessageId) {
+      await updateChatMessage(chatEditingMessageId, body, name);
+    } else {
+      await createChatMessage(body, name);
+    }
+    resetChatComposer(true);
+    await refreshGroupChat(false);
+    startChatAutoRefresh();
+    return true;
+  } finally {
+    chatSendPending = false;
+    updateChatUi();
   }
-  resetChatComposer(true);
-  await refreshGroupChat(false);
-  startChatAutoRefresh();
 }
 
 async function createChatMessage(body, name) {
@@ -7582,7 +7616,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.6`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.7`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

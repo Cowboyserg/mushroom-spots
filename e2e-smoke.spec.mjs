@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.6 · Sprint 5\.27\.6/;
+const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.7 · Sprint 5\.27\.7/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -30,6 +30,10 @@ async function bootApp(page, options = {}) {
 
     if (options.fakeSupabase && url.hostname === 'fake.supabase.test' && url.pathname.startsWith('/rest/v1/')) {
       const method = route.request().method();
+      if (typeof options.fakeSupabaseHandler === 'function') {
+        const handled = await options.fakeSupabaseHandler(route, { url, method });
+        if (handled) return;
+      }
       if (method === 'GET') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       } else {
@@ -189,6 +193,27 @@ test('offline maps screen presents map manager structure', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Проверить выбранный файл карты' })).toBeHidden();
 });
 
+test('offline map region rectangle creates a pmtiles bbox command', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.locator('#startBboxExportBtn').click();
+  await expect(page.locator('#screen-map')).toBeVisible();
+
+  const map = page.locator('#map');
+  const box = await map.boundingBox();
+  expect(box, 'map must have visible bounds for bbox selection').not.toBeNull();
+  await map.click({ position: { x: Math.floor(box.width * 0.25), y: Math.floor(box.height * 0.35) } });
+  await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
+  await map.click({ position: { x: Math.floor(box.width * 0.72), y: Math.floor(box.height * 0.68) } });
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await expect(page.locator('#bboxExportStatus')).toContainText('Регион готов');
+  await expect(page.locator('#bboxCommandOutput')).toHaveValue(/[\s\S]*--bbox=/);
+  await expect(page.locator('#bboxCommandOutput')).toHaveValue(/[\s\S]*--maxzoom=14/);
+});
+
+
 test('settings screen groups diagnostics and advanced actions', async ({ page }) => {
   await bootApp(page);
 
@@ -244,6 +269,53 @@ test('group screen separates overview members live locations and chat empty stat
   await expect(page.getByRole('heading', { name: 'Чат' })).toBeVisible();
   await expect(page.locator('#groupChatList')).toContainText('Чат появится после входа в группу');
 });
+
+test('group chat disables duplicate send and clears composer after success', async ({ page }) => {
+  let chatPostCount = 0;
+  await bootApp(page, {
+    fakeSupabase: true,
+    path: '/?group=e2e-chat-guard',
+    fakeSupabaseHandler: async (route, { url, method }) => {
+      if (url.pathname.endsWith('/rest/v1/group_messages') && method === 'POST') {
+        chatPostCount += 1;
+        await new Promise(resolve => setTimeout(resolve, 250));
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify([{ id: `e2e-chat-${chatPostCount}` }])
+        });
+        return true;
+      }
+      return false;
+    }
+  });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await expect(page.locator('#groupId')).toHaveValue('e2e-chat-guard');
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#joinGroupBtn').click();
+  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+
+  const input = page.locator('#chatMessageInput');
+  const sendButton = page.locator('#chatSendBtn');
+  await input.fill('Одно сообщение');
+  await sendButton.click();
+  await expect(sendButton).toBeDisabled();
+  await expect(sendButton).toHaveText('Отправка…');
+
+  await page.evaluate(() => {
+    const btn = document.querySelector('#chatSendBtn');
+    if (!btn) throw new Error('chatSendBtn missing');
+    btn.disabled = false;
+    btn.click();
+  });
+
+  await expect(input).toHaveValue('');
+  await expect(sendButton).toBeEnabled();
+  await expect(sendButton).toHaveText('Отправить');
+  expect(chatPostCount, 'double submit must not create duplicate chat rows').toBe(1);
+});
+
 
 test('leaving group clears persisted group after reload', async ({ page }) => {
   await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-leave-group' });
