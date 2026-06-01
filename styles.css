@@ -2373,3 +2373,38 @@ select {
 .spot-folder-detail-view[hidden] {
   display: none !important;
 }
+
+/* Sprint 5.27.11 — exclusive bbox tap layer.
+   While region selection is active, this transparent layer owns map taps so
+   ordinary selected-place/long-press handlers cannot steal the two corners. */
+.bbox-selection-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1600;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 58px 12px 12px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  background: rgba(255, 253, 247, 0.01);
+}
+.bbox-selection-overlay span {
+  max-width: min(92%, 360px);
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(36, 75, 47, 0.24);
+  background: rgba(255, 253, 247, 0.94);
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 8px 24px rgba(20, 35, 20, 0.14);
+  pointer-events: none;
+  text-align: center;
+}
+.bbox-selection-overlay[data-phase="second-corner"] span {
+  background: rgba(255, 247, 225, 0.96);
+}

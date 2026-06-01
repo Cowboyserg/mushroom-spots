@@ -200,14 +200,17 @@ test('offline map region rectangle creates a pmtiles bbox command', async ({ pag
   await page.locator('#startBboxExportBtn').click();
   await expect(page.locator('#screen-map')).toBeVisible();
 
-  const map = page.locator('#map');
-  const box = await map.boundingBox();
-  expect(box, 'map must have visible bounds for bbox selection').not.toBeNull();
-  await map.click({ position: { x: Math.floor(box.width * 0.25), y: Math.floor(box.height * 0.35) } });
+  const overlay = page.locator('#bboxSelectionOverlay');
+  await expect(overlay).toBeVisible();
+  const box = await overlay.boundingBox();
+  expect(box, 'bbox selection overlay must have visible bounds').not.toBeNull();
+  await overlay.click({ position: { x: Math.floor(box.width * 0.25), y: Math.floor(box.height * 0.35) } });
   await expect(page.locator('#bboxExportStatus')).toContainText('первый угол выбран');
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeHidden();
   await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
-  await map.click({ position: { x: Math.floor(box.width * 0.72), y: Math.floor(box.height * 0.68) } });
+  await expect(overlay).toContainText('противоположный угол');
+  await overlay.click({ position: { x: Math.floor(box.width * 0.72), y: Math.floor(box.height * 0.68) } });
+  await expect(page.locator('#bboxSelectionOverlay')).toBeHidden();
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeHidden();
 
   await page.getByRole('button', { name: 'Офлайн' }).click();

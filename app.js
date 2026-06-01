@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.27-hotfix.10';
+const APP_VERSION = '0.7.27-hotfix.11';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -101,6 +101,7 @@ let bboxExportState = {
   error: null
 };
 let bboxExportLayer = null;
+let bboxExportSelectionOverlay = null;
 let lastBboxExportClick = null;
 let bboxExportPointerStart = null;
 let lastBboxExportDomSelectionAt = 0;
@@ -3760,6 +3761,63 @@ function getBboxExportSnapshot() {
   };
 }
 
+
+function ensureBboxExportSelectionOverlay() {
+  if (bboxExportSelectionOverlay && bboxExportSelectionOverlay.isConnected) return bboxExportSelectionOverlay;
+  const mapEl = $('map');
+  const host = mapEl?.closest?.('.map-wrap') || mapEl?.parentElement;
+  if (!host) return null;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'bboxSelectionOverlay';
+  overlay.className = 'bbox-selection-overlay';
+  overlay.setAttribute('role', 'button');
+  overlay.setAttribute('aria-label', 'Выбор прямоугольника региона: нажми два противоположных угла на карте');
+  overlay.tabIndex = 0;
+  overlay.innerHTML = '<span id="bboxSelectionOverlayHint">Нажми первый угол региона</span>';
+
+  const captureOptions = { passive: false, capture: true };
+  ['pointerdown', 'mousedown', 'touchstart'].forEach((type) => overlay.addEventListener(type, rememberBboxExportPointerStart, captureOptions));
+  ['pointerup', 'mouseup', 'touchend', 'click'].forEach((type) => overlay.addEventListener(type, handleBboxExportDomSelectionEvent, captureOptions));
+  ['pointercancel', 'touchcancel', 'mouseleave', 'mouseout'].forEach((type) => overlay.addEventListener(type, () => { bboxExportPointerStart = null; }, captureOptions));
+  overlay.addEventListener('contextmenu', (event) => {
+    stopBboxExportDomEvent(event);
+    bboxExportPointerStart = null;
+  }, captureOptions);
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      stopBboxExportDomEvent(event);
+      clearBboxExport();
+    }
+  });
+
+  host.appendChild(overlay);
+  bboxExportSelectionOverlay = overlay;
+  return overlay;
+}
+
+function updateBboxExportSelectionOverlay() {
+  if (bboxExportState.mode !== 'selecting') {
+    if (bboxExportSelectionOverlay) {
+      try { bboxExportSelectionOverlay.remove(); } catch {}
+      bboxExportSelectionOverlay = null;
+    }
+    bboxExportPointerStart = null;
+    return;
+  }
+
+  const overlay = ensureBboxExportSelectionOverlay();
+  if (!overlay) return;
+  overlay.hidden = false;
+  overlay.dataset.phase = bboxExportState.firstCorner ? 'second-corner' : 'first-corner';
+  const hint = overlay.querySelector('#bboxSelectionOverlayHint');
+  if (hint) {
+    hint.textContent = bboxExportState.firstCorner
+      ? 'Нажми противоположный угол региона'
+      : 'Нажми первый угол региона';
+  }
+}
+
 function removeBboxExportLayer() {
   if (bboxExportLayer) {
     try { bboxExportLayer.remove(); } catch {}
@@ -3822,6 +3880,7 @@ function updateBboxExportUi() {
 
   setDisabled('copyBboxCommandBtn', !bboxExportState.command);
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
+  updateBboxExportSelectionOverlay();
   updateMapDebugUi(false);
 }
 
@@ -3879,6 +3938,9 @@ function startBboxExportSelection() {
   };
   removeBboxExportLayer();
   updateBboxExportUi();
+  window.setTimeout(() => {
+    try { bboxExportSelectionOverlay?.focus?.({ preventScroll: true }); } catch {}
+  }, 0);
   setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'startBboxExportBtn', label: getButtonDiagnosticLabel('startBboxExportBtn') }, 'готово', 'режим выбора региона включён');
   return true;
 }
@@ -4026,7 +4088,11 @@ function shouldAcceptBboxExportPointer(event) {
 
 function rememberBboxExportPointerStart(event) {
   if (bboxExportState.mode !== 'selecting') return;
-  if (!shouldAcceptBboxExportPointer(event)) return;
+  stopBboxExportDomEvent(event);
+  if (!shouldAcceptBboxExportPointer(event)) {
+    bboxExportPointerStart = null;
+    return;
+  }
   const point = getBboxExportDomPoint(event);
   if (!point) return;
   bboxExportPointerStart = {
@@ -4035,7 +4101,6 @@ function rememberBboxExportPointerStart(event) {
     pointerId: event?.pointerId ?? null,
     at: Date.now()
   };
-  stopBboxExportDomEvent(event);
 }
 
 function isBboxExportTapGesture(event) {
@@ -4050,9 +4115,12 @@ function isBboxExportTapGesture(event) {
 
 function handleBboxExportDomSelectionEvent(event) {
   if (bboxExportState.mode !== 'selecting' || !map) return false;
-  if (!shouldAcceptBboxExportPointer(event)) return false;
-
   stopBboxExportDomEvent(event);
+  if (!shouldAcceptBboxExportPointer(event)) {
+    bboxExportPointerStart = null;
+    return true;
+  }
+
   const now = Date.now();
   const eventPoint = getBboxExportDomPoint(event);
   if (eventPoint && lastBboxExportDomSelectionPoint && now - lastBboxExportDomSelectionAt < 420) {
@@ -7745,7 +7813,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.10`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.11`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
