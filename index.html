@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.26-hotfix.1" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.26-hotfix.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.27" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.27" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.26-hotfix.1" />
+  <link rel="stylesheet" href="styles.css?v=0.7.27" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.26-hotfix.1 · Sprint 5.26.1</p>
+      <p id="appVersion">v0.7.27 · Sprint 5.27</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -228,77 +228,92 @@
     <section class="app-screen" id="screen-spots" data-app-screen="spots" aria-labelledby="screenTitleSpots" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleSpots">Точки</h2>
-        <p class="hint">Каталог сохранённых грибных мест: найди точку, открой карточку или быстро вернись к ней на карте.</p>
+        <p class="hint">Каталог сохранённых мест: сначала выбери папку, затем открой метку или управляй ею через меню ⋯.</p>
       </div>
     <section class="card spots-catalog-card">
       <div class="section-title">
         <h2>Мои места</h2>
         <span id="spotCount" class="pill">0</span>
       </div>
-      <div class="spots-toolbar" aria-label="Поиск и сортировка сохранённых точек">
-        <label class="field compact-field" for="searchInput">
-          <span>Поиск</span>
-          <input id="searchInput" placeholder="Название, папка, тип или заметка" />
-        </label>
-        <label class="field compact-field" for="spotCollectionFilter">
-          <span>Папка</span>
-          <select id="spotCollectionFilter">
-            <option value="all">Все папки</option>
-            <option value="Грибные места">Грибные места</option>
-            <option value="Разведка">Разведка</option>
-            <option value="Ягоды">Ягоды</option>
-            <option value="Парковка">Парковка</option>
-            <option value="Другое">Другое</option>
-          </select>
-        </label>
-        <label class="field compact-field" for="spotTypeFilter">
-          <span>Тип</span>
-          <select id="spotTypeFilter">
-            <option value="all">Все типы</option>
-          </select>
-        </label>
-        <label class="field compact-field" for="spotSortSelect">
-          <span>Сортировка</span>
-          <select id="spotSortSelect">
-            <option value="recent">Последние</option>
-            <option value="nearest">Ближайшие</option>
-            <option value="name">По названию</option>
-          </select>
-        </label>
-      </div>
-      <details class="spot-collections-manager" id="spotCollectionsManager">
-        <summary>Управление папками</summary>
-        <div class="spot-collections-grid" aria-label="Создание и управление папками точек">
+      <div id="spotFoldersView" class="spot-folders-view">
+        <div class="spot-folder-create-row" aria-label="Создание папки точек">
           <label class="field compact-field" for="spotCollectionNameInput">
             <span>Новая папка</span>
             <input id="spotCollectionNameInput" placeholder="Например: Секретные места" autocomplete="off" />
           </label>
-          <div class="collection-action-field">
-            <button id="spotCollectionCreateBtn" class="btn-primary" type="button">Создать папку</button>
+          <button id="spotCollectionCreateBtn" class="btn-primary" type="button">Создать папку</button>
+        </div>
+        <p id="spotCollectionManagerHint" class="hint">Выбери папку, чтобы открыть метки внутри. Системные папки нельзя переименовать или удалить.</p>
+        <div id="spotFoldersList" class="spot-folder-list" aria-label="Папки сохранённых точек"></div>
+      </div>
+      <div id="spotFolderDetailView" class="spot-folder-detail-view" hidden>
+        <div class="spot-folder-head">
+          <button id="spotFolderBackBtn" class="secondary btn-secondary small-btn" type="button">← Папки</button>
+          <div class="spot-folder-title-block">
+            <p class="hint">Папка</p>
+            <h3 id="activeSpotCollectionTitle">Грибные места</h3>
           </div>
-          <label class="field compact-field" for="spotCollectionManageSelect">
-            <span>Папка</span>
-            <select id="spotCollectionManageSelect"></select>
-          </label>
+          <span id="activeSpotCollectionCount" class="pill">0</span>
+          <details id="spotFolderMenu" class="kebab-menu folder-kebab-menu">
+            <summary aria-label="Действия папки">⋯</summary>
+            <div class="kebab-menu-panel" role="menu">
+              <button id="spotCollectionRenameMenuBtn" class="secondary btn-secondary" type="button" role="menuitem">Переименовать папку</button>
+              <button id="spotCollectionDeleteMenuBtn" class="danger btn-danger" type="button" role="menuitem">Удалить папку</button>
+            </div>
+          </details>
+        </div>
+        <div id="spotFolderEditPanel" class="spot-folder-edit-panel" hidden>
+          <select id="spotCollectionManageSelect" hidden></select>
           <label class="field compact-field" for="spotCollectionRenameInput">
-            <span>Новое название</span>
+            <span>Новое название папки</span>
             <input id="spotCollectionRenameInput" placeholder="Новое название папки" autocomplete="off" />
           </label>
-          <div class="collection-action-field">
-            <button id="spotCollectionRenameBtn" class="secondary btn-secondary" type="button">Переименовать</button>
-          </div>
-          <label class="field compact-field" for="spotCollectionDeleteTarget">
-            <span>Куда перенести точки</span>
-            <select id="spotCollectionDeleteTarget"></select>
-          </label>
-          <div class="collection-action-field">
-            <button id="spotCollectionDeleteBtn" class="danger btn-danger" type="button">Удалить папку</button>
+          <div class="row">
+            <button id="spotCollectionRenameBtn" class="btn-primary" type="button">Переименовать</button>
+            <button id="spotCollectionEditCancelBtn" class="secondary btn-secondary" type="button">Отмена</button>
           </div>
         </div>
-        <p id="spotCollectionManagerHint" class="hint">Системные папки нельзя переименовать или удалить. Пользовательские папки хранятся локально на устройстве.</p>
-      </details>
-      <p id="spotsListSummary" class="hint">Сохранённые точки появятся здесь.</p>
-      <div id="spotsList" class="spots-list"></div>
+        <div id="spotFolderDeletePanel" class="spot-folder-edit-panel danger-panel" hidden>
+          <label class="field compact-field" for="spotCollectionDeleteTarget">
+            <span>Куда перенести метки</span>
+            <select id="spotCollectionDeleteTarget"></select>
+          </label>
+          <div class="row">
+            <button id="spotCollectionDeleteBtn" class="danger btn-danger" type="button">Удалить папку</button>
+            <button id="spotCollectionDeleteCancelBtn" class="secondary btn-secondary" type="button">Отмена</button>
+          </div>
+        </div>
+        <select id="spotCollectionFilter" hidden>
+          <option value="all">Все папки</option>
+          <option value="Грибные места">Грибные места</option>
+          <option value="Разведка">Разведка</option>
+          <option value="Ягоды">Ягоды</option>
+          <option value="Парковка">Парковка</option>
+          <option value="Другое">Другое</option>
+        </select>
+        <div class="spots-toolbar" aria-label="Поиск и сортировка меток выбранной папки">
+          <label class="field compact-field" for="searchInput">
+            <span>Поиск внутри папки</span>
+            <input id="searchInput" placeholder="Название, тип или заметка" />
+          </label>
+          <label class="field compact-field" for="spotTypeFilter">
+            <span>Тип</span>
+            <select id="spotTypeFilter">
+              <option value="all">Все типы</option>
+            </select>
+          </label>
+          <label class="field compact-field" for="spotSortSelect">
+            <span>Сортировка</span>
+            <select id="spotSortSelect">
+              <option value="recent">Последние</option>
+              <option value="nearest">Ближайшие</option>
+              <option value="name">По названию</option>
+            </select>
+          </label>
+        </div>
+        <p id="spotsListSummary" class="hint">Выбери папку, чтобы увидеть метки.</p>
+        <div id="spotsList" class="spots-list"></div>
+      </div>
     </section>
     <section class="card spot-details-card" id="spotListDetailsCard" hidden>
       <div class="section-title compact-title">
@@ -543,7 +558,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.26-hotfix.1 · Sprint 5.26.1</span>
+          <span class="pill">v0.7.27 · Sprint 5.27</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -559,9 +574,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.26-hotfix.1</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.26.1 — Unique Collection Names Guard</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.26-hotfix.1</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.27</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.27 — Folder-First Spots UX</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.27</strong></div>
         </div>
       </section>
 
@@ -744,10 +759,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.26-hotfix.1"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.27"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.26-hotfix.1"></script>
-  <script src="app.js?v=0.7.26-hotfix.1"></script>
+  <script src="config.js?v=0.7.27"></script>
+  <script src="app.js?v=0.7.27"></script>
 </body>
 </html>

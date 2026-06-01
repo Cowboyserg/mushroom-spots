@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.26-hotfix.1';
+const APP_VERSION = '0.7.27';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -3574,7 +3574,11 @@ function renderSettingsDiagnostics() {
 
 function bindAppNavigationShell() {
   document.querySelectorAll('[data-screen-target]').forEach((button) => {
-    button.addEventListener('click', () => switchAppScreen(button.dataset.screenTarget || 'map'));
+    button.addEventListener('click', () => {
+      const target = button.dataset.screenTarget || 'map';
+      if (target === 'spots') backToSpotCollections();
+      switchAppScreen(target);
+    });
   });
 
   if ($('showMapAdvancedToggle')) {
@@ -4985,8 +4989,9 @@ function showLastSavedSpotOnMap() {
 }
 
 function showLastSavedSpotInList() {
-  if (lastSavedSpotId) selectSpot(lastSavedSpotId, false);
+  if (!lastSavedSpotId) return;
   switchAppScreen('spots');
+  openSpotDetailsFromList(lastSavedSpotId);
 }
 
 async function shareLastSavedSpotToChat() {
@@ -5322,31 +5327,39 @@ function renderSpotCollectionManager(selectedOverride = null) {
   const hint = $('spotCollectionManagerHint');
   const renameBtn = $('spotCollectionRenameBtn');
   const deleteBtn = $('spotCollectionDeleteBtn');
+  const renameMenuBtn = $('spotCollectionRenameMenuBtn');
+  const deleteMenuBtn = $('spotCollectionDeleteMenuBtn');
   if (!manageSelect) return;
 
   const collections = getAvailableSpotCollections();
   const counts = getSpotCollectionUsageCounts();
-  setSelectOptions(manageSelect, collections, { selected: selectedOverride || manageSelect.value, counts });
-  const selected = normalizeSpotCollectionName(manageSelect.value);
+  setSelectOptions(manageSelect, collections, { selected: selectedOverride || activeSpotCollection || manageSelect.value, counts });
+  const selected = normalizeSpotCollectionName(activeSpotCollection || manageSelect.value);
+  if (selected && collections.some((item) => spotCollectionEquals(item, selected))) manageSelect.value = selected;
   const selectedIsSystem = isSystemSpotCollection(selected);
   const selectedCount = counts.get(selected) || 0;
 
   if (renameInput && document.activeElement !== renameInput) renameInput.value = selectedIsSystem ? '' : selected;
   if (deleteTarget) {
     setSelectOptions(deleteTarget, collections, { selected: deleteTarget.value || SPOT_DEFAULT_COLLECTION, exclude: selected });
-    if (!deleteTarget.value || deleteTarget.value === selected) deleteTarget.value = SPOT_DEFAULT_COLLECTION;
+    if (!deleteTarget.value || spotCollectionEquals(deleteTarget.value, selected)) deleteTarget.value = SPOT_DEFAULT_COLLECTION;
   }
 
   const canEditSelected = Boolean(selected) && !selectedIsSystem;
   setDisabled('spotCollectionRenameBtn', !canEditSelected);
   setDisabled('spotCollectionDeleteBtn', !canEditSelected);
+  setDisabled('spotCollectionRenameMenuBtn', !canEditSelected);
+  setDisabled('spotCollectionDeleteMenuBtn', !canEditSelected);
+  const blockedTitle = selectedIsSystem ? 'Системную папку нельзя переименовать или удалить' : '';
   if (renameBtn) renameBtn.title = selectedIsSystem ? 'Системную папку нельзя переименовать' : '';
   if (deleteBtn) deleteBtn.title = selectedIsSystem ? 'Системную папку нельзя удалить' : '';
+  if (renameMenuBtn) renameMenuBtn.title = blockedTitle;
+  if (deleteMenuBtn) deleteMenuBtn.title = blockedTitle;
 
   if (hint) {
-    if (!selected) hint.textContent = 'Создай пользовательскую папку или выбери существующую для управления.';
-    else if (selectedIsSystem) hint.textContent = `«${selected}» — системная папка. Её можно использовать для точек, но нельзя переименовать или удалить.`;
-    else hint.textContent = `Папка «${selected}»: точек ${selectedCount}. При удалении точки будут перенесены в выбранную папку.`;
+    if (!activeSpotCollection) hint.textContent = 'Выбери папку, чтобы открыть метки внутри. Системные папки нельзя переименовать или удалить.';
+    else if (selectedIsSystem) hint.textContent = `«${selected}» — системная папка. Метки можно открывать, редактировать и удалять через меню ⋯.`;
+    else hint.textContent = `Папка «${selected}»: меток ${selectedCount}. Действия папки находятся в меню ⋯ рядом с заголовком.`;
   }
 }
 
@@ -5358,6 +5371,52 @@ function updateSpotCollectionUi(selectedOverride = null) {
 function setSpotCollectionManagerHint(text) {
   const hint = $('spotCollectionManagerHint');
   if (hint) hint.textContent = text;
+}
+
+function closeSpotFolderPanels() {
+  setHidden('spotFolderEditPanel', true);
+  setHidden('spotFolderDeletePanel', true);
+  const folderMenu = $('spotFolderMenu');
+  if (folderMenu) folderMenu.open = false;
+}
+
+function openSpotFolderRenamePanel() {
+  if (!activeSpotCollection) return false;
+  if (isSystemSpotCollection(activeSpotCollection)) {
+    setSpotCollectionManagerHint('Системную папку нельзя переименовать.');
+    return false;
+  }
+  const manageSelect = $('spotCollectionManageSelect');
+  if (manageSelect) manageSelect.value = activeSpotCollection;
+  renderSpotCollectionManager(activeSpotCollection);
+  setHidden('spotFolderDeletePanel', true);
+  setHidden('spotFolderEditPanel', false);
+  const input = $('spotCollectionRenameInput');
+  if (input) {
+    input.value = activeSpotCollection;
+    window.requestAnimationFrame(() => {
+      try { input.focus({ preventScroll: true }); input.select(); } catch {}
+    });
+  }
+  const folderMenu = $('spotFolderMenu');
+  if (folderMenu) folderMenu.open = false;
+  return true;
+}
+
+function openSpotFolderDeletePanel() {
+  if (!activeSpotCollection) return false;
+  if (isSystemSpotCollection(activeSpotCollection)) {
+    setSpotCollectionManagerHint('Системную папку нельзя удалить.');
+    return false;
+  }
+  const manageSelect = $('spotCollectionManageSelect');
+  if (manageSelect) manageSelect.value = activeSpotCollection;
+  renderSpotCollectionManager(activeSpotCollection);
+  setHidden('spotFolderEditPanel', true);
+  setHidden('spotFolderDeletePanel', false);
+  const folderMenu = $('spotFolderMenu');
+  if (folderMenu) folderMenu.open = false;
+  return true;
 }
 
 async function createSpotCollection() {
@@ -5377,13 +5436,14 @@ async function createSpotCollection() {
   if (input) input.value = '';
   updateSpotCollectionFilterOptions();
   updateSpotCollectionUi(name);
-  setSpotCollectionManagerHint(`Папка «${name}» создана. Теперь её можно выбрать при сохранении или редактировании точки.`);
+  renderList();
+  setSpotCollectionManagerHint(`Папка «${name}» создана. Открой её из списка папок, чтобы увидеть метки.`);
   return true;
 }
 
 async function renameSelectedSpotCollection() {
   const select = $('spotCollectionManageSelect');
-  const oldName = normalizeSpotCollectionName(select?.value);
+  const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
   const newName = normalizeSpotCollectionName($('spotCollectionRenameInput')?.value);
   if (!oldName || isSystemSpotCollection(oldName)) { setSpotCollectionManagerHint('Системную папку нельзя переименовать.'); return false; }
   if (!newName) { setSpotCollectionManagerHint('Введи новое название папки.'); return false; }
@@ -5408,25 +5468,27 @@ async function renameSelectedSpotCollection() {
     customSpotCollections.push(newName);
   }
   await saveSpotCollections();
+  if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) activeSpotCollection = newName;
   const filter = $('spotCollectionFilter');
-  const wasFilteringRenamedCollection = Boolean(filter && filter.value === oldName);
+  if (filter && spotCollectionEquals(filter.value, oldName)) filter.value = newName;
   await afterDataChanged();
-  updateSpotCollectionFilterOptions(wasFilteringRenamedCollection ? newName : null);
+  updateSpotCollectionFilterOptions(newName);
   updateSpotCollectionUi(newName);
+  closeSpotFolderPanels();
   renderList();
-  setSpotCollectionManagerHint(`Папка «${oldName}» переименована в «${newName}». Обновлено точек: ${affected.length}.`);
+  setSpotCollectionManagerHint(`Папка «${oldName}» переименована в «${newName}». Обновлено меток: ${affected.length}.`);
   return true;
 }
 
 async function deleteSelectedSpotCollection() {
   const select = $('spotCollectionManageSelect');
-  const oldName = normalizeSpotCollectionName(select?.value);
+  const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
   const target = normalizeSpotCollectionName($('spotCollectionDeleteTarget')?.value) || SPOT_DEFAULT_COLLECTION;
   if (!oldName || isSystemSpotCollection(oldName)) { setSpotCollectionManagerHint('Системную папку нельзя удалить.'); return false; }
-  if (spotCollectionEquals(oldName, target)) { setSpotCollectionManagerHint('Выбери другую папку для переноса точек.'); return false; }
+  if (spotCollectionEquals(oldName, target)) { setSpotCollectionManagerHint('Выбери другую папку для переноса меток.'); return false; }
   if (!spotCollectionExists(target)) { setSpotCollectionManagerHint('Папка для переноса не найдена.'); return false; }
   const affected = spots.filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), oldName));
-  if (!confirm(`Удалить папку «${oldName}»? Точки будут перенесены в «${target}».`)) return false;
+  if (!confirm(`Удалить папку «${oldName}»? Метки будут перенесены в «${target}».`)) return false;
 
   const now = new Date().toISOString();
   for (const spot of affected) {
@@ -5436,20 +5498,20 @@ async function deleteSelectedSpotCollection() {
     !spotCollectionEquals(item, oldName)
   )), { excludeSystem: true });
   await saveSpotCollections();
-  const filter = $('spotCollectionFilter');
-  const wasFilteringDeletedCollection = Boolean(filter && filter.value === oldName);
+  if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) activeSpotCollection = null;
   await afterDataChanged();
-  updateSpotCollectionFilterOptions(wasFilteringDeletedCollection ? 'all' : null);
+  updateSpotCollectionFilterOptions('all');
   updateSpotCollectionUi(target);
+  closeSpotFolderPanels();
   renderList();
-  setSpotCollectionManagerHint(`Папка «${oldName}» удалена. Перенесено точек: ${affected.length}.`);
+  setSpotCollectionManagerHint(`Папка «${oldName}» удалена. Перенесено меток: ${affected.length}.`);
   return true;
 }
 
 function updateSpotCollectionFilterOptions(selected = null) {
   const select = $('spotCollectionFilter');
   if (!select) return;
-  const previous = selected ?? select.value ?? 'all';
+  const previous = selected ?? activeSpotCollection ?? select.value ?? 'all';
   const collections = getAvailableSpotCollections();
   setSelectOptions(select, collections, { allLabel: 'Все папки', selected: previous });
 }
@@ -5458,7 +5520,10 @@ function updateSpotTypeFilterOptions() {
   const select = $('spotTypeFilter');
   if (!select) return;
   const previous = select.value || 'all';
-  const types = Array.from(new Set(spots.map(normalizedSpotType).map(spotTypeFilterValue)))
+  const sourceSpots = activeSpotCollection
+    ? spots.filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), activeSpotCollection))
+    : spots;
+  const types = Array.from(new Set(sourceSpots.map(normalizedSpotType).map(spotTypeFilterValue)))
     .sort((a, b) => spotTypeFilterLabel(a).localeCompare(spotTypeFilterLabel(b), 'ru'));
   select.innerHTML = '<option value="all">Все типы</option>' + types
     .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(spotTypeFilterLabel(type))}</option>`)
@@ -5468,7 +5533,6 @@ function updateSpotTypeFilterOptions() {
 
 function buildSpotCardMeta(spot) {
   const parts = [];
-  parts.push(escapeHtml(normalizedSpotCollection(spot)));
   parts.push(spot.mushroomType ? escapeHtml(spot.mushroomType) : 'Тип не указан');
   parts.push(spot.createdAt ? fmtDate(spot.createdAt) : 'Дата не указана');
   const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, spot)) : 'GPS не готов';
@@ -5496,58 +5560,158 @@ function renderSpotListItem(spot, canUseChat) {
   `;
   item.appendChild(content);
 
-  const actions = document.createElement('div');
-  actions.className = 'spot-card-actions';
+  const menu = document.createElement('details');
+  menu.className = 'kebab-menu spot-item-kebab-menu';
+  menu.innerHTML = `
+    <summary aria-label="Действия метки ${escapeHtml(spot.name || 'Грибная точка')}">⋯</summary>
+    <div class="kebab-menu-panel" role="menu"></div>
+  `;
+  const panel = menu.querySelector('.kebab-menu-panel');
 
-  const openBtn = document.createElement('button');
-  openBtn.type = 'button';
-  openBtn.className = 'secondary btn-secondary small-btn';
-  openBtn.textContent = 'Открыть';
-  openBtn.onclick = withButtonDiagnostics('spotListOpenDetailsBtn', () => openSpotDetailsFromList(spot.id));
-  actions.appendChild(openBtn);
-
-  const mapBtn = document.createElement('button');
-  mapBtn.type = 'button';
-  mapBtn.className = 'btn-primary small-btn';
-  mapBtn.textContent = 'Показать на карте';
-  mapBtn.onclick = withButtonDiagnostics('spotListShowOnMapBtn', () => {
-    selectSpot(spot.id, false);
-    return showSelectedSpotOnMap();
+  const shareBtn = document.createElement('button');
+  shareBtn.type = 'button';
+  shareBtn.className = 'secondary btn-secondary';
+  shareBtn.textContent = 'Поделиться';
+  shareBtn.disabled = !canUseChat;
+  shareBtn.title = canUseChat ? 'Отправить метку в чат группы' : 'Группа или чат пока не готовы';
+  shareBtn.onclick = withButtonDiagnostics('spotItemShareBtn', () => {
+    selectedSpotId = spot.id;
+    menu.open = false;
+    return sendSelectedSpotToChat();
   });
-  actions.appendChild(mapBtn);
+  panel.appendChild(shareBtn);
 
-  if (canUseChat) {
-    const chatBtn = document.createElement('button');
-    chatBtn.type = 'button';
-    chatBtn.className = 'secondary btn-secondary small-btn';
-    chatBtn.textContent = 'Отправить в чат';
-    chatBtn.onclick = withButtonDiagnostics('spotListSendToChatBtn', () => {
-      selectSpot(spot.id, false);
-      return sendSelectedSpotToChat();
-    });
-    actions.appendChild(chatBtn);
-  }
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'secondary btn-secondary';
+  editBtn.textContent = 'Редактировать';
+  editBtn.onclick = withButtonDiagnostics('spotItemEditBtn', () => {
+    menu.open = false;
+    openSpotDetailsFromList(spot.id);
+    return startSpotListEditor();
+  });
+  panel.appendChild(editBtn);
 
-  item.appendChild(actions);
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'danger btn-danger';
+  deleteBtn.textContent = 'Удалить';
+  deleteBtn.onclick = withButtonDiagnostics('spotItemDeleteBtn', async () => {
+    menu.open = false;
+    selectedSpotId = spot.id;
+    return deleteSelectedFromSpotList();
+  });
+  panel.appendChild(deleteBtn);
+
+  item.appendChild(menu);
   return item;
+}
+
+function renderSpotFolderCard(collection, count) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'spot-folder-card';
+  card.dataset.collection = collection;
+  card.onclick = () => openSpotCollection(collection);
+  const isSystem = isSystemSpotCollection(collection);
+  const label = count === 1 ? '1 метка' : `${count} меток`;
+  card.innerHTML = `
+    <span class="spot-folder-icon" aria-hidden="true">${isSystem ? '📁' : '🗂️'}</span>
+    <span class="spot-folder-copy">
+      <strong>${escapeHtml(collection)}</strong>
+      <small>${label}${isSystem ? ' · системная' : ' · пользовательская'}</small>
+    </span>
+    <span class="spot-folder-chevron" aria-hidden="true">›</span>
+  `;
+  return card;
+}
+
+function renderSpotFolders() {
+  const foldersView = $('spotFoldersView');
+  const detailView = $('spotFolderDetailView');
+  const list = $('spotFoldersList');
+  const summary = $('spotsListSummary');
+  const spotList = $('spotsList');
+  setHidden('spotListDetailsCard', true);
+  setHidden('spotFolderDetailView', true);
+  setHidden('spotFoldersView', false);
+  if (spotList) spotList.innerHTML = '';
+  if (!foldersView || !list) return;
+
+  const counts = getSpotCollectionUsageCounts();
+  const collections = getAvailableSpotCollections();
+  $('spotCount').textContent = `${collections.length} папок`;
+  list.innerHTML = '';
+  for (const collection of collections) {
+    list.appendChild(renderSpotFolderCard(collection, counts.get(collection) || 0));
+  }
+  if (summary) summary.textContent = spots.length
+    ? `Сохранено меток: ${spots.length}. Открой папку, чтобы увидеть список меток.`
+    : 'Пока нет сохранённых меток. Папки уже готовы: новые точки появятся внутри выбранной папки.';
+}
+
+function openSpotCollection(collection) {
+  const normalized = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
+  if (!spotCollectionExists(normalized)) return false;
+  activeSpotCollection = normalized;
+  selectedSpotId = null;
+  spotListEditorOpen = false;
+  setHidden('spotListDetailsCard', true);
+  closeSpotFolderPanels();
+  const filter = $('spotCollectionFilter');
+  if (filter) filter.value = normalized;
+  renderList();
+  return true;
+}
+
+function backToSpotCollections() {
+  activeSpotCollection = null;
+  selectedSpotId = null;
+  spotListEditorOpen = false;
+  closeSpotFolderPanels();
+  setHidden('spotListDetailsCard', true);
+  renderList();
+  return true;
 }
 
 function renderList() {
   updateSpotCollectionFilterOptions();
-  updateSpotCollectionUi();
+  updateSpotCollectionUi(activeSpotCollection);
   updateSpotTypeFilterOptions();
+
+  if (activeSpotCollection && !spotCollectionExists(activeSpotCollection)) {
+    activeSpotCollection = null;
+  }
+  if (!activeSpotCollection) {
+    renderSpotFolders();
+    return;
+  }
+
+  const foldersView = $('spotFoldersView');
+  const detailView = $('spotFolderDetailView');
+  setHidden('spotFoldersView', true);
+  setHidden('spotFolderDetailView', false);
+  if (foldersView) foldersView.hidden = true;
+  if (detailView) detailView.hidden = false;
+
   const q = ($('searchInput')?.value || '').trim().toLowerCase();
-  const collectionFilter = $('spotCollectionFilter')?.value || 'all';
   const typeFilter = $('spotTypeFilter')?.value || 'all';
   const sortMode = $('spotSortSelect')?.value || 'recent';
   const list = $('spotsList');
   const summary = $('spotsListSummary');
   const canUseChat = canSendSpotToChat();
+  const counts = getSpotCollectionUsageCounts();
   if (!list) return;
 
+  setText('activeSpotCollectionTitle', activeSpotCollection);
+  setText('activeSpotCollectionCount', `${counts.get(activeSpotCollection) || 0}`);
+  const selectedIsSystem = isSystemSpotCollection(activeSpotCollection);
+  setDisabled('spotCollectionRenameMenuBtn', selectedIsSystem);
+  setDisabled('spotCollectionDeleteMenuBtn', selectedIsSystem);
+
   const filtered = spots
-    .filter((spot) => [spot.name, normalizedSpotCollection(spot), spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
-    .filter((spot) => collectionFilter === 'all' || spotCollectionEquals(normalizedSpotCollection(spot), collectionFilter))
+    .filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), activeSpotCollection))
+    .filter((spot) => [spot.name, spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
     .filter((spot) => typeFilter === 'all' || spotTypeFilterValue(normalizedSpotType(spot)) === typeFilter)
     .slice();
 
@@ -5560,17 +5724,16 @@ function renderList() {
     return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
   });
 
-  $('spotCount').textContent = filtered.length === spots.length ? String(spots.length) : `${filtered.length}/${spots.length}`;
+  const folderTotal = counts.get(activeSpotCollection) || 0;
+  $('spotCount').textContent = filtered.length === folderTotal ? String(folderTotal) : `${filtered.length}/${folderTotal}`;
   if (summary) {
-    if (!spots.length) {
-      summary.textContent = 'Пока нет сохранённых точек. Открой карту и нажми “Сохранить место”.';
+    if (!folderTotal) {
+      summary.textContent = `В папке «${activeSpotCollection}» пока нет меток.`;
     } else if (!filtered.length) {
-      summary.textContent = 'Поиск или фильтр ничего не нашли. Измени запрос, папку, тип или сортировку.';
+      summary.textContent = 'Поиск или фильтр ничего не нашли внутри этой папки.';
     } else {
       const sortText = sortMode === 'nearest' ? (currentPosition ? 'сначала ближайшие' : 'сначала последние, потому что GPS ещё не готов') : sortMode === 'name' ? 'по названию' : 'сначала последние';
-      const collectionText = collectionFilter === 'all' ? 'все папки' : `папка “${collectionFilter}”`;
-      const groupingText = collectionFilter === 'all' ? ' · сгруппировано по папкам' : '';
-      summary.textContent = `Показано ${filtered.length} из ${spots.length} · ${collectionText}${groupingText} · ${sortText}.`;
+      summary.textContent = `Показано ${filtered.length} из ${folderTotal} · папка «${activeSpotCollection}» · ${sortText}.`;
     }
   }
 
@@ -5578,29 +5741,13 @@ function renderList() {
   if (!filtered.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state spots-empty-state';
-    empty.innerHTML = spots.length
+    empty.innerHTML = folderTotal
       ? '<strong>Ничего не найдено</strong><p class="hint">Попробуй другой поиск, тип гриба или сортировку.</p>'
-      : '<strong>Пока нет сохранённых точек</strong><p class="hint">Открой карту, дождись GPS или выбери место долгим нажатием, затем нажми “Сохранить место”.</p>';
+      : '<strong>В папке пока пусто</strong><p class="hint">Открой карту, выбери место и сохрани его в эту папку.</p>';
     list.appendChild(empty);
     return;
   }
-  const grouped = new Map();
-  for (const spot of filtered) {
-    const collection = normalizedSpotCollection(spot);
-    if (!grouped.has(collection)) grouped.set(collection, []);
-    grouped.get(collection).push(spot);
-  }
-  const collectionOrder = collectionFilter === 'all'
-    ? sortSpotCollections(grouped.keys())
-    : Array.from(grouped.keys());
-  for (const collection of collectionOrder) {
-    const groupSpots = grouped.get(collection) || [];
-    const heading = document.createElement('div');
-    heading.className = 'spot-collection-heading';
-    heading.innerHTML = `<span>${escapeHtml(collection)}</span><small>${groupSpots.length}</small>`;
-    list.appendChild(heading);
-    for (const spot of groupSpots) list.appendChild(renderSpotListItem(spot, canUseChat));
-  }
+  for (const spot of filtered) list.appendChild(renderSpotListItem(spot, canUseChat));
 }
 
 async function refreshSpots() {
@@ -5697,6 +5844,7 @@ async function saveSpotListEditorChanges() {
   };
   await putSpot(updated);
   selectedSpotId = updated.id;
+  activeSpotCollection = updated.collection || SPOT_DEFAULT_COLLECTION;
   spotListEditorOpen = false;
   await afterDataChanged();
   updateSelectedDetails();
@@ -5739,6 +5887,9 @@ function showSelectedSpotOnMap() {
 }
 
 function openSpotDetailsFromList(id) {
+  const spot = spots.find((item) => item.id === id);
+  if (!spot) return false;
+  activeSpotCollection = normalizedSpotCollection(spot);
   spotListEditorOpen = false;
   selectSpot(id, false);
   const card = $('spotListDetailsCard');
@@ -5747,6 +5898,7 @@ function openSpotDetailsFromList(id) {
     renderSpotListDetailsState();
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+  return true;
 }
 
 function closeSpotDetails() {
@@ -7197,6 +7349,11 @@ function bindUi() {
   if ($('spotCollectionRenameBtn')) $('spotCollectionRenameBtn').onclick = withButtonDiagnostics('spotCollectionRenameBtn', renameSelectedSpotCollection);
   if ($('spotCollectionDeleteBtn')) $('spotCollectionDeleteBtn').onclick = withButtonDiagnostics('spotCollectionDeleteBtn', deleteSelectedSpotCollection);
   if ($('spotCollectionNameInput')) $('spotCollectionNameInput').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); createSpotCollection(); } };
+  if ($('spotFolderBackBtn')) $('spotFolderBackBtn').onclick = withButtonDiagnostics('spotFolderBackBtn', backToSpotCollections);
+  if ($('spotCollectionRenameMenuBtn')) $('spotCollectionRenameMenuBtn').onclick = withButtonDiagnostics('spotCollectionRenameMenuBtn', openSpotFolderRenamePanel);
+  if ($('spotCollectionDeleteMenuBtn')) $('spotCollectionDeleteMenuBtn').onclick = withButtonDiagnostics('spotCollectionDeleteMenuBtn', openSpotFolderDeletePanel);
+  if ($('spotCollectionEditCancelBtn')) $('spotCollectionEditCancelBtn').onclick = withButtonDiagnostics('spotCollectionEditCancelBtn', closeSpotFolderPanels);
+  if ($('spotCollectionDeleteCancelBtn')) $('spotCollectionDeleteCancelBtn').onclick = withButtonDiagnostics('spotCollectionDeleteCancelBtn', closeSpotFolderPanels);
 
   if ($('spotTypeFilter')) $('spotTypeFilter').onchange = renderList;
   if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
@@ -7310,7 +7467,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.26.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

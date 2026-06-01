@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.26-hotfix\.1 · Sprint 5\.26\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.27 · Sprint 5\.27/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -384,9 +384,12 @@ test('saved spot map sheet opens spots section for edit and delete CRUD actions'
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Точки' }).click();
-  await expect(page.locator('#spotCount')).toHaveText('3');
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await expect(page.locator('#spotCount')).toHaveText('1');
   const savedSpot = page.locator('.spot-item').filter({ hasText: 'Белые у ручья' });
-  await savedSpot.getByRole('button', { name: 'Показать на карте' }).click();
+  await savedSpot.locator('.spot-item-main').click();
+  await page.locator('#spotListShowOnMapBtn').click();
 
   await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранённая точка');
@@ -433,7 +436,7 @@ test('saved spot map sheet opens spots section for edit and delete CRUD actions'
   page.once('dialog', async (dialog) => { await dialog.accept(); });
   await page.locator('#spotListDeleteBtn').click();
   await expect(page.locator('#spotListDetailsCard')).toBeHidden();
-  await expect(page.locator('#spotCount')).toHaveText('2');
+  await expect(page.locator('#spotCount')).toHaveText('1');
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья — обновлено');
 });
 
@@ -452,6 +455,8 @@ test('selected map point can be saved without GPS and save action stays inside s
   await expect(page.locator('#saveResultText')).toContainText('Тестовая точка без GPS');
 
   await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
   await expect(page.locator('#spotsList')).toContainText('Тестовая точка без GPS');
 });
 
@@ -471,57 +476,70 @@ test('GPS point can be saved with mocked geolocation', async ({ page, context })
 
   await expect(page.locator('#saveResultCard')).toBeVisible();
   await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
   await expect(page.locator('#spotsList')).toContainText('GPS smoke точка');
 });
 
-test('spots list search, type filter and name sorting work on seeded data', async ({ page }) => {
+test('spots screen opens as folder list and filters marks inside folder', async ({ page }) => {
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Точки' }).click();
-  await expect(page.locator('#spotCount')).toHaveText('3');
-  await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await expect(page.locator('#spotFolderDetailView')).toBeHidden();
+  await expect(page.locator('#spotCount')).toHaveText('5 папок');
+  await expect(page.locator('#spotFoldersList')).toContainText('Грибные места');
+  await expect(page.locator('#spotFoldersList')).toContainText('Разведка');
+  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
+
+  await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
+  await expect(page.locator('#spotFolderDetailView')).toBeVisible();
+  await expect(page.locator('#activeSpotCollectionTitle')).toHaveText('Разведка');
+  await expect(page.locator('#spotCount')).toHaveText('1');
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
+  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
+  const chanterelleMenuCard = page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' });
+  await chanterelleMenuCard.locator('.spot-item-kebab-menu summary').click();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Поделиться' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Редактировать' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Удалить' })).toBeVisible();
+  await chanterelleMenuCard.locator('.spot-item-kebab-menu summary').click();
 
   await page.locator('#searchInput').fill('лис');
-  await expect(page.locator('#spotCount')).toHaveText('1/3');
+  await expect(page.locator('#spotCount')).toHaveText('1');
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
-  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
 
-  await page.locator('#searchInput').fill('');
-  await page.locator('#spotTypeFilter').selectOption({ label: 'Белые' });
-  await expect(page.locator('#spotCount')).toHaveText('1/3');
-  await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
+  await page.locator('#searchInput').fill('нет такого места');
+  await expect(page.locator('#spotCount')).toHaveText('0/1');
   await expect(page.locator('#spotsList')).not.toContainText('Лисички у тропы');
 
-  await page.locator('#spotTypeFilter').selectOption('all');
-  await page.locator('#spotCollectionFilter').selectOption({ label: 'Разведка' });
-  await expect(page.locator('#spotCount')).toHaveText('1/3');
-  await expect(page.locator('#spotsList')).toContainText('Разведка');
-  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
-  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
-
-  await page.locator('#spotCollectionFilter').selectOption('all');
-  await page.locator('#spotSortSelect').selectOption('name');
-  const titles = await page.locator('#spotsList .spot-title').allTextContents();
-  expect(titles).toEqual(['Белые у ручья', 'Лисички у тропы', 'Подберёзовики за домом']);
+  await page.locator('#searchInput').fill('');
+  await page.locator('#spotFolderBackBtn').click();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await page.locator('#spotTypeFilter').selectOption({ label: 'Белые' });
+  await expect(page.locator('#spotCount')).toHaveText('1');
+  await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
+  await expect(page.locator('#spotsList')).not.toContainText('Лисички у тропы');
 });
 
 
-test('custom spot collections can be created renamed and deleted', async ({ page }) => {
+test('custom spot collections can be created renamed and deleted from folder menu', async ({ page }) => {
   await bootApp(page);
   await seedSpots(page);
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Точки' }).click();
-  await page.locator('#spotCollectionsManager').evaluate((node) => { node.open = true; });
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
 
   await page.locator('#spotCollectionNameInput').fill('Секретные места');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
+  await expect(page.locator('#spotFoldersList')).toContainText('Секретные места');
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Секретные места' })).toHaveCount(1);
 
   await page.locator('#spotCollectionNameInput').fill('  секретные   места  ');
@@ -529,19 +547,20 @@ test('custom spot collections can be created renamed and deleted', async ({ page
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Секретные места' })).toHaveCount(1);
 
-  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Открыть' }).click();
-  await page.locator('#spotListEditBtn').click();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
+  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
+  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).locator('.spot-item-kebab-menu summary').click();
+  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Редактировать' }).click();
+  await expect(page.locator('#spotListEditor')).toBeVisible();
   await page.locator('#spotListCollection').selectOption({ label: 'Секретные места' });
   await page.locator('#spotListSaveEditBtn').click();
-  await expect(page.locator('#spotsList')).toContainText('Секретные места');
-
-  await page.locator('#spotCollectionFilter').selectOption({ label: 'Секретные места' });
-  await expect(page.locator('#spotCount')).toHaveText('1/3');
+  await expect(page.locator('#activeSpotCollectionTitle')).toHaveText('Секретные места');
+  await expect(page.locator('#spotCount')).toHaveText('1');
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
-  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
 
-  await page.locator('#spotCollectionsManager').evaluate((node) => { node.open = true; });
-  await page.locator('#spotCollectionManageSelect').selectOption('Секретные места');
+  await page.locator('#spotFolderMenu summary').click();
+  await page.locator('#spotCollectionRenameMenuBtn').click();
+  await expect(page.locator('#spotFolderEditPanel')).toBeVisible();
   await page.locator('#spotCollectionRenameInput').fill('  разведка  ');
   await page.locator('#spotCollectionRenameBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
@@ -550,24 +569,26 @@ test('custom spot collections can be created renamed and deleted', async ({ page
   await page.locator('#spotCollectionRenameInput').fill('Семейные места');
   await page.locator('#spotCollectionRenameBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('переименована');
-  await page.locator('#spotCollectionFilter').selectOption({ label: 'Семейные места' });
-  await expect(page.locator('#spotCount')).toHaveText('1/3');
-  await expect(page.locator('#spotsList')).toContainText('Семейные места');
-  await expect(page.locator('#spotsList')).not.toContainText('Секретные места');
+  await expect(page.locator('#activeSpotCollectionTitle')).toHaveText('Семейные места');
+  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
 
+  await page.locator('#spotFolderBackBtn').click();
   await page.locator('#spotCollectionNameInput').fill('семейные места');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Семейные места' })).toHaveCount(1);
 
+  await page.locator('.spot-folder-card').filter({ hasText: 'Семейные места' }).click();
   page.once('dialog', async (dialog) => { await dialog.accept(); });
-  await page.locator('#spotCollectionsManager').evaluate((node) => { node.open = true; });
-  await page.locator('#spotCollectionManageSelect').selectOption('Семейные места');
+  await page.locator('#spotFolderMenu summary').click();
+  await page.locator('#spotCollectionDeleteMenuBtn').click();
+  await expect(page.locator('#spotFolderDeletePanel')).toBeVisible();
   await page.locator('#spotCollectionDeleteTarget').selectOption('Грибные места');
   await page.locator('#spotCollectionDeleteBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('удалена');
-  await page.locator('#spotCollectionFilter').selectOption({ label: 'Грибные места' });
-  await expect(page.locator('#spotCount')).toHaveText('2/3');
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await expect(page.locator('#spotCount')).toHaveText('2');
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
   await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
 });
@@ -579,10 +600,13 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Точки' }).click();
-  await expect(page.locator('#spotCount')).toHaveText('3');
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await expect(page.locator('#spotCount')).toHaveText('1');
 
   const savedSpot = page.locator('.spot-item').filter({ hasText: 'Белые у ручья' });
-  await savedSpot.getByRole('button', { name: 'Показать на карте' }).click();
+  await savedSpot.locator('.spot-item-main').click();
+  await page.locator('#spotListShowOnMapBtn').click();
   await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
   await expect(page.locator('#mapObjectTitle')).toContainText('Сохранённая точка');
@@ -593,6 +617,7 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await expect(page.locator('#mapObjectSubtitle')).toContainText('Мини-инфо по точке');
 
   await page.getByRole('button', { name: 'Точки' }).click();
-  await expect(page.locator('#spotCount')).toHaveText('3');
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await expect(page.locator('#spotCount')).toHaveText('5 папок');
   await expect(page.locator('#spotsList')).not.toContainText('Выбранное место');
 });
