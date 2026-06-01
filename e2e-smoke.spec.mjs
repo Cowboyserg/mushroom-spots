@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.24-hotfix\.2 · Sprint 5\.24\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.25 · Sprint 5\.25/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -79,6 +79,7 @@ async function seedSpots(page) {
         lon: 24.1061,
         accuracy: null,
         source: 'map-picked',
+        collection: 'Грибные места',
         photo: null,
         createdAt: '2026-05-31T08:00:00.000Z',
         updatedAt: '2026-05-31T08:00:00.000Z',
@@ -93,6 +94,7 @@ async function seedSpots(page) {
         lon: 24.1071,
         accuracy: null,
         source: 'map-picked',
+        collection: 'Разведка',
         photo: null,
         createdAt: '2026-05-31T09:00:00.000Z',
         updatedAt: '2026-05-31T09:00:00.000Z',
@@ -107,6 +109,7 @@ async function seedSpots(page) {
         lon: 24.1081,
         accuracy: null,
         source: 'map-picked',
+        collection: 'Ягоды',
         photo: null,
         createdAt: '2026-05-31T07:00:00.000Z',
         updatedAt: '2026-05-31T07:00:00.000Z',
@@ -494,6 +497,13 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await expect(page.locator('#spotsList')).not.toContainText('Лисички у тропы');
 
   await page.locator('#spotTypeFilter').selectOption('all');
+  await page.locator('#spotCollectionFilter').selectOption({ label: 'Разведка' });
+  await expect(page.locator('#spotCount')).toHaveText('1/3');
+  await expect(page.locator('#spotsList')).toContainText('Разведка');
+  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
+  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
+
+  await page.locator('#spotCollectionFilter').selectOption('all');
   await page.locator('#spotSortSelect').selectOption('name');
   const titles = await page.locator('#spotsList .spot-title').allTextContents();
   expect(titles).toEqual(['Белые у ручья', 'Лисички у тропы', 'Подберёзовики за домом']);

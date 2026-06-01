@@ -36,6 +36,8 @@ input, textarea, select { width:100%; padding:11px; border:1px solid var(--borde
 .section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .pill { background:#e8eadf; color:var(--green); border-radius:999px; padding:4px 9px; font-weight:800; }
 .spots-list { display:grid; gap:8px; margin-top:10px; }
+.spot-collection-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:4px; padding:6px 8px 2px; color:var(--muted); font-size:12px; font-weight:800; letter-spacing:.02em; text-transform:uppercase; }
+.spot-collection-heading small { min-width:24px; padding:2px 7px; border-radius:999px; background:rgba(36,75,47,.10); color:var(--text); text-align:center; }
 .spot-item { border:1px solid var(--border); background:white; border-radius:14px; padding:10px; display:flex; justify-content:space-between; gap:10px; align-items:flex-start; cursor:pointer; }
 .spot-item.active { outline:3px solid #b7d7bd; }
 .spot-title { font-weight:800; margin-bottom:3px; }

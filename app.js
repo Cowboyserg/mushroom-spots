@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.24-hotfix.2';
+const APP_VERSION = '0.7.25';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -23,6 +23,9 @@ const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
 const APP_ADVANCED_MODE_KEY = 'mushroom_advanced_mode_v1';
 const APP_SCREENS = ['map', 'spots', 'group', 'offline', 'settings'];
 const APP_CACHE_RESET_MARKER_KEY = 'mushroom_app_cache_reset_marker_v1';
+const SPOT_DEFAULT_COLLECTION = 'Грибные места';
+const SPOT_COLLECTIONS = [SPOT_DEFAULT_COLLECTION, 'Разведка', 'Ягоды', 'Парковка', 'Другое'];
+
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
 const MAP_ENGINE_LEAFLET_LITE = 'leaflet-lite';
@@ -4211,7 +4214,7 @@ function describeSelectedMapObject() {
       clearVisible: false,
       rows: [
         ['Название', escapeHtml(spot.name || 'Грибная точка')],
-        ['Папка', escapeHtml(spot.collection || 'Грибные места')],
+        ['Папка', escapeHtml(spot.collection || SPOT_DEFAULT_COLLECTION)],
         ['Тип', escapeHtml(spot.mushroomType || 'не указан')],
         ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(spot)],
@@ -4388,7 +4391,7 @@ function readLegacySpotFormData() {
     name: $('spotName')?.value?.trim() || '',
     mushroomType: $('mushroomType')?.value?.trim() || '',
     note: $('spotNote')?.value?.trim() || '',
-    collection: $('spotCollection')?.value?.trim() || 'Грибные места',
+    collection: $('spotCollection')?.value?.trim() || SPOT_DEFAULT_COLLECTION,
     photoFile: $('spotPhoto')?.files?.[0] || null
   };
 }
@@ -4398,7 +4401,7 @@ function readMapObjectSpotFormData() {
     name: $('mapObjectName')?.value?.trim() || '',
     mushroomType: $('mapObjectType')?.value?.trim() || '',
     note: $('mapObjectNote')?.value?.trim() || '',
-    collection: $('mapObjectCollection')?.value?.trim() || 'Грибные места',
+    collection: $('mapObjectCollection')?.value?.trim() || SPOT_DEFAULT_COLLECTION,
     photoFile: null
   };
 }
@@ -4409,7 +4412,7 @@ function resetMapObjectSaveEditor() {
     if (el) el.value = '';
   }
   const collection = $('mapObjectCollection');
-  if (collection) collection.value = 'Грибные места';
+  if (collection) collection.value = SPOT_DEFAULT_COLLECTION;
 }
 
 function openPickedSaveEditor(shareAfterSave = false) {
@@ -4445,7 +4448,7 @@ function openSavedSpotEditor() {
   if (name) name.value = spot.name || '';
   if (type) type.value = spot.mushroomType || '';
   if (note) note.value = spot.note || '';
-  if (collection) collection.value = spot.collection || 'Грибные места';
+  if (collection) collection.value = spot.collection || SPOT_DEFAULT_COLLECTION;
   renderMapObjectPanel();
   window.requestAnimationFrame(() => {
     const first = $('mapObjectCollection') || $('mapObjectName');
@@ -4464,7 +4467,7 @@ async function updateSelectedSpotFromMapSheet() {
     name: data.name || spot.name || 'Грибная точка',
     mushroomType: data.mushroomType || '',
     note: data.note || '',
-    collection: data.collection || 'Грибные места',
+    collection: data.collection || SPOT_DEFAULT_COLLECTION,
     updatedAt: new Date().toISOString(),
     appVersion: APP_VERSION
   };
@@ -4928,7 +4931,7 @@ async function saveSpotFromPosition(position, source, formData = null) {
     name,
     mushroomType: data.mushroomType || '',
     note: data.note || '',
-    collection: data.collection || 'Грибные места',
+    collection: data.collection || SPOT_DEFAULT_COLLECTION,
     lat: position.lat,
     lon: position.lon,
     accuracy: position.accuracy ?? null,
@@ -4945,7 +4948,7 @@ async function saveSpotFromPosition(position, source, formData = null) {
     $('mushroomType').value = '';
     $('spotNote').value = '';
     $('spotPhoto').value = '';
-    if ($('spotCollection')) $('spotCollection').value = 'Грибные места';
+    if ($('spotCollection')) $('spotCollection').value = SPOT_DEFAULT_COLLECTION;
   }
   if (source === 'map-picked') clearPickedMapPoint(false);
   await afterDataChanged();
@@ -4964,7 +4967,7 @@ function showSaveResult(spot, source) {
   if (!card || !spot) return;
   const sourceText = source === 'map-picked' ? 'выбранная точка на карте' : 'текущая GPS-позиция';
   setText('saveResultTitle', 'Точка сохранена');
-  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText} в папку “${spot.collection || 'Грибные места'}”. Теперь её можно открыть в “Точках”${canSendSpotToChat() ? ' или отправить группе' : ''}.`);
+  setText('saveResultText', `“${spot.name}” сохранена как ${sourceText} в папку “${spot.collection || SPOT_DEFAULT_COLLECTION}”. Теперь её можно открыть в “Точках”${canSendSpotToChat() ? ' или отправить группе' : ''}.`);
   card.hidden = false;
   updateActionButtonsUi();
 }
@@ -5109,7 +5112,7 @@ function buildSpotDetailsPanelHtml(spot) {
     distanceLine = `${meters(dist)} · ${Math.round(bearing)}° ${directionName(bearing)}`;
   }
   const rows = [
-    ['Папка', escapeHtml(spot.collection || 'Грибные места')],
+    ['Папка', escapeHtml(spot.collection || SPOT_DEFAULT_COLLECTION)],
     ['Тип грибов', escapeHtml(spot.mushroomType || 'не указан')],
     ['Заметка', escapeHtml(spot.note || 'нет заметки')],
     ['Координаты', `${fmtCoord(spot.lat)}, ${fmtCoord(spot.lon)}`],
@@ -5160,6 +5163,11 @@ function normalizedSpotType(spot) {
   return String(spot?.mushroomType || '').trim();
 }
 
+function normalizedSpotCollection(spot) {
+  const collection = String(spot?.collection || '').trim();
+  return collection || SPOT_DEFAULT_COLLECTION;
+}
+
 function spotTypeFilterValue(type) {
   const normalized = String(type || '').trim();
   return normalized || '__empty__';
@@ -5167,6 +5175,38 @@ function spotTypeFilterValue(type) {
 
 function spotTypeFilterLabel(value) {
   return value === '__empty__' ? 'Без типа' : value;
+}
+
+function spotCollectionFilterValue(collection) {
+  return String(collection || SPOT_DEFAULT_COLLECTION).trim() || SPOT_DEFAULT_COLLECTION;
+}
+
+function spotCollectionSortIndex(collection) {
+  const index = SPOT_COLLECTIONS.indexOf(spotCollectionFilterValue(collection));
+  return index === -1 ? SPOT_COLLECTIONS.length : index;
+}
+
+function sortSpotCollections(collections) {
+  return Array.from(collections).sort((a, b) => {
+    const ai = spotCollectionSortIndex(a);
+    const bi = spotCollectionSortIndex(b);
+    if (ai !== bi) return ai - bi;
+    return spotCollectionFilterValue(a).localeCompare(spotCollectionFilterValue(b), 'ru');
+  });
+}
+
+function updateSpotCollectionFilterOptions() {
+  const select = $('spotCollectionFilter');
+  if (!select) return;
+  const previous = select.value || 'all';
+  const collections = sortSpotCollections(new Set([
+    ...SPOT_COLLECTIONS,
+    ...spots.map(normalizedSpotCollection)
+  ]));
+  select.innerHTML = '<option value="all">Все папки</option>' + collections
+    .map((collection) => `<option value="${escapeHtml(spotCollectionFilterValue(collection))}">${escapeHtml(spotCollectionFilterValue(collection))}</option>`)
+    .join('');
+  select.value = collections.includes(previous) ? previous : 'all';
 }
 
 function updateSpotTypeFilterOptions() {
@@ -5183,7 +5223,7 @@ function updateSpotTypeFilterOptions() {
 
 function buildSpotCardMeta(spot) {
   const parts = [];
-  parts.push(spot.collection ? escapeHtml(spot.collection) : 'Грибные места');
+  parts.push(escapeHtml(normalizedSpotCollection(spot)));
   parts.push(spot.mushroomType ? escapeHtml(spot.mushroomType) : 'Тип не указан');
   parts.push(spot.createdAt ? fmtDate(spot.createdAt) : 'Дата не указана');
   const dist = currentPosition ? meters(distanceMeters({ lat: currentPosition.lat, lon: currentPosition.lon }, spot)) : 'GPS не готов';
@@ -5248,8 +5288,10 @@ function renderSpotListItem(spot, canUseChat) {
 }
 
 function renderList() {
+  updateSpotCollectionFilterOptions();
   updateSpotTypeFilterOptions();
   const q = ($('searchInput')?.value || '').trim().toLowerCase();
+  const collectionFilter = $('spotCollectionFilter')?.value || 'all';
   const typeFilter = $('spotTypeFilter')?.value || 'all';
   const sortMode = $('spotSortSelect')?.value || 'recent';
   const list = $('spotsList');
@@ -5258,7 +5300,8 @@ function renderList() {
   if (!list) return;
 
   const filtered = spots
-    .filter((spot) => [spot.name, spot.collection, spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
+    .filter((spot) => [spot.name, normalizedSpotCollection(spot), spot.mushroomType, spot.note].join(' ').toLowerCase().includes(q))
+    .filter((spot) => collectionFilter === 'all' || normalizedSpotCollection(spot) === collectionFilter)
     .filter((spot) => typeFilter === 'all' || spotTypeFilterValue(normalizedSpotType(spot)) === typeFilter)
     .slice();
 
@@ -5276,10 +5319,12 @@ function renderList() {
     if (!spots.length) {
       summary.textContent = 'Пока нет сохранённых точек. Открой карту и нажми “Сохранить место”.';
     } else if (!filtered.length) {
-      summary.textContent = 'Поиск или фильтр ничего не нашли. Измени запрос или выбери “Все типы”.';
+      summary.textContent = 'Поиск или фильтр ничего не нашли. Измени запрос, папку, тип или сортировку.';
     } else {
       const sortText = sortMode === 'nearest' ? (currentPosition ? 'сначала ближайшие' : 'сначала последние, потому что GPS ещё не готов') : sortMode === 'name' ? 'по названию' : 'сначала последние';
-      summary.textContent = `Показано ${filtered.length} из ${spots.length} · ${sortText}.`;
+      const collectionText = collectionFilter === 'all' ? 'все папки' : `папка “${collectionFilter}”`;
+      const groupingText = collectionFilter === 'all' ? ' · сгруппировано по папкам' : '';
+      summary.textContent = `Показано ${filtered.length} из ${spots.length} · ${collectionText}${groupingText} · ${sortText}.`;
     }
   }
 
@@ -5293,7 +5338,23 @@ function renderList() {
     list.appendChild(empty);
     return;
   }
-  for (const spot of filtered) list.appendChild(renderSpotListItem(spot, canUseChat));
+  const grouped = new Map();
+  for (const spot of filtered) {
+    const collection = normalizedSpotCollection(spot);
+    if (!grouped.has(collection)) grouped.set(collection, []);
+    grouped.get(collection).push(spot);
+  }
+  const collectionOrder = collectionFilter === 'all'
+    ? sortSpotCollections(grouped.keys())
+    : Array.from(grouped.keys());
+  for (const collection of collectionOrder) {
+    const groupSpots = grouped.get(collection) || [];
+    const heading = document.createElement('div');
+    heading.className = 'spot-collection-heading';
+    heading.innerHTML = `<span>${escapeHtml(collection)}</span><small>${groupSpots.length}</small>`;
+    list.appendChild(heading);
+    for (const spot of groupSpots) list.appendChild(renderSpotListItem(spot, canUseChat));
+  }
 }
 
 async function refreshSpots() {
@@ -5311,7 +5372,7 @@ function readSpotListEditorFormData() {
     name: $('spotListName')?.value?.trim() || '',
     mushroomType: $('spotListType')?.value?.trim() || '',
     note: $('spotListNote')?.value?.trim() || '',
-    collection: $('spotListCollection')?.value?.trim() || 'Грибные места'
+    collection: $('spotListCollection')?.value?.trim() || SPOT_DEFAULT_COLLECTION
   };
 }
 
@@ -5324,7 +5385,7 @@ function populateSpotListEditor(spot) {
   if (name) name.value = spot.name || '';
   if (type) type.value = spot.mushroomType || '';
   if (note) note.value = spot.note || '';
-  if (collection) collection.value = spot.collection || 'Грибные места';
+  if (collection) collection.value = spot.collection || SPOT_DEFAULT_COLLECTION;
 }
 
 function renderSpotListDetailsState() {
@@ -5384,7 +5445,7 @@ async function saveSpotListEditorChanges() {
     name: data.name || spot.name || 'Грибная точка',
     mushroomType: data.mushroomType || '',
     note: data.note || '',
-    collection: data.collection || 'Грибные места',
+    collection: data.collection || SPOT_DEFAULT_COLLECTION,
     updatedAt: new Date().toISOString(),
     appVersion: APP_VERSION
   };
@@ -6996,7 +7057,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.24.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.25`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
