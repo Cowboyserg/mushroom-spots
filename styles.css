@@ -2482,3 +2482,15 @@ select {
     align-items: center;
   }
 }
+
+/* Sprint 5.31 offline map interaction parity. */
+.offline-preview-actions {
+  margin:8px 0;
+}
+.pmtiles-preview-map[data-picked-point="true"] {
+  outline:2px solid rgba(47,125,50,.35);
+  outline-offset:2px;
+}
+.pmtiles-preview-map[data-track-line-count]:not([data-track-line-count="0"]) {
+  box-shadow:inset 0 0 0 1px rgba(36,75,47,.22);
+}

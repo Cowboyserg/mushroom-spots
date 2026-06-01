@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.30-hotfix\.1 · Sprint 5\.30\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.31 · Sprint 5\.31/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -16,8 +16,102 @@ async function bootApp(page, options = {}) {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
+  if (options.fakePmtilesRuntime) {
+    await page.addInitScript(() => {
+      class FakeMapLibreMap {
+        constructor(options = {}) {
+          this.options = options;
+          this.container = typeof options.container === 'string' ? document.getElementById(options.container) : options.container;
+          this.handlers = new Map();
+          this.sources = new Map();
+          this.layers = new Set();
+          this.zoom = options.zoom || 12;
+          this.center = options.center || [24.1052, 56.9496];
+          if (this.container) {
+            this.container.dataset.fakeMaplibre = 'ready';
+            this.container.addEventListener('click', () => {
+              this.emit('click', { lngLat: { lng: 24.1065, lat: 56.9505 } });
+            });
+          }
+          setTimeout(() => this.emit('load', {}), 0);
+          setTimeout(() => this.emit('idle', {}), 10);
+        }
+        on(name, handler) {
+          if (!this.handlers.has(name)) this.handlers.set(name, []);
+          this.handlers.get(name).push(handler);
+          return this;
+        }
+        once(name, handler) {
+          const wrapped = (event) => {
+            this.handlers.set(name, (this.handlers.get(name) || []).filter((item) => item !== wrapped));
+            handler(event);
+          };
+          return this.on(name, wrapped);
+        }
+        emit(name, event) {
+          for (const handler of this.handlers.get(name) || []) handler(event);
+        }
+        addControl() {}
+        resize() {}
+        triggerRepaint() {}
+        remove() { if (this.container) this.container.innerHTML = ''; }
+        fitBounds() { this.center = [24.1065, 56.9505]; }
+        setCenter(center) { this.center = center; }
+        setZoom(zoom) { this.zoom = zoom; }
+        getZoom() { return this.zoom; }
+        easeTo(options = {}) { if (options.center) this.center = options.center; if (options.zoom) this.zoom = options.zoom; }
+        jumpTo(options = {}) { if (options.center) this.center = options.center; if (options.zoom) this.zoom = options.zoom; }
+        isStyleLoaded() { return true; }
+        addSource(id, source) {
+          const stored = { ...source, setData(data) { this.data = data; } };
+          this.sources.set(id, stored);
+        }
+        getSource(id) { return this.sources.get(id) || null; }
+        addLayer(layer) { this.layers.add(layer.id); }
+        getLayer(id) { return this.layers.has(id) ? { id } : null; }
+      }
+      window.maplibregl = {
+        Map: FakeMapLibreMap,
+        NavigationControl: class {},
+        addProtocol() {}
+      };
+      window.pmtiles = {
+        Protocol: class { constructor() { this.tile = () => {}; } add() {} },
+        PMTiles: class {
+          constructor() {}
+          async getHeader() {
+            return {
+              tileType: 1,
+              minZoom: 0,
+              maxZoom: 14,
+              minLon: 24,
+              minLat: 56,
+              maxLon: 25,
+              maxLat: 57,
+              centerLon: 24.1065,
+              centerLat: 56.9505,
+              centerZoom: 12
+            };
+          }
+          async getMetadata() { return { name: 'Test offline map', bounds: '24,56,25,57' }; }
+        }
+      };
+    });
+  }
+
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
+
+    if (options.fakePmtilesRuntime && url.pathname.endsWith('/offline-test.pmtiles')) {
+      const fakeBytes = `PMTiles fake ${'x'.repeat(160)}`;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/octet-stream',
+        headers: { 'accept-ranges': 'bytes', 'content-length': String(fakeBytes.length) },
+        body: route.request().method() === 'HEAD' ? '' : fakeBytes
+      });
+      return;
+    }
 
     if (options.fakeSupabase && url.pathname.endsWith('/config.js')) {
       await route.fulfill({
@@ -325,6 +419,37 @@ test('offline maps screen presents map manager structure', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
   await expect(page.locator('.offline-diagnostics-panel > summary').getByText('Диагностика карты', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить выбранный файл карты' })).toBeHidden();
+});
+
+
+test('offline map preview supports Ko me, picked point save and shared overlays', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 56.9505, longitude: 24.1065, accuracy: 9 });
+  await bootApp(page, { fakePmtilesRuntime: true });
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.locator('#previewPmtilesBtn').click();
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  await expect(page.locator('#pmtilesPreviewStatus')).toContainText('Нажми на карту');
+  await expect(page.locator('#pmtilesPreviewStatus')).toContainText('точки 3');
+
+  await page.locator('#centerPmtilesOnMeBtn').click();
+  await expect(page.locator('#pmtilesPreviewFocusStatus')).toContainText('Я');
+  await expect(page.locator('#offlineCoverageStatus')).toContainText('внутри области текущей офлайн-карты');
+
+  await page.locator('#pmtilesPreviewMap').click({ position: { x: 80, y: 80 } });
+  await expect(page.locator('#offlinePickedPointStatus')).toContainText('Выбранная точка: 56.950500, 24.106500');
+  await expect(page.locator('#savePmtilesPickedPointBtn')).toBeEnabled();
+  await page.locator('#savePmtilesPickedPointBtn').click();
+  await expect(page.locator('#offlinePickedPointStatus')).toContainText('нажми на офлайн-карту');
+
+  const state = await readLocalBackupState(page);
+  expect(state.spots.some((spot) => spot.source === 'offline-map-picked')).toBe(true);
+  expect(state.spots.some((spot) => spot.name === 'Точка 4')).toBe(true);
 });
 
 test('offline map region rectangle creates a pmtiles bbox command', async ({ page }) => {
@@ -905,7 +1030,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.30-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.31');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1034,7 +1159,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.30-hotfix.1',
+    appVersion: '0.7.31',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
