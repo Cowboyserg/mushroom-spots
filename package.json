@@ -1,6 +1,6 @@
 {
   "name": "mushroom-spots-pwa",
-  "version": "0.7.25-hotfix.2",
+  "version": "0.7.26-hotfix.1",
   "private": true,
   "type": "module",
   "scripts": {

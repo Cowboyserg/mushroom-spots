@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.25-hotfix\.2 · Sprint 5\.25\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.26-hotfix\.1 · Sprint 5\.26\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -507,6 +507,69 @@ test('spots list search, type filter and name sorting work on seeded data', asyn
   await page.locator('#spotSortSelect').selectOption('name');
   const titles = await page.locator('#spotsList .spot-title').allTextContents();
   expect(titles).toEqual(['Белые у ручья', 'Лисички у тропы', 'Подберёзовики за домом']);
+});
+
+
+test('custom spot collections can be created renamed and deleted', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await page.locator('#spotCollectionsManager').evaluate((node) => { node.open = true; });
+
+  await page.locator('#spotCollectionNameInput').fill('Секретные места');
+  await page.locator('#spotCollectionCreateBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
+  await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Секретные места' })).toHaveCount(1);
+
+  await page.locator('#spotCollectionNameInput').fill('  секретные   места  ');
+  await page.locator('#spotCollectionCreateBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
+  await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Секретные места' })).toHaveCount(1);
+
+  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Открыть' }).click();
+  await page.locator('#spotListEditBtn').click();
+  await page.locator('#spotListCollection').selectOption({ label: 'Секретные места' });
+  await page.locator('#spotListSaveEditBtn').click();
+  await expect(page.locator('#spotsList')).toContainText('Секретные места');
+
+  await page.locator('#spotCollectionFilter').selectOption({ label: 'Секретные места' });
+  await expect(page.locator('#spotCount')).toHaveText('1/3');
+  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
+  await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
+
+  await page.locator('#spotCollectionsManager').evaluate((node) => { node.open = true; });
+  await page.locator('#spotCollectionManageSelect').selectOption('Секретные места');
+  await page.locator('#spotCollectionRenameInput').fill('  разведка  ');
+  await page.locator('#spotCollectionRenameBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
+  await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Разведка' })).toHaveCount(1);
+
+  await page.locator('#spotCollectionRenameInput').fill('Семейные места');
+  await page.locator('#spotCollectionRenameBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('переименована');
+  await page.locator('#spotCollectionFilter').selectOption({ label: 'Семейные места' });
+  await expect(page.locator('#spotCount')).toHaveText('1/3');
+  await expect(page.locator('#spotsList')).toContainText('Семейные места');
+  await expect(page.locator('#spotsList')).not.toContainText('Секретные места');
+
+  await page.locator('#spotCollectionNameInput').fill('семейные места');
+  await page.locator('#spotCollectionCreateBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
+  await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Семейные места' })).toHaveCount(1);
+
+  page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await page.locator('#spotCollectionsManager').evaluate((node) => { node.open = true; });
+  await page.locator('#spotCollectionManageSelect').selectOption('Семейные места');
+  await page.locator('#spotCollectionDeleteTarget').selectOption('Грибные места');
+  await page.locator('#spotCollectionDeleteBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('удалена');
+  await page.locator('#spotCollectionFilter').selectOption({ label: 'Грибные места' });
+  await expect(page.locator('#spotCount')).toHaveText('2/3');
+  await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
+  await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
 });
 
 test('saved spot and picked map point stay separate map objects', async ({ page }) => {
