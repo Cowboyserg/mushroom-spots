@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.25';
+const APP_VERSION = '0.7.25-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -6945,6 +6945,7 @@ function bindUi() {
   if ($('clearPickedMapPointBtn')) $('clearPickedMapPointBtn').onclick = withButtonDiagnostics('clearPickedMapPointBtn', () => clearPickedMapPoint(true));
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
+  if ($('spotCollectionFilter')) $('spotCollectionFilter').onchange = renderList;
   if ($('spotTypeFilter')) $('spotTypeFilter').onchange = renderList;
   if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
   if ($('mapObjectPrimaryBtn')) $('mapObjectPrimaryBtn').onclick = withButtonDiagnostics('mapObjectPrimaryBtn', runSelectedMapObjectPrimaryAction);
@@ -7057,7 +7058,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.25`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.25.1`;
   db = await openDb();
   await restoreFolderHandle();
   loadPeopleProfiles();
