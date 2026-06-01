@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.29';
+const APP_VERSION = '0.7.29-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
@@ -6587,7 +6587,7 @@ async function updateStorageUi() {
     try {
       const estimate = await navigator.storage.estimate();
       const used = estimate.usage ? Math.round(estimate.usage / 1024 / 1024) : 0;
-      $('storageHint').textContent = `Сейчас локально: точек ${spots.length}, пользовательских папок ${customSpotCollections.length}. Примерно занято: ${used} МБ. На iPhone скачивай JSON вручную и храни файл вне браузера/iCloud-вкладки.`;
+      $('storageHint').textContent = `Сейчас локально: точек ${spots.length}, пользовательских папок ${customSpotCollections.length}. Примерно занято: ${used} МБ. На iPhone скачивай JSON вручную и храни файл вне браузера.`;
     } catch {}
   }
 }
@@ -8002,7 +8002,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.29`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.29.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
