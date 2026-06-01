@@ -1876,7 +1876,7 @@ select {
 }
 
 #screen-map .map-wrap-home {
-  height: clamp(380px, calc(100dvh - 292px), 720px);
+  height: clamp(360px, calc(100dvh - 320px), 700px);
   min-height: 0;
   max-height: none;
   border-radius: 24px;
@@ -1929,7 +1929,7 @@ select {
 
 @media (min-width: 860px) {
   #screen-map .map-wrap-home {
-    height: clamp(400px, calc(100dvh - 300px), 720px);
+    height: clamp(380px, calc(100dvh - 320px), 700px);
     min-height: 0;
   }
 }
@@ -1954,7 +1954,7 @@ select {
   }
 
   #screen-map .map-wrap-home {
-    height: clamp(340px, calc(100dvh - 278px - env(safe-area-inset-bottom)), 640px);
+    height: clamp(340px, calc(100dvh - 380px - env(safe-area-inset-bottom)), 580px);
     min-height: 0;
     max-height: none;
     border-radius: 22px;
@@ -1975,16 +1975,16 @@ select {
 
 @supports not (height: 100dvh) {
   #screen-map .map-wrap-home {
-    height: clamp(380px, calc(100vh - 292px), 720px);
+    height: clamp(360px, calc(100vh - 320px), 700px);
   }
   @media (min-width: 860px) {
     #screen-map .map-wrap-home {
-      height: clamp(400px, calc(100vh - 300px), 720px);
+      height: clamp(380px, calc(100vh - 320px), 700px);
     }
   }
   @media (max-width: 560px) {
     #screen-map .map-wrap-home {
-      height: clamp(340px, calc(100vh - 278px - env(safe-area-inset-bottom)), 640px);
+      height: clamp(340px, calc(100vh - 380px - env(safe-area-inset-bottom)), 580px);
     }
   }
 }
