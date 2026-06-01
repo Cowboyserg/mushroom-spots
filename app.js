@@ -1,9 +1,11 @@
-const APP_VERSION = '0.7.27-hotfix.12';
+const APP_VERSION = '0.7.28';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 2;
 const SPOTS_STORE = 'spots';
 const SETTINGS_STORE = 'settings';
 const BACKUP_FILE_NAME = 'mushroom-spots-backup.json';
+const BACKUP_SCHEMA = 'mushroom-spots.local-json-backup';
+const BACKUP_SCHEMA_VERSION = 1;
 const CHAT_MAX_LENGTH = 300;
 const CHAT_FETCH_LIMIT = 50;
 const CHAT_REFRESH_MS = 10000;
@@ -5117,13 +5119,72 @@ async function fileToDataUrl(file) {
   });
 }
 
-function buildBackupPayload() {
+function stableJsonStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJsonStringify(item)).join(',')}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`).join(',')}}`;
+}
+
+function fnv1aChecksum(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function getBackupChecksum(data) {
+  return fnv1aChecksum(stableJsonStringify(data));
+}
+
+function sanitizeSpotForBackup(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const lat = Number(raw.lat);
+  const lon = Number(raw.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   return {
-    schemaVersion: 1,
-    appVersion: APP_VERSION,
+    id: String(raw.id || uid()),
+    name: String(raw.name || ''),
+    mushroomType: String(raw.mushroomType || ''),
+    note: String(raw.note || ''),
+    collection: normalizeSpotCollectionName(raw.collection) || SPOT_DEFAULT_COLLECTION,
+    lat,
+    lon,
+    accuracy: raw.accuracy == null || Number.isNaN(Number(raw.accuracy)) ? null : Number(raw.accuracy),
+    source: String(raw.source || 'import'),
+    photo: typeof raw.photo === 'string' ? raw.photo : null,
+    createdAt: typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : new Date().toISOString(),
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt ? raw.updatedAt : new Date().toISOString(),
+    appVersion: String(raw.appVersion || APP_VERSION)
+  };
+}
+
+function buildBackupPayload(options = {}) {
+  const backupSpots = (options.spotsOverride || spots)
+    .map(sanitizeSpotForBackup)
+    .filter(Boolean);
+  const customCollections = dedupeSpotCollections(
+    options.customCollectionsOverride || customSpotCollections,
+    { excludeSystem: true }
+  );
+  const data = {
+    spots: backupSpots,
+    settings: {
+      customCollections
+    }
+  };
+  return {
+    schema: BACKUP_SCHEMA,
+    schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
-    spotCount: spots.length,
-    spots
+    appVersion: APP_VERSION,
+    validation: {
+      spotCount: backupSpots.length,
+      customCollectionCount: customCollections.length,
+      checksum: getBackupChecksum(data)
+    },
+    data
   };
 }
 
@@ -6301,31 +6362,97 @@ function exportAll() {
 function exportSelected() {
   const spot = spots.find(s => s.id === selectedSpotId);
   if (!spot) return alert('Сначала выбери точку.');
-  downloadJson(`mushroom-spot-${spot.name.replace(/[^a-zа-яё0-9]+/gi,'-')}.json`, { schemaVersion: 1, appVersion: APP_VERSION, exportedAt: new Date().toISOString(), spots: [spot] });
+  downloadJson(
+    `mushroom-spot-${spot.name.replace(/[^a-zа-яё0-9]+/gi,'-')}.json`,
+    buildBackupPayload({ spotsOverride: [spot], customCollectionsOverride: [] })
+  );
+}
+
+function assertPlainObject(value, message) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(message);
+}
+
+function validateBackupSpot(raw, index) {
+  assertPlainObject(raw, `Точка #${index + 1} имеет неправильную структуру`);
+  const lat = Number(raw.lat);
+  const lon = Number(raw.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    throw new Error(`Точка #${index + 1} содержит неправильные координаты`);
+  }
+  const normalized = sanitizeSpotForBackup(raw);
+  if (!normalized) throw new Error(`Точка #${index + 1} не прошла проверку`);
+  normalized.updatedAt = new Date().toISOString();
+  normalized.appVersion = APP_VERSION;
+  return normalized;
+}
+
+function validateBackupPayload(payload) {
+  assertPlainObject(payload, 'JSON должен быть объектом резервной копии');
+  if (payload.schema !== BACKUP_SCHEMA) throw new Error('JSON не является резервной копией этого приложения');
+  if (payload.schemaVersion !== BACKUP_SCHEMA_VERSION) throw new Error('Версия схемы backup не поддерживается');
+  assertPlainObject(payload.data, 'В backup нет секции data');
+  assertPlainObject(payload.data.settings, 'В backup нет секции data.settings');
+  if (!Array.isArray(payload.data.spots)) throw new Error('В backup нет массива data.spots');
+  if (!Array.isArray(payload.data.settings.customCollections)) throw new Error('В backup нет массива data.settings.customCollections');
+
+  const normalizedSpots = payload.data.spots.map((spot, index) => validateBackupSpot(spot, index));
+  const normalizedCollections = dedupeSpotCollections(payload.data.settings.customCollections.map((item, index) => {
+    if (typeof item !== 'string') throw new Error(`Папка #${index + 1} имеет неправильную структуру`);
+    return item;
+  }), { excludeSystem: true });
+
+  assertPlainObject(payload.validation, 'В backup нет validation metadata');
+  if (payload.validation.spotCount !== normalizedSpots.length) throw new Error('Количество точек в backup не совпадает с metadata');
+  if (payload.validation.customCollectionCount !== normalizedCollections.length) throw new Error('Количество папок в backup не совпадает с metadata');
+  const expectedChecksum = getBackupChecksum(payload.data);
+  if (payload.validation.checksum !== expectedChecksum) throw new Error('Контрольная сумма backup не совпадает');
+
+  return { spots: normalizedSpots, customCollections: normalizedCollections };
+}
+
+function commitValidatedBackupImport(validated) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([SPOTS_STORE, SETTINGS_STORE], 'readwrite');
+    const spotStore = transaction.objectStore(SPOTS_STORE);
+    const settingStore = transaction.objectStore(SETTINGS_STORE);
+    try {
+      for (const spot of validated.spots) spotStore.put(spot);
+      const mergedCollections = dedupeSpotCollections([
+        ...customSpotCollections,
+        ...validated.customCollections
+      ], { excludeSystem: true });
+      settingStore.put({
+        key: SPOT_CUSTOM_COLLECTIONS_SETTING_KEY,
+        value: mergedCollections,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      try { transaction.abort(); } catch {}
+      reject(err);
+      return;
+    }
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('IndexedDB import transaction failed'));
+    transaction.onabort = () => reject(transaction.error || new Error('IndexedDB import transaction aborted'));
+  });
 }
 
 async function importJson(file) {
   if (!file) return;
   const text = await file.text();
-  const data = JSON.parse(text);
-  const imported = Array.isArray(data) ? data : data.spots;
-  if (!Array.isArray(imported)) throw new Error('JSON не содержит массив spots');
-  let count = 0;
-  for (const raw of imported) {
-    if (typeof raw.lat !== 'number' || typeof raw.lon !== 'number') continue;
-    const now = new Date().toISOString();
-    const spot = {
-      ...raw,
-      id: raw.id || uid(),
-      createdAt: raw.createdAt || now,
-      updatedAt: now,
-      appVersion: APP_VERSION
-    };
-    await putSpot(spot);
-    count++;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('JSON повреждён или имеет неправильный формат');
   }
+  const validated = validateBackupPayload(parsed);
+  await commitValidatedBackupImport(validated);
+  await loadSpotCollections();
   await afterDataChanged();
-  alert(`Импортировано точек: ${count}`);
+  updateSpotCollectionFilterOptions();
+  updateSpotCollectionUi(activeSpotCollection);
+  alert(`Импортировано точек: ${validated.spots.length}. Восстановлено папок: ${validated.customCollections.length}`);
 }
 
 async function deleteSelected() {
@@ -6412,7 +6539,7 @@ async function updateStorageUi() {
     try {
       const estimate = await navigator.storage.estimate();
       const used = estimate.usage ? Math.round(estimate.usage / 1024 / 1024) : 0;
-      $('storageHint').textContent = `Сохранено точек: ${spots.length}. Примерно занято локально: ${used} МБ. На iPhone основной надёжный способ — периодический backup JSON.`;
+      $('storageHint').textContent = `Сохранено точек: ${spots.length}. Пользовательских папок: ${customSpotCollections.length}. Примерно занято локально: ${used} МБ. На iPhone основной надёжный способ — периодический backup JSON.`;
     } catch {}
   }
 }
@@ -7827,7 +7954,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.27.12`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.28`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

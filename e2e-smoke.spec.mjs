@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.12 · Sprint 5\.27\.12/;
+const EXPECTED_APP_VERSION = /v0\.7\.28 · Sprint 5\.28/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -160,6 +160,130 @@ async function seedSpots(page) {
     });
     if (savedCount < spots.length) throw new Error(`Seed verification failed: ${savedCount}/${spots.length} spots written`);
   });
+}
+
+
+async function readLocalBackupState(page) {
+  return page.evaluate(async () => {
+    const DB_NAME = 'mushroom-spots-db';
+    const DB_VERSION = 2;
+    const SPOTS_STORE = 'spots';
+    const SETTINGS_STORE = 'settings';
+    const CUSTOM_COLLECTIONS_KEY = 'spot_custom_collections_v1';
+
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const opened = req.result;
+        if (!opened.objectStoreNames.contains(SPOTS_STORE)) opened.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
+        if (!opened.objectStoreNames.contains(SETTINGS_STORE)) opened.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
+      };
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+    });
+
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction([SPOTS_STORE, SETTINGS_STORE], 'readonly');
+        const spotStore = tx.objectStore(SPOTS_STORE);
+        const settingStore = tx.objectStore(SETTINGS_STORE);
+        const spotsReq = spotStore.getAll();
+        const customReq = settingStore.get(CUSTOM_COLLECTIONS_KEY);
+        let spots = [];
+        let customCollections = [];
+        spotsReq.onsuccess = () => { spots = Array.isArray(spotsReq.result) ? spotsReq.result : []; };
+        customReq.onsuccess = () => { customCollections = Array.isArray(customReq.result?.value) ? customReq.result.value : []; };
+        spotsReq.onerror = () => reject(spotsReq.error);
+        customReq.onerror = () => reject(customReq.error);
+        tx.oncomplete = () => resolve({ spots, customCollections });
+        tx.onerror = () => reject(tx.error || new Error('State read failed'));
+        tx.onabort = () => reject(tx.error || new Error('State read aborted'));
+      });
+    } finally {
+      db.close();
+    }
+  });
+}
+
+async function resetLocalSpotsAndCollections(page) {
+  await page.evaluate(async () => {
+    const DB_NAME = 'mushroom-spots-db';
+    const DB_VERSION = 2;
+    const SPOTS_STORE = 'spots';
+    const SETTINGS_STORE = 'settings';
+    const CUSTOM_COLLECTIONS_KEY = 'spot_custom_collections_v1';
+
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const opened = req.result;
+        if (!opened.objectStoreNames.contains(SPOTS_STORE)) opened.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
+        if (!opened.objectStoreNames.contains(SETTINGS_STORE)) opened.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
+      };
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+    });
+
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction([SPOTS_STORE, SETTINGS_STORE], 'readwrite');
+        tx.objectStore(SPOTS_STORE).clear();
+        tx.objectStore(SETTINGS_STORE).delete(CUSTOM_COLLECTIONS_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('State reset failed'));
+        tx.onabort = () => reject(tx.error || new Error('State reset aborted'));
+      });
+    } finally {
+      db.close();
+    }
+  });
+}
+
+async function installBackupExportCapture(page) {
+  await page.evaluate(() => {
+    if (window.__mushroomOriginalCreateObjectURL) return;
+    window.__mushroomBackupExports = [];
+    window.__mushroomOriginalCreateObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (blob) => {
+      window.__mushroomBackupExports.push({
+        type: blob?.type || '',
+        textPromise: typeof blob?.text === 'function' ? blob.text() : Promise.resolve('')
+      });
+      return window.__mushroomOriginalCreateObjectURL(blob);
+    };
+  });
+}
+
+async function readLastCapturedBackupJson(page) {
+  const text = await page.evaluate(async () => {
+    const exports = window.__mushroomBackupExports || [];
+    const last = exports[exports.length - 1];
+    if (!last) throw new Error('No JSON export was captured');
+    return last.textPromise;
+  });
+  return JSON.parse(text);
+}
+
+async function exportBackupViaSettings(page) {
+  await installBackupExportCapture(page);
+  await page.getByRole('button', { name: 'Настройки' }).click();
+  await expect(page.locator('#screen-settings')).toBeVisible();
+  await page.locator('#exportAllBtn').click();
+  return readLastCapturedBackupJson(page);
+}
+
+async function importJsonFileViaSettings(page, content, expectedMessage) {
+  await page.getByRole('button', { name: 'Настройки' }).click();
+  await expect(page.locator('#screen-settings')).toBeVisible();
+  const dialogPromise = page.waitForEvent('dialog');
+  await page.locator('#importFile').setInputFiles({
+    name: 'mushroom-spots-backup-test.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(typeof content === 'string' ? content : JSON.stringify(content, null, 2))
+  });
+  const dialog = await dialogPromise;
+  expect(dialog.message()).toMatch(expectedMessage);
+  await dialog.accept();
 }
 
 test('app loads and bottom navigation switches screens', async ({ page }) => {
@@ -706,6 +830,135 @@ test('custom spot collections can be created renamed and deleted from folder men
   await expect(page.locator('#spotCount')).toHaveText('2');
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
   await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
+});
+
+
+test('local JSON backup export creates validated spots and custom folders without relying on download event', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('#spotCollectionNameInput').fill('Пустая папка для backup');
+  await page.locator('#spotCollectionCreateBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
+
+  const backup = await exportBackupViaSettings(page);
+  expect(backup.schema).toBe('mushroom-spots.local-json-backup');
+  expect(backup.schemaVersion).toBe(1);
+  expect(backup.appVersion).toBe('0.7.28');
+  expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
+  expect(backup.validation).toMatchObject({ spotCount: 3, customCollectionCount: 1 });
+  expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
+  expect(backup.data.spots.map((spot) => spot.name).sort()).toEqual([
+    'Белые у ручья',
+    'Лисички у тропы',
+    'Подберёзовики за домом'
+  ].sort());
+  expect(backup.data.settings.customCollections).toContain('Пустая папка для backup');
+  expect(JSON.stringify(backup)).not.toContain('SUPABASE_ANON_KEY');
+  expect(JSON.stringify(backup)).not.toContain('backupFolderHandle');
+  expect(JSON.stringify(backup)).not.toContain('.pmtiles');
+});
+
+test('local JSON backup import restores spots and empty custom folders on every platform', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('#spotCollectionNameInput').fill('Пустая папка для восстановления');
+  await page.locator('#spotCollectionCreateBtn').click();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
+
+  const backup = await exportBackupViaSettings(page);
+  await resetLocalSpotsAndCollections(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  let state = await readLocalBackupState(page);
+  expect(state.spots).toEqual([]);
+  expect(state.customCollections).toEqual([]);
+
+  await importJsonFileViaSettings(page, backup, /Импортировано точек: 3\. Восстановлено папок: 1/);
+  state = await readLocalBackupState(page);
+  expect(state.spots.map((spot) => spot.name).sort()).toEqual([
+    'Белые у ручья',
+    'Лисички у тропы',
+    'Подберёзовики за домом'
+  ].sort());
+  expect(state.customCollections).toContain('Пустая папка для восстановления');
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotFoldersList')).toContainText('Пустая папка для восстановления');
+  await page.locator('.spot-folder-card').filter({ hasText: 'Пустая папка для восстановления' }).click();
+  await expect(page.locator('#activeSpotCollectionTitle')).toHaveText('Пустая папка для восстановления');
+  await expect(page.locator('#spotCount')).toHaveText('0');
+});
+
+test('local JSON backup import rejects malformed JSON without erasing existing data', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  const before = await readLocalBackupState(page);
+  expect(before.spots.map((spot) => spot.name)).toContain('Белые у ручья');
+
+  await importJsonFileViaSettings(page, '{ this is not valid json', /Ошибка импорта: JSON повреждён/);
+
+  const after = await readLocalBackupState(page);
+  expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
+});
+
+test('local JSON backup import rejects unsupported schema before any write', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  const before = await readLocalBackupState(page);
+
+  await importJsonFileViaSettings(page, {
+    schema: 'mushroom-spots.local-json-backup',
+    schemaVersion: 999,
+    appVersion: 'future',
+    exportedAt: '2026-06-01T00:00:00.000Z',
+    validation: { spotCount: 1, customCollectionCount: 0, checksum: 'fnv1a32:00000000' },
+    data: {
+      spots: [{ id: 'bad-future-spot', name: 'Не должен появиться', lat: 56, lon: 24 }],
+      settings: { customCollections: [] }
+    }
+  }, /Ошибка импорта: Версия схемы backup не поддерживается/);
+
+  const after = await readLocalBackupState(page);
+  expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
+  expect(after.spots.map((spot) => spot.name)).not.toContain('Не должен появиться');
+});
+
+test('local JSON backup import rejects unsafe structure before any write', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  const before = await readLocalBackupState(page);
+
+  await importJsonFileViaSettings(page, {
+    schema: 'mushroom-spots.local-json-backup',
+    schemaVersion: 1,
+    appVersion: '0.7.28',
+    exportedAt: '2026-06-01T00:00:00.000Z',
+    validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
+    data: {
+      spots: [{ id: 'bad-coords-spot', name: 'Опасная точка', lat: 'not-a-number', lon: 24 }],
+      settings: { customCollections: ['Опасная папка'] }
+    }
+  }, /Ошибка импорта: Точка #1 содержит неправильные координаты/);
+
+  const after = await readLocalBackupState(page);
+  expect(after.spots.map((spot) => spot.name).sort()).toEqual(before.spots.map((spot) => spot.name).sort());
+  expect(after.customCollections).not.toContain('Опасная папка');
 });
 
 test('saved spot and picked map point stay separate map objects', async ({ page }) => {
