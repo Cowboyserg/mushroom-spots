@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.3 · Sprint 5\.27\.3/;
+const EXPECTED_APP_VERSION = /v0\.7\.27-hotfix\.4 · Sprint 5\.27\.4/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -284,6 +284,12 @@ test('map screen keeps GPS controls but does not duplicate bottom navigation in 
   await expect(mapScreen.getByRole('button', { name: /^GPS$/ })).toBeVisible();
   await expect(mapScreen.getByRole('button', { name: /^Ко мне$/ })).toBeVisible();
   await expect(page.locator('#mapObjectCard')).toBeHidden();
+
+  const saveStateBox = await page.locator('#saveFlowState').boundingBox();
+  const mapShellBox = await page.locator('.map-home-shell').boundingBox();
+  expect(saveStateBox, 'save/GPS prompt must be visible on map screen').not.toBeNull();
+  expect(mapShellBox, 'map shell must be visible on map screen').not.toBeNull();
+  expect(saveStateBox.y + saveStateBox.height, 'save/GPS prompt must sit above the map workspace').toBeLessThanOrEqual(mapShellBox.y + 1);
 
   for (const forbiddenNavName of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
     await expect(mapScreen.getByRole('button', { name: new RegExp(`^${forbiddenNavName}$`) })).toHaveCount(0);

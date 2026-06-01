@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.27-hotfix.3" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.27-hotfix.3" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.27-hotfix.4" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.27-hotfix.4" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.27-hotfix.3" />
+  <link rel="stylesheet" href="styles.css?v=0.7.27-hotfix.4" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.27-hotfix.3 · Sprint 5.27.3</p>
+      <p id="appVersion">v0.7.27-hotfix.4 · Sprint 5.27.4</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -27,6 +27,15 @@
       <div class="screen-heading map-home-heading">
         <h2 id="screenTitleMap">Карта</h2>
         <p class="hint">Главный экран: увидеть себя и одним понятным действием сохранить грибное место.</p>
+      </div>
+
+      <div class="save-flow-state save-flow-state-top" id="saveFlowState" aria-live="polite">
+        <div class="save-flow-icon" aria-hidden="true">📍</div>
+        <div>
+          <strong id="saveFlowTitle">Сначала включи GPS</strong>
+          <p class="hint" id="saveFlowDescription">Нажми “GPS” для текущего места или выбери место на карте и используй закладку в карточке выбранного места.</p>
+          <p class="save-flow-coords" id="saveFlowCoords">Координаты: —</p>
+        </div>
       </div>
 
       <section class="map-home-shell" aria-label="Главный экран карты">
@@ -106,15 +115,6 @@
               <p class="hint save-flow-subtitle">Выбранная точка сохраняется через закладку на карте. Этот блок остаётся как запасной способ сохранения GPS или выбранного места.</p>
             </div>
             <span id="saveTargetPill" class="pill warn">ждём GPS</span>
-          </div>
-
-          <div class="save-flow-state" id="saveFlowState" aria-live="polite">
-            <div class="save-flow-icon" aria-hidden="true">📍</div>
-            <div>
-              <strong id="saveFlowTitle">Сначала включи GPS</strong>
-              <p class="hint" id="saveFlowDescription">Нажми “GPS” для текущего места или выбери место на карте и используй закладку в карточке выбранного места.</p>
-              <p class="save-flow-coords" id="saveFlowCoords">Координаты: —</p>
-            </div>
           </div>
 
           <p class="hint" id="pickedMapPointHint">Для сохранения точки не там, где ты стоишь, зажми место на карте пальцем примерно на секунду. На компьютере можно нажать правой кнопкой.</p>
@@ -558,7 +558,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.27-hotfix.3 · Sprint 5.27.3</span>
+          <span class="pill">v0.7.27-hotfix.4 · Sprint 5.27.4</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -574,9 +574,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.27-hotfix.3</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.27.3 — Spots Android Back Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.27-hotfix.3</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.27-hotfix.4</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.27.4 — Save Prompt Top Placement Hotfix</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.27-hotfix.4</strong></div>
         </div>
       </section>
 
@@ -759,10 +759,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.27-hotfix.3"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.27-hotfix.4"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.27-hotfix.3"></script>
-  <script src="app.js?v=0.7.27-hotfix.3"></script>
+  <script src="config.js?v=0.7.27-hotfix.4"></script>
+  <script src="app.js?v=0.7.27-hotfix.4"></script>
 </body>
 </html>

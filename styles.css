@@ -749,6 +749,12 @@ body {
   background: #fff3df;
   border-color: rgba(112,80,0,.22);
 }
+.save-flow-state-top {
+  margin: 0 0 10px;
+  position: relative;
+  z-index: 2;
+}
+
 .save-flow-icon {
   width: 42px;
   height: 42px;
@@ -1870,7 +1876,7 @@ select {
 }
 
 #screen-map .map-wrap-home {
-  height: clamp(420px, calc(100dvh - 204px), 760px);
+  height: clamp(380px, calc(100dvh - 292px), 720px);
   min-height: 0;
   max-height: none;
   border-radius: 24px;
@@ -1923,7 +1929,7 @@ select {
 
 @media (min-width: 860px) {
   #screen-map .map-wrap-home {
-    height: clamp(460px, calc(100dvh - 210px), 760px);
+    height: clamp(400px, calc(100dvh - 300px), 720px);
     min-height: 0;
   }
 }
@@ -1948,7 +1954,7 @@ select {
   }
 
   #screen-map .map-wrap-home {
-    height: clamp(390px, calc(100dvh - 178px - env(safe-area-inset-bottom)), 680px);
+    height: clamp(340px, calc(100dvh - 278px - env(safe-area-inset-bottom)), 640px);
     min-height: 0;
     max-height: none;
     border-radius: 22px;
@@ -1969,16 +1975,16 @@ select {
 
 @supports not (height: 100dvh) {
   #screen-map .map-wrap-home {
-    height: clamp(420px, calc(100vh - 204px), 760px);
+    height: clamp(380px, calc(100vh - 292px), 720px);
   }
   @media (min-width: 860px) {
     #screen-map .map-wrap-home {
-      height: clamp(460px, calc(100vh - 210px), 760px);
+      height: clamp(400px, calc(100vh - 300px), 720px);
     }
   }
   @media (max-width: 560px) {
     #screen-map .map-wrap-home {
-      height: clamp(390px, calc(100vh - 178px - env(safe-area-inset-bottom)), 680px);
+      height: clamp(340px, calc(100vh - 278px - env(safe-area-inset-bottom)), 640px);
     }
   }
 }
