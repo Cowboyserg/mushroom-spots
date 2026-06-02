@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.34-hotfix.4';
+const APP_VERSION = '0.7.35';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -2823,6 +2823,182 @@ function createPmtilesRasterPreviewStyle(protocolUrl) {
   };
 }
 
+function normalizePmtilesVectorLayerIds(vectorLayers = []) {
+  if (!Array.isArray(vectorLayers)) return new Set();
+  return new Set(vectorLayers.map((layer) => {
+    if (typeof layer === 'string') return layer;
+    if (layer && typeof layer === 'object') return layer.id || layer.name;
+    return null;
+  }).filter(Boolean));
+}
+
+function hasOpenMapTilesPreviewSchema(vectorLayers = []) {
+  const ids = normalizePmtilesVectorLayerIds(vectorLayers);
+  return ids.has('transportation')
+    || ids.has('transportation_name')
+    || ids.has('building')
+    || (ids.has('landcover') && ids.has('place'))
+    || (ids.has('waterway') && ids.has('boundary'));
+}
+
+function createOpenMapTilesVectorPreviewLayers(sourceName, vectorLayers = []) {
+  const ids = normalizePmtilesVectorLayerIds(vectorLayers);
+  const has = (id) => ids.has(id);
+  const layers = [
+    { id: 'pmtiles-preview-omt-background', type: 'background', paint: { 'background-color': '#f3efe6' } }
+  ];
+
+  if (has('landcover')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-landcover',
+      type: 'fill',
+      source: sourceName,
+      'source-layer': 'landcover',
+      paint: {
+        'fill-color': ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], 'wood', '#b9d6a3', 'forest', '#b9d6a3', 'grass', '#cddfb2', 'wetland', '#c4dcb7', 'sand', '#eadfba', '#d7e4bd'],
+        'fill-opacity': 0.62
+      }
+    });
+  }
+  if (has('landuse')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-landuse',
+      type: 'fill',
+      source: sourceName,
+      'source-layer': 'landuse',
+      paint: {
+        'fill-color': ['match', ['coalesce', ['get', 'class'], ['get', 'type']], 'forest', '#b7d8a2', 'park', '#c6e1ac', 'grass', '#c6e1ac', 'farmland', '#e2d7ad', 'residential', '#e0d8ca', 'industrial', '#d9d1c4', '#d8dfbe'],
+        'fill-opacity': 0.54
+      }
+    });
+  }
+  if (has('park')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-park',
+      type: 'fill',
+      source: sourceName,
+      'source-layer': 'park',
+      paint: { 'fill-color': '#c8e0ae', 'fill-opacity': 0.66 }
+    });
+  }
+  if (has('water')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-water',
+      type: 'fill',
+      source: sourceName,
+      'source-layer': 'water',
+      paint: { 'fill-color': '#a9cfe5', 'fill-opacity': 0.95 }
+    });
+  }
+  if (has('waterway')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-waterway',
+      type: 'line',
+      source: sourceName,
+      'source-layer': 'waterway',
+      paint: { 'line-color': '#76b7d8', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 14, 1.8, 17, 3.4] }
+    });
+  }
+  if (has('boundary')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-boundary',
+      type: 'line',
+      source: sourceName,
+      'source-layer': 'boundary',
+      minzoom: 4,
+      paint: { 'line-color': '#b8b0a2', 'line-dasharray': [3, 2], 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.35, 10, 0.9, 14, 1.7] }
+    });
+  }
+  if (has('transportation')) {
+    layers.push(
+      {
+        id: 'pmtiles-preview-omt-road-casing',
+        type: 'line',
+        source: sourceName,
+        'source-layer': 'transportation',
+        minzoom: 5,
+        paint: { 'line-color': '#c7b89d', 'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.55, 10, 1.25, 13, 3.2, 16, 7.0] }
+      },
+      {
+        id: 'pmtiles-preview-omt-road-major',
+        type: 'line',
+        source: sourceName,
+        'source-layer': 'transportation',
+        minzoom: 5,
+        filter: ['in', ['get', 'class'], ['literal', ['motorway', 'trunk', 'primary', 'secondary']]],
+        paint: { 'line-color': '#fff2b3', 'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.75, 10, 1.9, 13, 4.2, 16, 8.0] }
+      },
+      {
+        id: 'pmtiles-preview-omt-road-medium',
+        type: 'line',
+        source: sourceName,
+        'source-layer': 'transportation',
+        minzoom: 8,
+        filter: ['in', ['get', 'class'], ['literal', ['tertiary', 'minor', 'service', 'residential', 'unclassified']]],
+        paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 12, 1.5, 15, 4.0] }
+      },
+      {
+        id: 'pmtiles-preview-omt-road-tracks',
+        type: 'line',
+        source: sourceName,
+        'source-layer': 'transportation',
+        minzoom: 10,
+        filter: ['any', ['in', ['get', 'class'], ['literal', ['track', 'path']]], ['in', ['get', 'subclass'], ['literal', ['track', 'path', 'footway', 'cycleway', 'bridleway']]]],
+        paint: { 'line-color': '#f7f7f3', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.35, 14, 1.1, 17, 2.3], 'line-dasharray': [1.5, 1.2] }
+      }
+    );
+  }
+  if (has('building')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-building',
+      type: 'fill',
+      source: sourceName,
+      'source-layer': 'building',
+      minzoom: 13,
+      paint: { 'fill-color': '#d1b99a', 'fill-opacity': 0.66 }
+    });
+  }
+  if (has('place')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-place-labels',
+      type: 'symbol',
+      source: sourceName,
+      'source-layer': 'place',
+      minzoom: 4,
+      layout: { 'text-field': ['coalesce', ['get', 'name:ru'], ['get', 'name:en'], ['get', 'name']], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 4, 10, 9, 13, 13, 16], 'text-anchor': 'center', 'text-allow-overlap': false },
+      paint: { 'text-color': '#4e463c', 'text-halo-color': '#f8f4ea', 'text-halo-width': 1.2 }
+    });
+  }
+  if (has('transportation_name')) {
+    layers.push({
+      id: 'pmtiles-preview-omt-road-labels',
+      type: 'symbol',
+      source: sourceName,
+      'source-layer': 'transportation_name',
+      minzoom: 12,
+      layout: { 'symbol-placement': 'line', 'text-field': ['coalesce', ['get', 'name:ru'], ['get', 'name:en'], ['get', 'name'], ['get', 'ref']], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 12, 9, 16, 12], 'text-rotation-alignment': 'map' },
+      paint: { 'text-color': '#635946', 'text-halo-color': '#ffffff', 'text-halo-width': 1.0 }
+    });
+  }
+  return layers;
+}
+
+function createOpenMapTilesVectorPreviewStyle(protocolUrl, vectorLayers = []) {
+  const sourceName = 'pmtiles-preview';
+  return {
+    version: 8,
+    glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+    sources: {
+      [sourceName]: {
+        type: 'vector',
+        url: protocolUrl,
+        attribution: '<a href="https://openstreetmap.org">OpenStreetMap</a>'
+      }
+    },
+    layers: createOpenMapTilesVectorPreviewLayers(sourceName, vectorLayers)
+  };
+}
+
 function createFallbackVectorPreviewLayers(sourceName) {
   return [
     { id: 'pmtiles-preview-background', type: 'background', paint: { 'background-color': '#f3efe6' } },
@@ -2876,7 +3052,16 @@ async function ensureProtomapsBasemapsRuntime() {
   }
 }
 
-async function createPmtilesVectorPreviewStyle(protocolUrl) {
+async function createPmtilesVectorPreviewStyle(protocolUrl, vectorLayers = []) {
+  if (hasOpenMapTilesPreviewSchema(vectorLayers)) {
+    return {
+      style: createOpenMapTilesVectorPreviewStyle(protocolUrl, vectorLayers),
+      styleName: 'openmaptiles-planetiler-vector-basic',
+      styleMode: 'vector-openmaptiles-style',
+      sourceName: 'pmtiles-preview'
+    };
+  }
+
   const sourceName = 'protomaps';
   const hasBasemapsRuntime = await ensureProtomapsBasemapsRuntime();
   if (hasBasemapsRuntime) {
@@ -2895,12 +3080,14 @@ async function createPmtilesVectorPreviewStyle(protocolUrl) {
         layers: window.basemaps.layers(sourceName, window.basemaps.namedFlavor('light'), { lang: 'ru' })
       },
       styleName: 'protomaps-basemaps-light-v5',
+      styleMode: 'vector-protomaps-style',
       sourceName
     };
   }
   return {
     style: createFallbackVectorPreviewStyle(protocolUrl),
     styleName: 'fallback-protomaps-vector-basic',
+    styleMode: 'vector-fallback-style',
     sourceName: 'pmtiles-preview'
   };
 }
@@ -3025,10 +3212,10 @@ async function showPmtilesPreviewMap() {
     const previewBounds = getPmtilesPreviewBounds(result.meta, activePackage);
     const center = getPmtilesPreviewCenter(result.meta, previewBounds);
     const zoom = getPmtilesPreviewZoom(result.meta, previewBounds, isVectorPreview);
-    const vectorStyleResult = isVectorPreview ? await createPmtilesVectorPreviewStyle(protocolUrl) : null;
+    const vectorStyleResult = isVectorPreview ? await createPmtilesVectorPreviewStyle(protocolUrl, vectorLayers) : null;
     const style = isVectorPreview ? vectorStyleResult.style : createPmtilesRasterPreviewStyle(protocolUrl);
     const styleName = isVectorPreview ? vectorStyleResult.styleName : 'raster-pmtiles-basic';
-    const styleMode = isVectorPreview ? 'vector-protomaps-style' : 'raster-source-url';
+    const styleMode = isVectorPreview ? (vectorStyleResult.styleMode || 'vector-protomaps-style') : 'raster-source-url';
 
     await new Promise((resolve, reject) => {
       let finished = false;
@@ -9276,7 +9463,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.34.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.35`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

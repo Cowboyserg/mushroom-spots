@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.34-hotfix\.4 · Sprint 5\.34\.4/;
+const EXPECTED_APP_VERSION = /v0\.7\.35 · Sprint 5\.35/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -27,8 +27,13 @@ async function bootApp(page, options = {}) {
           this.layers = new Set();
           this.zoom = options.zoom || 12;
           this.center = options.center || [24.1052, 56.9496];
+          window.__lastMapLibreStyle = options.style || null;
+          window.__lastMapLibreStyleLayerIds = (options.style?.layers || []).map((layer) => layer.id).filter(Boolean);
+          window.__lastMapLibreStyleSourceLayers = (options.style?.layers || []).map((layer) => layer['source-layer']).filter(Boolean);
           if (this.container) {
             this.container.dataset.fakeMaplibre = 'ready';
+            this.container.dataset.fakeMaplibreStyleLayerIds = window.__lastMapLibreStyleLayerIds.join(',');
+            this.container.dataset.fakeMaplibreStyleSourceLayers = window.__lastMapLibreStyleSourceLayers.join(',');
             this.container.addEventListener('click', () => {
               this.emit('click', { lngLat: { lng: 24.1065, lat: 56.9505 } });
             });
@@ -93,7 +98,24 @@ async function bootApp(page, options = {}) {
               centerZoom: 12
             };
           }
-          async getMetadata() { return { name: 'Test offline map', bounds: '24,56,25,57' }; }
+          async getMetadata() {
+            return {
+              name: 'Test offline map',
+              bounds: '24,56,25,57',
+              vector_layers: [
+                { id: 'landcover' },
+                { id: 'landuse' },
+                { id: 'park' },
+                { id: 'water' },
+                { id: 'waterway' },
+                { id: 'boundary' },
+                { id: 'transportation' },
+                { id: 'transportation_name' },
+                { id: 'building' },
+                { id: 'place' }
+              ]
+            };
+          }
         }
       };
     });
@@ -477,6 +499,52 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
   await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
   await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
   await expect(page.locator('#offlineMapListSection')).toBeHidden();
+});
+
+
+test('offline map preview builds an OpenMapTiles compatible style for Planetiler metadata', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'planetiler-openmaptiles.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameInput').fill('Planetiler тест');
+  await page.locator('#offlineImportNameSaveBtn').click();
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+
+  const styleDetails = await page.evaluate(() => ({
+    layerIds: window.__lastMapLibreStyleLayerIds || [],
+    sourceLayers: Array.from(new Set(window.__lastMapLibreStyleSourceLayers || []))
+  }));
+
+  expect(styleDetails.layerIds).toEqual(expect.arrayContaining([
+    'pmtiles-preview-omt-landcover',
+    'pmtiles-preview-omt-landuse',
+    'pmtiles-preview-omt-park',
+    'pmtiles-preview-omt-water',
+    'pmtiles-preview-omt-waterway',
+    'pmtiles-preview-omt-boundary',
+    'pmtiles-preview-omt-road-major',
+    'pmtiles-preview-omt-building',
+    'pmtiles-preview-omt-place-labels'
+  ]));
+  expect(styleDetails.sourceLayers).toEqual(expect.arrayContaining([
+    'landcover',
+    'landuse',
+    'park',
+    'water',
+    'waterway',
+    'boundary',
+    'transportation',
+    'building',
+    'place'
+  ]));
 });
 
 
@@ -1169,7 +1237,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.34-hotfix.4');
+  expect(backup.appVersion).toBe('0.7.35');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1298,7 +1366,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.34-hotfix.4',
+    appVersion: '0.7.35',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
