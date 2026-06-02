@@ -2675,3 +2675,76 @@ select {
 .offline-region-download-link {
   text-decoration: none;
 }
+
+/* Sprint 5.37.1 — Spots menu layout hotfix */
+.spot-folder-head > .pill,
+#spotCount {
+  white-space: nowrap;
+}
+
+.spot-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: visible;
+  align-items: start;
+}
+
+.spot-item .spot-item-main {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  text-align: left;
+}
+
+.spot-item .thumb {
+  justify-self: end;
+}
+
+.spot-item-kebab-menu,
+.folder-kebab-menu {
+  z-index: 5;
+}
+
+.spot-item-kebab-menu[open],
+.folder-kebab-menu[open] {
+  z-index: 40;
+}
+
+.spot-item-kebab-menu .kebab-menu-panel,
+.folder-kebab-menu .kebab-menu-panel {
+  position: static;
+  margin-top: 8px;
+  box-shadow: 0 8px 22px rgba(36,75,47,.14);
+}
+
+@media (max-width: 560px) {
+  .spot-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .spot-item-kebab-menu[open] {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    margin: 0 10px 10px;
+  }
+
+  .spot-item-kebab-menu[open] summary {
+    margin-left: auto;
+  }
+
+  .spot-item-kebab-menu[open] .kebab-menu-panel {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .spot-item .spot-item-main {
+    grid-template-columns: 1fr;
+  }
+
+  .spot-item .thumb {
+    justify-self: start;
+  }
+}

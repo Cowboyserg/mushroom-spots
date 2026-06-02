@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.37';
+const APP_VERSION = '0.7.37-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -7917,6 +7917,15 @@ function updateSpotTypeFilterOptions() {
   select.value = types.includes(previous) ? previous : 'all';
 }
 
+function formatSpotCountLabel(count) {
+  const normalized = Number(count) || 0;
+  const mod10 = normalized % 10;
+  const mod100 = normalized % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${normalized} метка`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${normalized} метки`;
+  return `${normalized} меток`;
+}
+
 function buildSpotCardMeta(spot) {
   const parts = [];
   parts.push(spot.mushroomType ? escapeHtml(spot.mushroomType) : 'Тип не указан');
@@ -8093,6 +8102,7 @@ function renderSpotFolders() {
 
   const counts = getSpotCollectionUsageCounts();
   const collections = getAvailableSpotCollections();
+  setHidden('spotCount', false);
   $('spotCount').textContent = `${collections.length} папок`;
   list.innerHTML = '';
   for (const collection of collections) {
@@ -8166,7 +8176,8 @@ function renderList() {
   if (!list) return;
 
   setText('activeSpotCollectionTitle', activeSpotCollection);
-  setText('activeSpotCollectionCount', `${counts.get(activeSpotCollection) || 0}`);
+  setText('activeSpotCollectionCount', formatSpotCountLabel(counts.get(activeSpotCollection) || 0));
+  setHidden('spotCount', true);
   const selectedIsSystem = isSystemSpotCollection(activeSpotCollection);
   setDisabled('spotCollectionRenameMenuBtn', selectedIsSystem);
   setDisabled('spotCollectionDeleteMenuBtn', selectedIsSystem);
@@ -10123,7 +10134,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
