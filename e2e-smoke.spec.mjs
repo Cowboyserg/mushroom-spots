@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.37-hotfix\.5 · Sprint 5\.37\.5/;
+const EXPECTED_APP_VERSION = /v0\.7\.38 · Sprint 5\.38/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1382,18 +1382,65 @@ test('custom spot collections can be created renamed and deleted from folder men
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Семейные места' })).toHaveCount(1);
 
   await page.locator('.spot-folder-card').filter({ hasText: 'Семейные места' }).click();
-  page.once('dialog', async (dialog) => { await dialog.accept(); });
   await page.locator('#spotFolderMenu summary').click();
   await page.locator('#spotCollectionDeleteMenuBtn').click();
-  await expect(page.locator('#spotFolderDeletePanel')).toBeVisible();
-  await page.locator('#spotCollectionDeleteTarget').selectOption('Грибные места');
-  await page.locator('#spotCollectionDeleteBtn').click();
-  await expect(page.locator('#spotCollectionManagerHint')).toContainText('удалена');
+  await expect(page.locator('#spotFolderDeleteDialog')).toBeVisible();
+  await expect(page.locator('#spotFolderDeleteDialogCount')).toContainText('1 метка');
+  await page.locator('#spotFolderDeleteTarget').selectOption('Грибные места');
+  await page.locator('#spotFolderDeleteMoveBtn').click();
+  await expect(page.locator('#spotFolderDeleteDialog')).toBeHidden();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('Перенесено меток: 1');
   await expect(page.locator('#spotFoldersView')).toBeVisible();
   await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
   await expect(page.locator('#spotCount')).toHaveText('2');
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
   await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
+});
+
+
+test('folder delete dialog can delete the folder and all contained spots', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Ягоды' }).click();
+  await expect(page.locator('#spotsList')).toContainText('Подберёзовики за домом');
+
+  await page.locator('#spotFolderMenu summary').click();
+  await page.locator('#spotCollectionDeleteMenuBtn').click();
+  await expect(page.locator('#spotFolderDeleteDialog')).toBeVisible();
+  await expect(page.locator('#spotFolderDeleteDialogTitle')).toContainText('Ягоды');
+  await expect(page.locator('#spotFolderDeleteDialogCount')).toContainText('1 метка');
+  await page.locator('#spotFolderDeleteAllRequestBtn').click();
+  await expect(page.locator('#spotFolderDeleteDangerDialog')).toBeVisible();
+  await expect(page.locator('#spotFolderDeleteDangerText')).toContainText('1 метка');
+  await page.locator('#spotFolderDeleteAllConfirmBtn').click();
+
+  await expect(page.locator('#spotFolderDeleteDangerDialog')).toBeHidden();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('удалена вместе с метками: 1');
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await expect(page.locator('#spotFoldersList')).not.toContainText('Ягоды');
+  await expect(page.locator('#spotFoldersList')).not.toContainText('Подберёзовики за домом');
+  const deletedSpotCount = await page.evaluate(async () => {
+    const DB_NAME = 'mushroom-spots-db';
+    const DB_VERSION = 4;
+    const SPOTS_STORE = 'spots';
+    return await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(SPOTS_STORE, 'readonly');
+        const store = tx.objectStore(SPOTS_STORE);
+        const getReq = store.get('e2e-birch-spot');
+        getReq.onsuccess = () => { db.close(); resolve(getReq.result ? 1 : 0); };
+        getReq.onerror = () => reject(getReq.error);
+      };
+    });
+  });
+  expect(deletedSpotCount).toBe(0);
 });
 
 
@@ -1412,7 +1459,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.37-hotfix.5');
+  expect(backup.appVersion).toBe('0.7.38');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1541,7 +1588,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.37-hotfix.5',
+    appVersion: '0.7.38',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

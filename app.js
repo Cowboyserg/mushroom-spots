@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.37-hotfix.5';
+const APP_VERSION = '0.7.38';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -96,6 +96,7 @@ let spots = [];
 let customSpotCollections = [];
 let deletedSpotCollections = [];
 let activeSpotCollection = null;
+let spotFolderDeleteDialogState = null;
 let suppressSpotHistorySync = false;
 const SPOTS_HISTORY_STATE_KEY = 'mushroomSpotsUiState';
 let spotMarkers = new Map();
@@ -7800,6 +7801,7 @@ function setSpotCollectionManagerHint(text) {
 function closeSpotFolderPanels() {
   setHidden('spotFolderEditPanel', true);
   setHidden('spotFolderDeletePanel', true);
+  closeSpotFolderDeleteDialogs();
   const folderMenu = $('spotFolderMenu');
   if (folderMenu) folderMenu.open = false;
 }
@@ -7866,16 +7868,135 @@ function openSpotFolderRenamePanel() {
   return true;
 }
 
+function getSpotsInCollection(collection) {
+  const name = normalizeSpotCollectionName(collection);
+  if (!name) return [];
+  return spots.filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), name));
+}
+
+function closeSpotFolderDeleteDialogs() {
+  closeDialogSafely('spotFolderDeleteDialog');
+  closeDialogSafely('spotFolderDeleteDangerDialog');
+}
+
+function getSpotFolderDeleteTarget(collection) {
+  const selected = normalizeSpotCollectionName(collection);
+  const explicit = normalizeSpotCollectionName($('spotFolderDeleteTarget')?.value);
+  if (explicit && !spotCollectionEquals(explicit, selected) && spotCollectionExists(explicit)) return explicit;
+  return getFirstAvailableSpotCollection(selected);
+}
+
+function renderSpotFolderDeleteDialog() {
+  const state = spotFolderDeleteDialogState;
+  if (!state?.collection) return;
+  const collection = state.collection;
+  const affected = getSpotsInCollection(collection);
+  const count = affected.length;
+  const collections = getAvailableSpotCollections();
+  const canMove = Boolean(getFirstAvailableSpotCollection(collection));
+  setText('spotFolderDeleteDialogTitle', `Удалить папку «${collection}»?`);
+  setText('spotFolderDeleteDialogCount', count ? `В папке: ${formatSpotCountLabel(count)}.` : 'Папка пустая.');
+  setText('spotFolderDeleteMoveHint', canMove
+    ? 'Безопасный вариант: удалить только папку, а метки перенести в другую папку.'
+    : 'Перенос недоступен: нет другой папки. Можно отменить или удалить папку вместе с метками.');
+  const targetSelect = $('spotFolderDeleteTarget');
+  if (targetSelect) {
+    const preferred = getSpotFolderDeleteTarget(collection);
+    setSelectOptions(targetSelect, collections, { selected: preferred, exclude: collection });
+  }
+  setHidden('spotFolderDeleteMoveBlock', !count);
+  setHidden('spotFolderDeleteEmptyText', Boolean(count));
+  setHidden('spotFolderDeleteAllRequestBtn', !count);
+  const moveBtnLabel = count ? 'Удалить папку и перенести метки' : 'Удалить пустую папку';
+  setText('spotFolderDeleteMoveBtn', moveBtnLabel);
+  setDisabled('spotFolderDeleteMoveBtn', Boolean(count) && !canMove);
+  const dangerText = `Точно удалить папку «${collection}» и метки внутри: ${formatSpotCountLabel(count)}?`;
+  setText('spotFolderDeleteDangerTitle', `Удалить папку и метки?`);
+  setText('spotFolderDeleteDangerText', dangerText);
+}
+
 function openSpotFolderDeletePanel() {
+  return openSpotFolderDeleteDialog();
+}
+
+function openSpotFolderDeleteDialog() {
   if (!activeSpotCollection) return false;
+  const collection = normalizeSpotCollectionName(activeSpotCollection);
+  if (!collection) return false;
   const manageSelect = $('spotCollectionManageSelect');
-  if (manageSelect) manageSelect.value = activeSpotCollection;
-  renderSpotCollectionManager(activeSpotCollection);
+  if (manageSelect) manageSelect.value = collection;
+  spotFolderDeleteDialogState = { collection };
+  renderSpotCollectionManager(collection);
   setHidden('spotFolderEditPanel', true);
-  setHidden('spotFolderDeletePanel', false);
+  setHidden('spotFolderDeletePanel', true);
   const folderMenu = $('spotFolderMenu');
   if (folderMenu) folderMenu.open = false;
+  renderSpotFolderDeleteDialog();
+  showDialogSafely('spotFolderDeleteDialog');
   return true;
+}
+
+function requestDeleteSpotCollectionWithSpots() {
+  if (!spotFolderDeleteDialogState?.collection) return false;
+  renderSpotFolderDeleteDialog();
+  closeDialogSafely('spotFolderDeleteDialog');
+  showDialogSafely('spotFolderDeleteDangerDialog');
+  return true;
+}
+
+async function finishDeleteSpotCollection({ deleteSpots = false } = {}) {
+  const oldName = normalizeSpotCollectionName(spotFolderDeleteDialogState?.collection || activeSpotCollection || $('spotCollectionManageSelect')?.value);
+  const affected = getSpotsInCollection(oldName);
+  const target = getSpotFolderDeleteTarget(oldName);
+  if (!oldName) { setSpotCollectionManagerHint('Выбери папку для удаления.'); return false; }
+  if (!deleteSpots && affected.length && !spotCollectionExists(target)) {
+    setSpotCollectionManagerHint('Папка для переноса не найдена.');
+    renderSpotFolderDeleteDialog();
+    showDialogSafely('spotFolderDeleteDialog');
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const affectedIds = new Set(affected.map((spot) => spot.id));
+  if (deleteSpots) {
+    for (const spot of affected) await removeSpot(spot.id);
+  } else {
+    for (const spot of affected) {
+      await putSpot({ ...spot, collection: target, updatedAt: now, appVersion: APP_VERSION });
+    }
+  }
+  customSpotCollections = dedupeSpotCollections(customSpotCollections.filter((item) => (
+    !spotCollectionEquals(item, oldName)
+  )));
+  hideStarterSpotCollection(oldName);
+  await saveSpotCollections();
+  if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) activeSpotCollection = null;
+  if (deleteSpots && selectedSpotId && affectedIds.has(selectedSpotId)) selectedSpotId = null;
+  if (deleteSpots && selectedMapObject?.kind === 'saved' && affectedIds.has(selectedMapObject.id)) selectedMapObject = null;
+  if (deleteSpots && navLine) { navLine.remove(); navLine = null; }
+  closeSpotFolderDeleteDialogs();
+  spotFolderDeleteDialogState = null;
+  await afterDataChanged();
+  updateSpotCollectionFilterOptions('all');
+  updateSpotCollectionUi(target || 'all');
+  closeSpotFolderPanels();
+  renderList();
+  renderMapObjectPanel();
+  updateActionButtonsUi();
+  if (deleteSpots) {
+    setSpotCollectionManagerHint(`Папка «${oldName}» удалена вместе с метками: ${affected.length}.`);
+  } else {
+    setSpotCollectionManagerHint(`Папка «${oldName}» удалена. Перенесено меток: ${affected.length}.`);
+  }
+  return true;
+}
+
+async function deleteSpotCollectionAndMoveSpots() {
+  return finishDeleteSpotCollection({ deleteSpots: false });
+}
+
+async function deleteSpotCollectionAndAllSpots() {
+  return finishDeleteSpotCollection({ deleteSpots: true });
 }
 
 async function createSpotCollection() {
@@ -7943,34 +8064,9 @@ async function renameSelectedSpotCollection() {
 }
 
 async function deleteSelectedSpotCollection() {
-  const select = $('spotCollectionManageSelect');
-  const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
-  const affected = spots.filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), oldName));
-  const target = normalizeSpotCollectionName($('spotCollectionDeleteTarget')?.value) || getFirstAvailableSpotCollection(oldName);
-  if (!oldName) { setSpotCollectionManagerHint('Выбери папку для удаления.'); return false; }
-  if (affected.length && spotCollectionEquals(oldName, target)) { setSpotCollectionManagerHint('Выбери другую папку для переноса меток.'); return false; }
-  if (affected.length && !spotCollectionExists(target)) { setSpotCollectionManagerHint('Папка для переноса не найдена.'); return false; }
-  const moveText = affected.length ? ` Метки будут перенесены в «${target}».` : '';
-  if (!confirm(`Удалить папку «${oldName}»?${moveText}`)) return false;
-
-  const now = new Date().toISOString();
-  for (const spot of affected) {
-    await putSpot({ ...spot, collection: target, updatedAt: now, appVersion: APP_VERSION });
-  }
-  customSpotCollections = dedupeSpotCollections(customSpotCollections.filter((item) => (
-    !spotCollectionEquals(item, oldName)
-  )));
-  hideStarterSpotCollection(oldName);
-  await saveSpotCollections();
-  if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) activeSpotCollection = null;
-  await afterDataChanged();
-  updateSpotCollectionFilterOptions('all');
-  updateSpotCollectionUi(target);
-  closeSpotFolderPanels();
-  renderList();
-  setSpotCollectionManagerHint(`Папка «${oldName}» удалена. Перенесено меток: ${affected.length}.`);
-  return true;
+  return openSpotFolderDeleteDialog();
 }
+
 
 function updateSpotCollectionFilterOptions(selected = null) {
   const select = $('spotCollectionFilter');
@@ -10090,13 +10186,19 @@ function bindUi() {
   if ($('spotCollectionCreateBtn')) $('spotCollectionCreateBtn').onclick = withButtonDiagnostics('spotCollectionCreateBtn', createSpotCollection);
   if ($('spotCollectionManageSelect')) $('spotCollectionManageSelect').onchange = () => renderSpotCollectionManager();
   if ($('spotCollectionRenameBtn')) $('spotCollectionRenameBtn').onclick = withButtonDiagnostics('spotCollectionRenameBtn', renameSelectedSpotCollection);
-  if ($('spotCollectionDeleteBtn')) $('spotCollectionDeleteBtn').onclick = withButtonDiagnostics('spotCollectionDeleteBtn', deleteSelectedSpotCollection);
+  if ($('spotCollectionDeleteBtn')) $('spotCollectionDeleteBtn').onclick = withButtonDiagnostics('spotCollectionDeleteBtn', openSpotFolderDeleteDialog);
   if ($('spotCollectionNameInput')) $('spotCollectionNameInput').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); createSpotCollection(); } };
   if ($('spotFolderBackBtn')) $('spotFolderBackBtn').onclick = withButtonDiagnostics('spotFolderBackBtn', backToSpotCollections);
   if ($('spotCollectionRenameMenuBtn')) $('spotCollectionRenameMenuBtn').onclick = withButtonDiagnostics('spotCollectionRenameMenuBtn', openSpotFolderRenamePanel);
   if ($('spotCollectionDeleteMenuBtn')) $('spotCollectionDeleteMenuBtn').onclick = withButtonDiagnostics('spotCollectionDeleteMenuBtn', openSpotFolderDeletePanel);
   if ($('spotCollectionEditCancelBtn')) $('spotCollectionEditCancelBtn').onclick = withButtonDiagnostics('spotCollectionEditCancelBtn', closeSpotFolderPanels);
   if ($('spotCollectionDeleteCancelBtn')) $('spotCollectionDeleteCancelBtn').onclick = withButtonDiagnostics('spotCollectionDeleteCancelBtn', closeSpotFolderPanels);
+  if ($('spotFolderDeleteTarget')) $('spotFolderDeleteTarget').onchange = renderSpotFolderDeleteDialog;
+  if ($('spotFolderDeleteCancelBtn')) $('spotFolderDeleteCancelBtn').onclick = withButtonDiagnostics('spotFolderDeleteCancelBtn', () => { closeSpotFolderDeleteDialogs(); spotFolderDeleteDialogState = null; return true; });
+  if ($('spotFolderDeleteMoveBtn')) $('spotFolderDeleteMoveBtn').onclick = withButtonDiagnostics('spotFolderDeleteMoveBtn', deleteSpotCollectionAndMoveSpots);
+  if ($('spotFolderDeleteAllRequestBtn')) $('spotFolderDeleteAllRequestBtn').onclick = withButtonDiagnostics('spotFolderDeleteAllRequestBtn', requestDeleteSpotCollectionWithSpots);
+  if ($('spotFolderDeleteDangerCancelBtn')) $('spotFolderDeleteDangerCancelBtn').onclick = withButtonDiagnostics('spotFolderDeleteDangerCancelBtn', () => { closeDialogSafely('spotFolderDeleteDangerDialog'); showDialogSafely('spotFolderDeleteDialog'); return true; });
+  if ($('spotFolderDeleteAllConfirmBtn')) $('spotFolderDeleteAllConfirmBtn').onclick = withButtonDiagnostics('spotFolderDeleteAllConfirmBtn', deleteSpotCollectionAndAllSpots);
 
   if ($('spotTypeFilter')) $('spotTypeFilter').onchange = renderList;
   if ($('spotSortSelect')) $('spotSortSelect').onchange = renderList;
@@ -10228,7 +10330,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37.5`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.38`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
