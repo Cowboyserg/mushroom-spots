@@ -2513,6 +2513,32 @@ select {
   white-space: nowrap;
   box-shadow: 0 8px 22px rgba(0,0,0,.14);
 }
+.pmtiles-preview-frame .maplibregl-ctrl-group {
+  background: #244b2f !important;
+  border: 0 !important;
+  border-radius: 22px !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,.18) !important;
+  overflow: hidden !important;
+}
+.pmtiles-preview-frame .maplibregl-ctrl-group button {
+  width: 46px !important;
+  height: 46px !important;
+  background-color: #244b2f !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.pmtiles-preview-frame .maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(255, 253, 247, .18) !important;
+}
+.pmtiles-preview-frame .maplibregl-ctrl-group button:hover,
+.pmtiles-preview-frame .maplibregl-ctrl-group button:focus-visible {
+  background-color: #315f3b !important;
+}
+.pmtiles-preview-frame .maplibregl-ctrl-group button span,
+.pmtiles-preview-frame .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: brightness(0) invert(1) opacity(.86);
+}
 .offline-preview-point-actions {
   margin-top: 0.65rem;
 }
