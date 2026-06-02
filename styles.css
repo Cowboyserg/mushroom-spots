@@ -2566,23 +2566,26 @@ select {
 .app-toast {
   position: fixed;
   left: 50%;
-  top: calc(14px + env(safe-area-inset-top));
+  right: auto;
+  top: calc(18px + env(safe-area-inset-top));
+  bottom: auto;
   transform: translateX(-50%);
-  z-index: 1200;
-  max-width: min(420px, calc(100vw - 28px));
-  padding: 10px 14px;
+  z-index: 4000;
+  max-width: min(440px, calc(100vw - 28px));
+  padding: 10px 15px;
   border-radius: 999px;
-  background: #244b2f;
+  border: 1px solid rgba(255,255,255,.18);
+  background: #263844;
   color: #fff;
   font-weight: 700;
-  box-shadow: 0 14px 34px rgba(0,0,0,.22);
+  box-shadow: 0 16px 38px rgba(0,0,0,.30);
   text-align: center;
 }
 .app-toast.success {
-  background: #2f6f3e;
+  background: #176b55;
 }
 .app-toast.error {
-  background: #8a2d21;
+  background: #9f2d24;
 }
 .offline-import-dialog {
   width: min(440px, calc(100vw - 24px));
