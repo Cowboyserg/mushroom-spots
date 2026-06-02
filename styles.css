@@ -2548,3 +2548,9 @@ select {
     top: 8px;
   }
 }
+
+/* Sprint 5.32.1 — Hidden controls must stay hidden even when shared button
+   styling later assigns display:inline-flex. */
+[hidden] {
+  display: none !important;
+}
