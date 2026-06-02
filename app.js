@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.36';
+const APP_VERSION = '0.7.36-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -2148,7 +2148,6 @@ function findRememberedPmtilesMapForPackage(pkg) {
 }
 
 function getRemoteOfflineMapPackages() {
-  if (offlineMapManifest.status !== 'loaded') return [];
   return (offlineMapManifest.packages || []).filter((pkg) => pkg && pkg.enabled && !isLocalPmtilesPackage(pkg) && pkg.id !== defaultOfflineMapPackage().id);
 }
 
@@ -2780,9 +2779,15 @@ function renderOfflineRegionCatalogUi() {
 
     const selectBtn = document.createElement('button');
     selectBtn.type = 'button';
-    selectBtn.className = 'secondary btn-secondary small-btn';
-    selectBtn.textContent = 'Выбрать для проверки';
-    selectBtn.addEventListener('click', () => selectOfflineMapPackage(pkg.id, true));
+    selectBtn.className = installed ? 'btn-primary small-btn' : 'secondary btn-secondary small-btn';
+    selectBtn.textContent = installed ? 'Открыть установленную' : 'Выбрать для проверки';
+    selectBtn.addEventListener('click', () => {
+      if (installed) {
+        selectRememberedPmtilesMap(installed.id, true).catch(console.warn);
+      } else {
+        selectOfflineMapPackage(pkg.id, true);
+      }
+    });
     actions.appendChild(selectBtn);
 
     if (pkg.url) {
@@ -2791,17 +2796,9 @@ function renderOfflineRegionCatalogUi() {
       download.href = pkg.url;
       download.target = '_blank';
       download.rel = 'noopener noreferrer';
-      download.textContent = installed ? 'Открыть файл' : 'Скачать вручную';
+      download.textContent = installed ? 'Скачать заново' : 'Скачать вручную';
+      download.addEventListener('click', (event) => openOfflineRegionDownloadUrl(event, pkg));
       actions.appendChild(download);
-    }
-
-    if (installed) {
-      const openBtn = document.createElement('button');
-      openBtn.type = 'button';
-      openBtn.className = 'btn-primary small-btn';
-      openBtn.textContent = 'Открыть установленную';
-      openBtn.addEventListener('click', () => selectRememberedPmtilesMap(installed.id, true).catch(console.warn));
-      actions.appendChild(openBtn);
     }
 
     card.append(top, desc, actions);
@@ -2809,18 +2806,36 @@ function renderOfflineRegionCatalogUi() {
   }
 }
 
+function openOfflineRegionDownloadUrl(event, pkg) {
+  const url = String(pkg?.url || '').trim();
+  if (!url) return;
+  try {
+    setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'offlineRegionCatalogDownload', label: 'Скачать карту региона' }, 'готово', `открываю файл: ${pkg.fileName || pkg.name || 'регион'}`);
+    const status = $('offlineRegionCatalogStatus');
+    if (status) status.textContent = `Каталог регионов: открываю файл “${pkg.name || pkg.fileName || 'регион'}”. Если новое окно не открылось, повтори нажатие или скопируй ссылку из GitHub Release.`;
+    if (!event) return;
+    event.preventDefault();
+    const opened = window.open(url, '_blank');
+    if (opened) {
+      try { opened.opener = null; } catch (err) { /* no-op */ }
+      return;
+    }
+    window.location.href = url;
+  } catch (err) {
+    recordMapDebug('offline region manual download open failed', err?.message || String(err));
+    if (event) event.preventDefault();
+    window.location.href = url;
+  }
+}
+
 function saveOfflineManifestUrlFromInput() {
   try {
     const value = $('offlineManifestUrlInput')?.value || '';
     const savedUrl = setConfiguredOfflineMapManifestUrl(value);
-    const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
-    const sample = defaultOfflineMapPackage();
     offlineMapManifest = {
       ...offlineMapManifest,
       url: savedUrl,
       status: 'not-loaded',
-      packages: localPackage && localPmtilesFileState.status === 'selected' ? [localPackage, sample] : [sample],
-      selectedPackageId: localPackage && localPmtilesFileState.status === 'selected' ? localPackage.id : sample.id,
       error: null,
       loadedAt: null
     };
@@ -9753,7 +9768,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.36`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.36.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
