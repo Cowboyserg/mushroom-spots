@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.37-hotfix\.1 · Sprint 5\.37\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.37-hotfix\.4 · Sprint 5\.37\.4/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -594,7 +594,7 @@ test('offline region catalog opens the installed local map instead of remote pac
   await expect(kaliningrad.getByRole('link', { name: 'Скачать заново' })).toHaveAttribute('href', /kaliningrad\.pmtiles$/);
 
   await expect(page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' }).getByRole('button', { name: 'Установить' })).toBeVisible();
-  await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
 
   await kaliningrad.getByRole('button', { name: 'Открыть установленную' }).click();
   await expect(page.locator('#offlinePackageManifestStatus')).toContainText('Локальная карта: Калининград');
@@ -1291,9 +1291,13 @@ test('spots screen opens as folder list and filters marks inside folder', async 
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
   const chanterelleMenuCard = page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' });
   await chanterelleMenuCard.locator('.spot-item-kebab-menu summary').click();
-  await expect(chanterelleMenuCard.getByRole('button', { name: 'Поделиться' })).toBeVisible();
-  await expect(chanterelleMenuCard.getByRole('button', { name: 'Редактировать' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Показать на карте' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Показать на карте' })).toBeEnabled();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Отправить в чат' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Править' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Править' })).toBeEnabled();
   await expect(chanterelleMenuCard.getByRole('button', { name: 'Удалить' })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Удалить' })).toBeEnabled();
   await chanterelleMenuCard.locator('.spot-item-kebab-menu summary').click();
 
   await page.locator('#searchInput').fill('лис');
@@ -1308,6 +1312,11 @@ test('spots screen opens as folder list and filters marks inside folder', async 
   await page.locator('#spotFolderBackBtn').click();
   await expect(page.locator('#spotFoldersView')).toBeVisible();
   await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await expect(page.locator('#spotFolderMenu')).toBeVisible();
+  await page.locator('#spotFolderMenu summary').click();
+  await expect(page.locator('#spotCollectionRenameMenuBtn')).toBeEnabled();
+  await expect(page.locator('#spotCollectionDeleteMenuBtn')).toBeEnabled();
+  await page.locator('#spotFolderMenu summary').click();
   await page.locator('#spotTypeFilter').selectOption({ label: 'Белые' });
   await expect(page.locator('#spotCount')).toHaveText('1');
   await expect(page.locator('#spotsList')).toContainText('Белые у ручья');
@@ -1338,7 +1347,7 @@ test('custom spot collections can be created renamed and deleted from folder men
   await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
   await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).locator('.spot-item-kebab-menu summary').click();
-  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Редактировать' }).click();
+  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Править' }).click();
   await expect(page.locator('#spotListEditor')).toBeVisible();
   await page.locator('#spotListCollection').selectOption({ label: 'Секретные места' });
   await page.locator('#spotListSaveEditBtn').click();
@@ -1397,7 +1406,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.37-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.37-hotfix.4');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1526,7 +1535,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.37-hotfix.1',
+    appVersion: '0.7.37-hotfix.4',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

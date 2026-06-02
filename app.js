@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.37-hotfix.1';
+const APP_VERSION = '0.7.37-hotfix.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -31,6 +31,7 @@ const APP_CACHE_RESET_MARKER_KEY = 'mushroom_app_cache_reset_marker_v1';
 const SPOT_DEFAULT_COLLECTION = 'Грибные места';
 const SPOT_COLLECTIONS = [SPOT_DEFAULT_COLLECTION, 'Разведка', 'Ягоды', 'Парковка', 'Другое'];
 const SPOT_CUSTOM_COLLECTIONS_SETTING_KEY = 'spot_custom_collections_v1';
+const SPOT_DELETED_COLLECTIONS_SETTING_KEY = 'spot_deleted_collections_v1';
 
 
 const MAP_ENGINE_LEAFLET = 'leaflet';
@@ -93,6 +94,7 @@ let showMapAdvancedControls = false;
 let watchId = null;
 let spots = [];
 let customSpotCollections = [];
+let deletedSpotCollections = [];
 let activeSpotCollection = null;
 let suppressSpotHistorySync = false;
 const SPOTS_HISTORY_STATE_KEY = 'mushroomSpotsUiState';
@@ -276,6 +278,10 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   spotListCancelEditBtn: 'Отменить правку точки в разделе Точки',
   closeSelectedSpotBtn: 'Закрыть карточку точки',
   spotListCloseDetailsBtn: 'Закрыть карточку точки в списке',
+  spotItemShowOnMapBtn: 'Показать точку из меню ⋯',
+  spotItemShareBtn: 'Отправить точку из меню ⋯ в чат',
+  spotItemEditBtn: 'Править точку из меню ⋯',
+  spotItemDeleteBtn: 'Удалить точку из меню ⋯',
   navigateBtn: 'Показать направление',
   shareSpotBtn: 'Экспорт точки',
   sendSelectedSpotToChatBtn: 'Отправить сохранённую точку в чат',
@@ -7243,8 +7249,7 @@ function buildBackupPayload(options = {}) {
     .map(sanitizeTrackForBackup)
     .filter(Boolean);
   const customCollections = dedupeSpotCollections(
-    options.customCollectionsOverride || customSpotCollections,
-    { excludeSystem: true }
+    options.customCollectionsOverride || customSpotCollections
   );
   const data = {
     spots: backupSpots,
@@ -7588,8 +7593,17 @@ function sortSpotCollections(collections) {
   });
 }
 
-function isSystemSpotCollection(collection) {
+function isStarterSpotCollection(collection) {
   return SPOT_COLLECTIONS.some((item) => spotCollectionEquals(item, collection));
+}
+
+function isDeletedStarterSpotCollection(collection) {
+  return deletedSpotCollections.some((item) => spotCollectionEquals(item, collection));
+}
+
+function getFirstAvailableSpotCollection(exclude = null) {
+  const excludeKey = exclude ? spotCollectionIdentityKey(exclude) : null;
+  return getAvailableSpotCollections().find((item) => !excludeKey || spotCollectionIdentityKey(item) !== excludeKey) || '';
 }
 
 function normalizeSpotCollectionName(value) {
@@ -7609,13 +7623,12 @@ function isReservedSpotCollectionName(value) {
   return key === 'all' || key === spotCollectionIdentityKey('Все папки');
 }
 
-function dedupeSpotCollections(collections, { excludeSystem = false } = {}) {
+function dedupeSpotCollections(collections) {
   const seen = new Set();
   const result = [];
   for (const raw of collections || []) {
     const collection = normalizeSpotCollectionName(raw);
     if (!collection || collection.toLowerCase() === 'all') continue;
-    if (excludeSystem && isSystemSpotCollection(collection)) continue;
     const key = spotCollectionIdentityKey(collection);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -7625,19 +7638,20 @@ function dedupeSpotCollections(collections, { excludeSystem = false } = {}) {
 }
 
 function getDerivedCustomSpotCollections() {
-  return dedupeSpotCollections(spots.map(normalizedSpotCollection), { excludeSystem: true });
+  return dedupeSpotCollections(spots.map(normalizedSpotCollection));
 }
 
 function getCustomSpotCollections() {
   return dedupeSpotCollections([
     ...customSpotCollections,
     ...getDerivedCustomSpotCollections()
-  ], { excludeSystem: true });
+  ]);
 }
 
 function getAvailableSpotCollections() {
+  const hidden = new Set(deletedSpotCollections.map(spotCollectionIdentityKey));
   return sortSpotCollections(new Set([
-    ...SPOT_COLLECTIONS,
+    ...SPOT_COLLECTIONS.filter((collection) => !hidden.has(spotCollectionIdentityKey(collection))),
     ...customSpotCollections,
     ...spots.map(normalizedSpotCollection)
   ]));
@@ -7652,17 +7666,38 @@ function spotCollectionExists(collection) {
 
 async function loadSpotCollections() {
   try {
-    const saved = await getSetting(SPOT_CUSTOM_COLLECTIONS_SETTING_KEY);
-    customSpotCollections = dedupeSpotCollections(Array.isArray(saved) ? saved : [], { excludeSystem: true });
+    const [saved, deleted] = await Promise.all([
+      getSetting(SPOT_CUSTOM_COLLECTIONS_SETTING_KEY),
+      getSetting(SPOT_DELETED_COLLECTIONS_SETTING_KEY)
+    ]);
+    customSpotCollections = dedupeSpotCollections(Array.isArray(saved) ? saved : []);
+    deletedSpotCollections = dedupeSpotCollections(Array.isArray(deleted) ? deleted : [])
+      .filter(isStarterSpotCollection);
   } catch (err) {
     console.warn('Failed to load custom spot collections', err);
     customSpotCollections = [];
+    deletedSpotCollections = [];
   }
 }
 
 async function saveSpotCollections() {
-  customSpotCollections = dedupeSpotCollections(customSpotCollections, { excludeSystem: true });
-  await setSetting(SPOT_CUSTOM_COLLECTIONS_SETTING_KEY, customSpotCollections);
+  customSpotCollections = dedupeSpotCollections(customSpotCollections);
+  deletedSpotCollections = dedupeSpotCollections(deletedSpotCollections).filter(isStarterSpotCollection);
+  await Promise.all([
+    setSetting(SPOT_CUSTOM_COLLECTIONS_SETTING_KEY, customSpotCollections),
+    setSetting(SPOT_DELETED_COLLECTIONS_SETTING_KEY, deletedSpotCollections)
+  ]);
+}
+
+function unhideSpotCollection(collection) {
+  deletedSpotCollections = deletedSpotCollections.filter((item) => !spotCollectionEquals(item, collection));
+}
+
+function hideStarterSpotCollection(collection) {
+  if (!isStarterSpotCollection(collection)) return;
+  if (!deletedSpotCollections.some((item) => spotCollectionEquals(item, collection))) {
+    deletedSpotCollections.push(normalizeSpotCollectionName(collection));
+  }
 }
 
 function optionHtml(value, label = value) {
@@ -7722,29 +7757,32 @@ function renderSpotCollectionManager(selectedOverride = null) {
   setSelectOptions(manageSelect, collections, { selected: selectedOverride || activeSpotCollection || manageSelect.value, counts });
   const selected = normalizeSpotCollectionName(activeSpotCollection || manageSelect.value);
   if (selected && collections.some((item) => spotCollectionEquals(item, selected))) manageSelect.value = selected;
-  const selectedIsSystem = isSystemSpotCollection(selected);
   const selectedCount = counts.get(selected) || 0;
 
-  if (renameInput && document.activeElement !== renameInput) renameInput.value = selectedIsSystem ? '' : selected;
+  if (renameInput && document.activeElement !== renameInput) renameInput.value = selected;
   if (deleteTarget) {
-    setSelectOptions(deleteTarget, collections, { selected: deleteTarget.value || SPOT_DEFAULT_COLLECTION, exclude: selected });
-    if (!deleteTarget.value || spotCollectionEquals(deleteTarget.value, selected)) deleteTarget.value = SPOT_DEFAULT_COLLECTION;
+    const firstTarget = collections.find((item) => !spotCollectionEquals(item, selected)) || '';
+    const preferredTarget = deleteTarget.value && !spotCollectionEquals(deleteTarget.value, selected)
+      ? deleteTarget.value
+      : firstTarget;
+    setSelectOptions(deleteTarget, collections, { selected: preferredTarget, exclude: selected });
+    if (!deleteTarget.value && firstTarget) deleteTarget.value = firstTarget;
   }
 
-  const canEditSelected = Boolean(selected) && !selectedIsSystem;
+  const canEditSelected = Boolean(selected);
+  const canDeleteSelected = Boolean(selected) && (selectedCount === 0 || Boolean(getFirstAvailableSpotCollection(selected)));
   setDisabled('spotCollectionRenameBtn', !canEditSelected);
-  setDisabled('spotCollectionDeleteBtn', !canEditSelected);
+  setDisabled('spotCollectionDeleteBtn', !canDeleteSelected);
   setDisabled('spotCollectionRenameMenuBtn', !canEditSelected);
-  setDisabled('spotCollectionDeleteMenuBtn', !canEditSelected);
-  const blockedTitle = selectedIsSystem ? 'Системную папку нельзя переименовать или удалить' : '';
-  if (renameBtn) renameBtn.title = selectedIsSystem ? 'Системную папку нельзя переименовать' : '';
-  if (deleteBtn) deleteBtn.title = selectedIsSystem ? 'Системную папку нельзя удалить' : '';
-  if (renameMenuBtn) renameMenuBtn.title = blockedTitle;
-  if (deleteMenuBtn) deleteMenuBtn.title = blockedTitle;
+  setDisabled('spotCollectionDeleteMenuBtn', !canDeleteSelected);
+  const deleteBlockedTitle = canDeleteSelected ? '' : 'Нужна другая папка для переноса меток';
+  if (renameBtn) renameBtn.title = canEditSelected ? '' : 'Выбери папку';
+  if (deleteBtn) deleteBtn.title = deleteBlockedTitle;
+  if (renameMenuBtn) renameMenuBtn.title = canEditSelected ? '' : 'Выбери папку';
+  if (deleteMenuBtn) deleteMenuBtn.title = deleteBlockedTitle;
 
   if (hint) {
-    if (!activeSpotCollection) hint.textContent = 'Выбери папку, чтобы открыть метки внутри. Системные папки нельзя переименовать или удалить.';
-    else if (selectedIsSystem) hint.textContent = `«${selected}» — системная папка. Метки можно открывать, редактировать и удалять через меню ⋯.`;
+    if (!activeSpotCollection) hint.textContent = 'Выбери папку, чтобы открыть метки внутри. Любую существующую папку можно переименовать или удалить через меню ⋯.';
     else hint.textContent = `Папка «${selected}»: меток ${selectedCount}. Действия папки находятся в меню ⋯ рядом с заголовком.`;
   }
 }
@@ -7766,12 +7804,38 @@ function closeSpotFolderPanels() {
   if (folderMenu) folderMenu.open = false;
 }
 
+function closeKebabMenus(except = null) {
+  document.querySelectorAll('details.kebab-menu[open]').forEach((menu) => {
+    if (menu !== except) menu.open = false;
+  });
+}
+
+function bindKebabMenuBehavior() {
+  if (bindKebabMenuBehavior.bound) return;
+  bindKebabMenuBehavior.bound = true;
+
+  document.addEventListener('click', (event) => {
+    const menu = event.target?.closest?.('details.kebab-menu');
+    if (menu) {
+      closeKebabMenus(menu);
+      return;
+    }
+    closeKebabMenus();
+  });
+
+  document.addEventListener('toggle', (event) => {
+    const menu = event.target;
+    if (!menu || menu.tagName !== 'DETAILS' || !menu.classList?.contains('kebab-menu') || !menu.open) return;
+    closeKebabMenus(menu);
+  }, true);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeKebabMenus();
+  });
+}
+
 function openSpotFolderRenamePanel() {
   if (!activeSpotCollection) return false;
-  if (isSystemSpotCollection(activeSpotCollection)) {
-    setSpotCollectionManagerHint('Системную папку нельзя переименовать.');
-    return false;
-  }
   const manageSelect = $('spotCollectionManageSelect');
   if (manageSelect) manageSelect.value = activeSpotCollection;
   renderSpotCollectionManager(activeSpotCollection);
@@ -7791,10 +7855,6 @@ function openSpotFolderRenamePanel() {
 
 function openSpotFolderDeletePanel() {
   if (!activeSpotCollection) return false;
-  if (isSystemSpotCollection(activeSpotCollection)) {
-    setSpotCollectionManagerHint('Системную папку нельзя удалить.');
-    return false;
-  }
   const manageSelect = $('spotCollectionManageSelect');
   if (manageSelect) manageSelect.value = activeSpotCollection;
   renderSpotCollectionManager(activeSpotCollection);
@@ -7817,7 +7877,8 @@ async function createSpotCollection() {
     setSpotCollectionManagerHint(`Папка «${name}» уже есть.`);
     return false;
   }
-  customSpotCollections = dedupeSpotCollections([...customSpotCollections, name], { excludeSystem: true });
+  unhideSpotCollection(name);
+  customSpotCollections = dedupeSpotCollections([...customSpotCollections, name]);
   await saveSpotCollections();
   if (input) input.value = '';
   updateSpotCollectionFilterOptions();
@@ -7831,7 +7892,7 @@ async function renameSelectedSpotCollection() {
   const select = $('spotCollectionManageSelect');
   const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
   const newName = normalizeSpotCollectionName($('spotCollectionRenameInput')?.value);
-  if (!oldName || isSystemSpotCollection(oldName)) { setSpotCollectionManagerHint('Системную папку нельзя переименовать.'); return false; }
+  if (!oldName) { setSpotCollectionManagerHint('Выбери папку для переименования.'); return false; }
   if (!newName) { setSpotCollectionManagerHint('Введи новое название папки.'); return false; }
   if (spotCollectionEquals(oldName, newName)) {
     setSpotCollectionManagerHint('Новое название совпадает с текущим.');
@@ -7849,7 +7910,9 @@ async function renameSelectedSpotCollection() {
   }
   customSpotCollections = dedupeSpotCollections(customSpotCollections.map((item) => (
     spotCollectionEquals(item, oldName) ? newName : item
-  )), { excludeSystem: true });
+  )));
+  hideStarterSpotCollection(oldName);
+  unhideSpotCollection(newName);
   if (!customSpotCollections.some((item) => spotCollectionEquals(item, newName))) {
     customSpotCollections.push(newName);
   }
@@ -7869,12 +7932,13 @@ async function renameSelectedSpotCollection() {
 async function deleteSelectedSpotCollection() {
   const select = $('spotCollectionManageSelect');
   const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
-  const target = normalizeSpotCollectionName($('spotCollectionDeleteTarget')?.value) || SPOT_DEFAULT_COLLECTION;
-  if (!oldName || isSystemSpotCollection(oldName)) { setSpotCollectionManagerHint('Системную папку нельзя удалить.'); return false; }
-  if (spotCollectionEquals(oldName, target)) { setSpotCollectionManagerHint('Выбери другую папку для переноса меток.'); return false; }
-  if (!spotCollectionExists(target)) { setSpotCollectionManagerHint('Папка для переноса не найдена.'); return false; }
   const affected = spots.filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), oldName));
-  if (!confirm(`Удалить папку «${oldName}»? Метки будут перенесены в «${target}».`)) return false;
+  const target = normalizeSpotCollectionName($('spotCollectionDeleteTarget')?.value) || getFirstAvailableSpotCollection(oldName);
+  if (!oldName) { setSpotCollectionManagerHint('Выбери папку для удаления.'); return false; }
+  if (affected.length && spotCollectionEquals(oldName, target)) { setSpotCollectionManagerHint('Выбери другую папку для переноса меток.'); return false; }
+  if (affected.length && !spotCollectionExists(target)) { setSpotCollectionManagerHint('Папка для переноса не найдена.'); return false; }
+  const moveText = affected.length ? ` Метки будут перенесены в «${target}».` : '';
+  if (!confirm(`Удалить папку «${oldName}»?${moveText}`)) return false;
 
   const now = new Date().toISOString();
   for (const spot of affected) {
@@ -7882,7 +7946,8 @@ async function deleteSelectedSpotCollection() {
   }
   customSpotCollections = dedupeSpotCollections(customSpotCollections.filter((item) => (
     !spotCollectionEquals(item, oldName)
-  )), { excludeSystem: true });
+  )));
+  hideStarterSpotCollection(oldName);
   await saveSpotCollections();
   if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) activeSpotCollection = null;
   await afterDataChanged();
@@ -7963,10 +8028,21 @@ function renderSpotListItem(spot, canUseChat) {
   `;
   const panel = menu.querySelector('.kebab-menu-panel');
 
+  const showBtn = document.createElement('button');
+  showBtn.type = 'button';
+  showBtn.className = 'secondary btn-secondary';
+  showBtn.textContent = 'Показать на карте';
+  showBtn.onclick = withButtonDiagnostics('spotItemShowOnMapBtn', () => {
+    selectedSpotId = spot.id;
+    menu.open = false;
+    return showSelectedSpotOnMap();
+  });
+  panel.appendChild(showBtn);
+
   const shareBtn = document.createElement('button');
   shareBtn.type = 'button';
   shareBtn.className = 'secondary btn-secondary';
-  shareBtn.textContent = 'Поделиться';
+  shareBtn.textContent = 'Отправить в чат';
   shareBtn.disabled = !canUseChat;
   shareBtn.title = canUseChat ? 'Отправить метку в чат группы' : 'Группа или чат пока не готовы';
   shareBtn.onclick = withButtonDiagnostics('spotItemShareBtn', () => {
@@ -7979,8 +8055,9 @@ function renderSpotListItem(spot, canUseChat) {
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.className = 'secondary btn-secondary';
-  editBtn.textContent = 'Редактировать';
+  editBtn.textContent = 'Править';
   editBtn.onclick = withButtonDiagnostics('spotItemEditBtn', () => {
+    selectedSpotId = spot.id;
     menu.open = false;
     openSpotDetailsFromList(spot.id);
     return startSpotListEditor();
@@ -8075,13 +8152,12 @@ function renderSpotFolderCard(collection, count) {
   card.className = 'spot-folder-card';
   card.dataset.collection = collection;
   card.onclick = () => openSpotCollection(collection);
-  const isSystem = isSystemSpotCollection(collection);
   const label = count === 1 ? '1 метка' : `${count} меток`;
   card.innerHTML = `
-    <span class="spot-folder-icon" aria-hidden="true">${isSystem ? '📁' : '🗂️'}</span>
+    <span class="spot-folder-icon" aria-hidden="true">🗂️</span>
     <span class="spot-folder-copy">
       <strong>${escapeHtml(collection)}</strong>
-      <small>${label}${isSystem ? ' · системная' : ' · пользовательская'}</small>
+      <small>${label}</small>
     </span>
     <span class="spot-folder-chevron" aria-hidden="true">›</span>
   `;
@@ -8178,9 +8254,12 @@ function renderList() {
   setText('activeSpotCollectionTitle', activeSpotCollection);
   setText('activeSpotCollectionCount', formatSpotCountLabel(counts.get(activeSpotCollection) || 0));
   setHidden('spotCount', true);
-  const selectedIsSystem = isSystemSpotCollection(activeSpotCollection);
-  setDisabled('spotCollectionRenameMenuBtn', selectedIsSystem);
-  setDisabled('spotCollectionDeleteMenuBtn', selectedIsSystem);
+  const folderMenu = $('spotFolderMenu');
+  if (folderMenu) {
+    folderMenu.hidden = false;
+  }
+  setDisabled('spotCollectionRenameMenuBtn', false);
+  setDisabled('spotCollectionDeleteMenuBtn', false);
 
   const filtered = spots
     .filter((spot) => spotCollectionEquals(normalizedSpotCollection(spot), activeSpotCollection))
@@ -8536,7 +8615,7 @@ function validateBackupPayload(payload) {
   const normalizedCollections = dedupeSpotCollections(payload.data.settings.customCollections.map((item, index) => {
     if (typeof item !== 'string') throw new Error(`Папка #${index + 1} имеет неправильную структуру`);
     return item;
-  }), { excludeSystem: true });
+  }));
 
   assertPlainObject(payload.validation, 'В backup нет validation metadata');
   if (payload.validation.spotCount !== normalizedSpots.length) throw new Error('Количество точек в backup не совпадает с metadata');
@@ -8560,7 +8639,7 @@ function commitValidatedBackupImport(validated) {
       const mergedCollections = dedupeSpotCollections([
         ...customSpotCollections,
         ...validated.customCollections
-      ], { excludeSystem: true });
+      ]);
       settingStore.put({
         key: SPOT_CUSTOM_COLLECTIONS_SETTING_KEY,
         value: mergedCollections,
@@ -10102,6 +10181,8 @@ function bindUi() {
   if ($('copyMapDebugBtn')) $('copyMapDebugBtn').onclick = withButtonDiagnostics('copyMapDebugBtn', copyMapDebug);
   if ($('closeMapDebugBtn')) $('closeMapDebugBtn').onclick = withButtonDiagnostics('closeMapDebugBtn', () => $('mapDebugDialog').close());
 
+  bindKebabMenuBehavior();
+
   window.addEventListener('popstate', handleSpotHistoryPopState);
   window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
   window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateMapDebugUi(true); });
@@ -10134,7 +10215,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37.4`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

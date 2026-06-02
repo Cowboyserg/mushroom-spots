@@ -2748,3 +2748,95 @@ select {
     justify-self: start;
   }
 }
+
+/* Sprint 5.37.2 — Spots menu dropdown hotfix */
+.spots-catalog-card,
+.spot-folder-detail-view,
+.spot-folder-head,
+#spotsList,
+.spot-item {
+  overflow: visible;
+}
+
+.folder-kebab-menu[hidden] {
+  display: none !important;
+}
+
+.folder-kebab-menu,
+.spot-item-kebab-menu {
+  position: relative;
+  justify-self: end;
+  align-self: start;
+  margin: 0;
+}
+
+.folder-kebab-menu .kebab-menu-panel,
+.spot-item-kebab-menu .kebab-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  margin-top: 0;
+  min-width: 190px;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 48px));
+  box-shadow: 0 12px 34px rgba(36,75,47,.16);
+}
+
+.folder-kebab-menu[open],
+.spot-item-kebab-menu[open] {
+  z-index: 80;
+}
+
+.folder-kebab-menu[open] summary,
+.spot-item-kebab-menu[open] summary {
+  background: rgba(36,75,47,.08);
+}
+
+.spot-folder-head .folder-kebab-menu {
+  align-self: center;
+}
+
+.spot-item-kebab-menu {
+  grid-column: 2 / 3;
+}
+
+@media (max-width: 560px) {
+  .spot-item-kebab-menu[open] {
+    grid-column: 2 / 3;
+    justify-self: end;
+    margin: 0;
+  }
+
+  .spot-item-kebab-menu[open] summary {
+    margin-left: 0;
+  }
+
+  .spot-item-kebab-menu[open] .kebab-menu-panel {
+    width: max-content;
+    min-width: 180px;
+  }
+}
+
+/* Sprint 5.37.4 — Spot item kebab menu guard */
+.spot-item {
+  isolation: isolate;
+}
+
+.spot-item .spot-item-main {
+  min-width: 0;
+}
+
+.spot-item-kebab-menu .kebab-menu-panel {
+  z-index: 220;
+}
+
+.spot-item-kebab-menu .kebab-menu-panel button {
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .spot-item-kebab-menu .kebab-menu-panel {
+    min-width: min(210px, calc(100vw - 58px));
+    max-width: calc(100vw - 58px);
+  }
+}
