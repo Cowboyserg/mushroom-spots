@@ -1,7 +1,8 @@
 const DB_NAME = 'mushroom-spots-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
 const TRACKS_STORE = 'tracks';
+const OFFLINE_MAP_FILES_STORE = 'offlineMapFiles';
 
 let dbPromise = null;
 
@@ -18,6 +19,12 @@ export function openDatabase() {
         store.createIndex('createdAt', 'createdAt');
         store.createIndex('species', 'species', { unique: false });
         store.createIndex('name', 'name', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(TRACKS_STORE)) {
+        db.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(OFFLINE_MAP_FILES_STORE)) {
+        db.createObjectStore(OFFLINE_MAP_FILES_STORE, { keyPath: 'id' });
       }
     };
 

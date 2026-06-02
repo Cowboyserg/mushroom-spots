@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.32-hotfix\.2 · Sprint 5\.32\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.33-hotfix\.1 · Sprint 5\.33\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -166,10 +166,11 @@ async function seedSpots(page) {
   await page.evaluate(async () => {
     window.dispatchEvent(new Event('pagehide'));
     const DB_NAME = 'mushroom-spots-db';
-    const DB_VERSION = 3;
+    const DB_VERSION = 4;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
     const TRACKS_STORE = 'tracks';
+    const OFFLINE_MAP_FILES_STORE = 'offlineMapFiles';
     const spots = [
       {
         id: 'e2e-white-spot',
@@ -225,6 +226,7 @@ async function seedSpots(page) {
         if (!db.objectStoreNames.contains(SPOTS_STORE)) db.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
         if (!db.objectStoreNames.contains(SETTINGS_STORE)) db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
         if (!db.objectStoreNames.contains(TRACKS_STORE)) db.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(OFFLINE_MAP_FILES_STORE)) db.createObjectStore(OFFLINE_MAP_FILES_STORE, { keyPath: 'id' });
       };
       req.onerror = () => reject(req.error);
       req.onsuccess = () => {
@@ -262,11 +264,12 @@ async function seedSpots(page) {
 async function readLocalBackupState(page) {
   return page.evaluate(async () => {
     const DB_NAME = 'mushroom-spots-db';
-    const DB_VERSION = 3;
+    const DB_VERSION = 4;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
     const CUSTOM_COLLECTIONS_KEY = 'spot_custom_collections_v1';
     const TRACKS_STORE = 'tracks';
+    const OFFLINE_MAP_FILES_STORE = 'offlineMapFiles';
 
     const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -274,6 +277,8 @@ async function readLocalBackupState(page) {
         const opened = req.result;
         if (!opened.objectStoreNames.contains(SPOTS_STORE)) opened.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
         if (!opened.objectStoreNames.contains(SETTINGS_STORE)) opened.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
+        if (!opened.objectStoreNames.contains(TRACKS_STORE)) opened.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
+        if (!opened.objectStoreNames.contains(OFFLINE_MAP_FILES_STORE)) opened.createObjectStore(OFFLINE_MAP_FILES_STORE, { keyPath: 'id' });
       };
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
@@ -310,11 +315,12 @@ async function readLocalBackupState(page) {
 async function resetLocalSpotsAndCollections(page) {
   await page.evaluate(async () => {
     const DB_NAME = 'mushroom-spots-db';
-    const DB_VERSION = 3;
+    const DB_VERSION = 4;
     const SPOTS_STORE = 'spots';
     const SETTINGS_STORE = 'settings';
     const CUSTOM_COLLECTIONS_KEY = 'spot_custom_collections_v1';
     const TRACKS_STORE = 'tracks';
+    const OFFLINE_MAP_FILES_STORE = 'offlineMapFiles';
 
     const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -322,6 +328,8 @@ async function resetLocalSpotsAndCollections(page) {
         const opened = req.result;
         if (!opened.objectStoreNames.contains(SPOTS_STORE)) opened.createObjectStore(SPOTS_STORE, { keyPath: 'id' });
         if (!opened.objectStoreNames.contains(SETTINGS_STORE)) opened.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
+        if (!opened.objectStoreNames.contains(TRACKS_STORE)) opened.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
+        if (!opened.objectStoreNames.contains(OFFLINE_MAP_FILES_STORE)) opened.createObjectStore(OFFLINE_MAP_FILES_STORE, { keyPath: 'id' });
       };
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result);
@@ -447,6 +455,15 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
   await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
   await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Карелия');
 
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
+  await expect(page.locator('#offlineMapEmptyState')).toContainText('повторного выбора файла');
+  await expect(page.locator('#offlineMapEmptyState')).not.toContainText('файл нужно выбрать заново');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+
   page.once('dialog', async (dialog) => { await dialog.accept(); });
   await page.locator('#forgetRememberedPmtilesMapBtn').click();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
@@ -455,6 +472,34 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
   await expect(page.locator('#offlineMapListSection')).toBeHidden();
 });
 
+
+
+test('settings can emergency clear imported offline map files', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'emergency.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Настройки' }).click();
+  await expect(page.locator('#screen-settings')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Удалить файлы офлайн-карт' })).toBeVisible();
+  await expect(page.locator('#offlineMapFilesClearStatus')).toContainText('Импортированных офлайн-карт: 1');
+
+  page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await page.getByRole('button', { name: 'Удалить файлы офлайн-карт' }).click();
+  await expect(page.locator('#offlineMapFilesClearStatus')).toContainText('Записи “Мои карты” очищены');
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+  await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
+});
 
 test('offline map preview supports Ko me, picked point save and shared overlays', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
@@ -539,6 +584,7 @@ test('settings screen groups diagnostics and advanced actions', async ({ page })
   await expect(page.locator('#settingsPmtilesDiagnostic')).toBeVisible();
   await expect(page.locator('#settingsServiceWorkerDiagnostic')).toBeVisible();
 
+  await expect(page.getByRole('button', { name: 'Удалить файлы офлайн-карт' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Сбросить кэш приложения' })).toBeHidden();
   await page.locator('#showMapAdvancedToggle').check();
   await expect(page.locator('#advancedModePill')).toContainText('включен');
@@ -1068,7 +1114,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.32-hotfix.2');
+  expect(backup.appVersion).toBe('0.7.33-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1197,7 +1243,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.32-hotfix.2',
+    appVersion: '0.7.33-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

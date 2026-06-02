@@ -2554,3 +2554,10 @@ select {
 [hidden] {
   display: none !important;
 }
+
+/* Sprint 5.33.1 offline map file safety hatch. */
+.offline-files-danger-box {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(127, 92, 0, 0.18);
+}

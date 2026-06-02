@@ -1,9 +1,10 @@
-const APP_VERSION = '0.7.32-hotfix.2';
+const APP_VERSION = '0.7.33-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
 const SETTINGS_STORE = 'settings';
 const TRACKS_STORE = 'tracks';
+const OFFLINE_MAP_FILES_STORE = 'offlineMapFiles';
 const BACKUP_FILE_NAME = 'mushroom-spots-backup.json';
 const BACKUP_SCHEMA = 'mushroom-spots.local-json-backup';
 const BACKUP_SCHEMA_VERSION = 1;
@@ -20,6 +21,7 @@ const SUPABASE_TIMEOUT_MS = 12000;
 const OFFLINE_MAP_PACKAGE_META_KEY = 'mushroom_offline_map_package_v1';
 const OFFLINE_MAP_SELECTED_PACKAGE_KEY = 'mushroom_offline_map_selected_package_v1';
 const REMEMBERED_PMTILES_MAPS_KEY = 'mushroom_remembered_pmtiles_maps_v1';
+const OPFS_OFFLINE_MAPS_DIR = 'mushroom-offline-map-files';
 const BBOX_EXPORT_OUTPUT_FILE = 'mushroom-medium-z14.pmtiles';
 const BBOX_EXPORT_MAX_ZOOM = 14;
 const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
@@ -150,6 +152,9 @@ let offlineMapManifest = {
 let localPmtilesFileState = {
   status: 'not-selected',
   file: null,
+  storageType: null,
+  storageName: null,
+  persistent: false,
   packageId: null,
   key: null,
   name: null,
@@ -161,6 +166,7 @@ let localPmtilesFileState = {
   selectedAt: null,
   error: null
 };
+let pendingLocalPmtilesImportMode = 'add';
 let rememberedPmtilesMapsState = {
   status: 'not-loaded',
   maps: [],
@@ -1386,12 +1392,20 @@ function registerPmtilesArchiveForUrl(url = PMTILES_DEFAULT_URL) {
 }
 
 function isLocalPmtilesPackage(pkg = null) {
-  return Boolean(pkg && pkg.sourceType === 'local-file-session' && pkg.fileRef === true);
+  return Boolean(pkg && String(pkg.sourceType || '').startsWith('local-file-') && pkg.fileRef === true);
+}
+
+function isPersistentPmtilesPackage(pkg = null) {
+  const sourceType = String(pkg?.sourceType || '');
+  return Boolean(pkg && pkg.fileRef === true && (sourceType === 'local-file-opfs' || sourceType === 'local-file-idb'));
 }
 
 function getLocalPmtilesFileSnapshot() {
   return {
     status: localPmtilesFileState.status,
+    storageType: localPmtilesFileState.storageType,
+    storageName: localPmtilesFileState.storageName,
+    persistent: Boolean(localPmtilesFileState.persistent),
     packageId: localPmtilesFileState.packageId,
     key: localPmtilesFileState.key,
     name: localPmtilesFileState.name,
@@ -1403,6 +1417,239 @@ function getLocalPmtilesFileSnapshot() {
     selectedAt: localPmtilesFileState.selectedAt,
     error: localPmtilesFileState.error
   };
+}
+
+function hasOpfsStorage() {
+  return Boolean(navigator.storage && typeof navigator.storage.getDirectory === 'function');
+}
+
+function sanitizeOfflineMapStorageName(value = 'map.pmtiles') {
+  const safe = String(value || 'map.pmtiles')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 96);
+  return safe || 'map.pmtiles';
+}
+
+async function getOfflineMapsOpfsDirectory(create = true) {
+  if (!hasOpfsStorage()) throw new Error('OPFS недоступен в этом браузере');
+  const root = await navigator.storage.getDirectory();
+  return root.getDirectoryHandle(OPFS_OFFLINE_MAPS_DIR, { create });
+}
+
+async function writePmtilesFileToOpfs(file, storageName) {
+  const dir = await getOfflineMapsOpfsDirectory(true);
+  const handle = await dir.getFileHandle(storageName, { create: true });
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(file);
+  } finally {
+    await writable.close();
+  }
+  return { storageType: 'opfs', storageName };
+}
+
+async function readPmtilesFileFromOpfs(storageName) {
+  const dir = await getOfflineMapsOpfsDirectory(false);
+  const handle = await dir.getFileHandle(storageName, { create: false });
+  return handle.getFile();
+}
+
+async function deletePmtilesFileFromOpfs(storageName) {
+  if (!storageName || !hasOpfsStorage()) return false;
+  try {
+    const dir = await getOfflineMapsOpfsDirectory(false);
+    await dir.removeEntry(storageName);
+    return true;
+  } catch (err) {
+    recordMapDebug('OPFS PMTiles delete skipped/failed', err?.message || String(err));
+    return false;
+  }
+}
+
+async function putPmtilesFileBlobToIndexedDb(file, storageName) {
+  await putStoreValue(OFFLINE_MAP_FILES_STORE, {
+    id: storageName,
+    fileName: file.name || 'local.pmtiles',
+    sizeBytes: file.size || null,
+    contentType: file.type || 'application/octet-stream',
+    updatedAt: new Date().toISOString(),
+    blob: file
+  });
+  return { storageType: 'idb-blob', storageName };
+}
+
+async function readPmtilesFileBlobFromIndexedDb(storageName) {
+  const record = await getStoreValue(OFFLINE_MAP_FILES_STORE, storageName);
+  if (!record?.blob) throw new Error('Файл офлайн-карты не найден в IndexedDB');
+  return record.blob;
+}
+
+async function deletePmtilesFileBlobFromIndexedDb(storageName) {
+  if (!storageName) return false;
+  return new Promise((resolve, reject) => {
+    const req = store(OFFLINE_MAP_FILES_STORE, 'readwrite').delete(storageName);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function persistPmtilesFile(file, preferredStorageName) {
+  const storageName = preferredStorageName || `pmtiles-${Date.now()}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
+  try {
+    return await writePmtilesFileToOpfs(file, storageName);
+  } catch (err) {
+    recordMapDebug('OPFS PMTiles import unavailable, falling back to IndexedDB Blob', err?.message || String(err));
+    return putPmtilesFileBlobToIndexedDb(file, storageName);
+  }
+}
+
+async function readPersistedPmtilesFile(recordOrPackage = {}) {
+  const storageType = recordOrPackage.storageType || localPmtilesFileState.storageType;
+  const storageName = recordOrPackage.storageName || localPmtilesFileState.storageName;
+  if (!storageType || !storageName) throw new Error('У офлайн-карты нет сохранённого файла');
+  if (storageType === 'opfs') return readPmtilesFileFromOpfs(storageName);
+  if (storageType === 'idb-blob') return readPmtilesFileBlobFromIndexedDb(storageName);
+  throw new Error(`Неизвестный тип хранения офлайн-карты: ${storageType}`);
+}
+
+async function deletePersistedPmtilesFile(record = {}) {
+  if (!record?.storageName) return false;
+  if (record.storageType === 'opfs') return deletePmtilesFileFromOpfs(record.storageName);
+  if (record.storageType === 'idb-blob') return deletePmtilesFileBlobFromIndexedDb(record.storageName);
+  return false;
+}
+
+
+async function clearPmtilesFilesFromOpfs() {
+  if (!hasOpfsStorage()) return { supported: false, deletedCount: 0, detail: 'OPFS недоступен' };
+  try {
+    const root = await navigator.storage.getDirectory();
+    let dir;
+    try {
+      dir = await root.getDirectoryHandle(OPFS_OFFLINE_MAPS_DIR, { create: false });
+    } catch (err) {
+      if (err?.name === 'NotFoundError') return { supported: true, deletedCount: 0, detail: 'OPFS-папка офлайн-карт уже пуста' };
+      throw err;
+    }
+
+    let deletedCount = 0;
+    if (typeof dir.entries === 'function') {
+      for await (const [name] of dir.entries()) {
+        await dir.removeEntry(name, { recursive: true });
+        deletedCount += 1;
+      }
+      return { supported: true, deletedCount, detail: `OPFS-файлов удалено: ${deletedCount}` };
+    }
+
+    await root.removeEntry(OPFS_OFFLINE_MAPS_DIR, { recursive: true });
+    return { supported: true, deletedCount: null, detail: 'OPFS-папка офлайн-карт удалена' };
+  } catch (err) {
+    recordMapDebug('OPFS PMTiles emergency clear failed', err?.message || String(err));
+    return { supported: true, deletedCount: 0, error: err?.message || String(err), detail: `OPFS: ошибка — ${err?.message || String(err)}` };
+  }
+}
+
+async function clearPmtilesFilesFromIndexedDb() {
+  try {
+    await writeToStore(OFFLINE_MAP_FILES_STORE, (objectStore) => objectStore.clear());
+    return { deleted: true, detail: 'IndexedDB-файлы офлайн-карт удалены' };
+  } catch (err) {
+    recordMapDebug('IndexedDB PMTiles emergency clear failed', err?.message || String(err));
+    return { deleted: false, error: err?.message || String(err), detail: `IndexedDB: ошибка — ${err?.message || String(err)}` };
+  }
+}
+
+function resetOfflineMapRuntimeAfterFileClear() {
+  rememberedPmtilesMapsState = {
+    status: 'loaded',
+    maps: [],
+    selectedId: null,
+    error: null,
+    updatedAt: new Date().toISOString()
+  };
+  localStorage.removeItem(REMEMBERED_PMTILES_MAPS_KEY);
+  localStorage.removeItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+  localPmtilesFileState = {
+    status: 'not-selected',
+    file: null,
+    storageType: null,
+    storageName: null,
+    persistent: false,
+    packageId: null,
+    key: null,
+    name: null,
+    customName: null,
+    rememberedId: null,
+    fingerprint: null,
+    sizeBytes: null,
+    lastModified: null,
+    selectedAt: null,
+    error: null
+  };
+  const previousSelectedPackageId = offlineMapManifest.selectedPackageId;
+  offlineMapManifest.packages = (offlineMapManifest.packages || []).filter((pkg) => !isLocalPmtilesPackage(pkg));
+  if (previousSelectedPackageId && !offlineMapManifest.packages.some((pkg) => pkg.id === previousSelectedPackageId)) {
+    offlineMapManifest.selectedPackageId = null;
+  }
+  pmtilesRuntimeProbe = {
+    ...pmtilesRuntimeProbe,
+    status: 'not-run',
+    packageFound: false,
+    header: null,
+    metadata: null,
+    error: null,
+    diagnostics: null,
+    packageId: null,
+    packageName: null
+  };
+  pmtilesPreviewState = {
+    ...pmtilesPreviewState,
+    status: 'not-run',
+    visible: false,
+    sourceUrl: PMTILES_DEFAULT_URL,
+    error: null,
+    loadedAt: null,
+    lastEvent: 'offline-map-files-cleared'
+  };
+  try {
+    if (pmtilesPreviewMap && typeof pmtilesPreviewMap.remove === 'function') pmtilesPreviewMap.remove();
+  } catch (err) {
+    recordMapDebug('PMTiles preview remove after emergency clear failed', err?.message || String(err));
+  }
+  pmtilesPreviewMap = null;
+  pmtilesPreviewLiveRows = [];
+  clearPickedMapPoint(false);
+}
+
+async function clearImportedOfflineMapFiles() {
+  const mapCount = (rememberedPmtilesMapsState.maps || []).length;
+  const message = mapCount
+    ? `Удалить все импортированные файлы офлайн-карт и ${mapCount} записей из “Мои карты”? Грибные точки, маршруты, backup JSON, группы и чат не будут удалены.`
+    : 'Удалить все файлы офлайн-карт из локального хранилища приложения? Грибные точки, маршруты, backup JSON, группы и чат не будут удалены.';
+  if (!confirm(message)) return false;
+
+  setDisabled('clearOfflineMapFilesBtn', true);
+  setButtonApiStatus(activeButtonDiagnostics || 'clearOfflineMapFilesBtn', 'pending', 'удаляю файлы офлайн-карт');
+  const opfsResult = await clearPmtilesFilesFromOpfs();
+  const idbResult = await clearPmtilesFilesFromIndexedDb();
+  resetOfflineMapRuntimeAfterFileClear();
+  renderOfflineMapPackageUi();
+  renderRememberedPmtilesMapsUi();
+  updateSettingsSummary();
+  updateMapDebugUi(true);
+  setDisabled('clearOfflineMapFilesBtn', false);
+
+  const details = [opfsResult.detail, idbResult.detail].filter(Boolean).join('; ');
+  const statusText = details || 'файлы офлайн-карт удалены';
+  const statusEl = $('offlineMapFilesClearStatus');
+  if (statusEl) {
+    statusEl.dataset.userUpdated = 'true';
+    statusEl.textContent = `${statusText}. Записи “Мои карты” очищены.`;
+  }
+  setButtonApiStatus(activeButtonDiagnostics || 'clearOfflineMapFilesBtn', 'готово', statusText);
+  return true;
 }
 
 function createLocalPmtilesSource(file, key) {
@@ -1423,15 +1670,39 @@ function createLocalPmtilesSource(file, key) {
   };
 }
 
+function createPersistentPmtilesSource(recordOrPackage = {}, key) {
+  return {
+    getKey() {
+      return key;
+    },
+    async getBytes(offset, length, signal) {
+      if (signal?.aborted) throw new DOMException('PMTiles persisted file read aborted', 'AbortError');
+      const start = Number(offset);
+      const size = Number(length);
+      if (!Number.isFinite(start) || !Number.isFinite(size) || start < 0 || size < 0) {
+        throw new Error(`Invalid persisted PMTiles byte range: offset=${offset}, length=${length}`);
+      }
+      const file = await readPersistedPmtilesFile(recordOrPackage);
+      const data = await file.slice(start, start + size).arrayBuffer();
+      return { data };
+    }
+  };
+}
+
 function registerPmtilesArchiveForPackage(packageInfo = getActiveOfflineMapPackage()) {
   if (!window.pmtiles || !window.pmtiles.PMTiles || !pmtilesProtocol) return null;
   if (isLocalPmtilesPackage(packageInfo)) {
-    const file = localPmtilesFileState.file;
-    if (!file || localPmtilesFileState.packageId !== packageInfo.id) {
-      throw new Error('Локальный файл офлайн-карты не выбран в этой сессии. Выбери файл заново.');
-    }
     const key = localPmtilesFileState.key || `local-pmtiles-${Date.now()}`;
-    const source = createLocalPmtilesSource(file, key);
+    let source;
+    if (isPersistentPmtilesPackage(packageInfo)) {
+      source = createPersistentPmtilesSource(packageInfo, key);
+    } else {
+      const file = localPmtilesFileState.file;
+      if (!file || localPmtilesFileState.packageId !== packageInfo.id) {
+        throw new Error('Локальный файл офлайн-карты не выбран в этой сессии. Выбери файл заново.');
+      }
+      source = createLocalPmtilesSource(file, key);
+    }
     const archive = new window.pmtiles.PMTiles(source);
     if (typeof pmtilesProtocol.add === 'function') {
       try { pmtilesProtocol.add(archive); } catch (err) { recordMapDebug('Local PMTiles protocol add failed', err?.message || String(err)); }
@@ -1549,7 +1820,11 @@ function normalizeRememberedPmtilesMap(item = {}, index = 0) {
     fileName,
     sizeBytes: headerNumber(item.sizeBytes ?? item.size ?? null),
     lastModified: item.lastModified || null,
-    sourceType: item.sourceType || 'local-file-session',
+    sourceType: item.sourceType || (item.storageType === 'opfs' ? 'local-file-opfs' : item.storageType === 'idb-blob' ? 'local-file-idb' : 'local-file-session'),
+    storageType: item.storageType || null,
+    storageName: item.storageName || null,
+    persistent: Boolean(item.persistent || item.storageName),
+    importedAt: item.importedAt || null,
     createdAt: item.createdAt || new Date().toISOString(),
     lastSelectedAt: item.lastSelectedAt || item.selectedAt || null,
     notes: item.notes || null
@@ -1612,11 +1887,11 @@ function offlineMapCountLabel(count) {
 function getRememberedPmtilesMapUiStatus(item) {
   if (!item) return { label: 'Нет карты', mode: 'warn' };
   const isSelected = item.id === rememberedPmtilesMapsState.selectedId;
-  const hasSessionFile = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === item.fingerprint;
-  if (isSelected && hasSessionFile) return { label: 'Активна', mode: 'on' };
-  if (hasSessionFile) return { label: 'Файл выбран', mode: 'on' };
-  if (isSelected) return { label: 'Нужен файл', mode: 'warn' };
-  return { label: 'Готова', mode: '' };
+  const activeSource = localPmtilesFileState.status === 'selected' && localPmtilesFileState.rememberedId === item.id;
+  const persistent = Boolean(item.persistent && item.storageName);
+  if (isSelected && activeSource) return { label: 'Активна', mode: 'on' };
+  if (persistent) return { label: isSelected ? 'Готова' : 'Готова', mode: 'on' };
+  return { label: 'Нужен файл', mode: 'warn' };
 }
 
 function renderOfflineMapsManagerShell() {
@@ -1653,33 +1928,86 @@ function renderOfflineMapsManagerShell() {
   updatePmtilesPreviewUi();
 }
 
-function upsertRememberedPmtilesMapForFile(file) {
+async function upsertRememberedPmtilesMapForFile(file, options = {}) {
   const fingerprint = makePmtilesFileFingerprint(file);
   const now = new Date().toISOString();
-  const existing = findRememberedPmtilesMapByFingerprint(fingerprint);
+  const selected = getSelectedRememberedPmtilesMap();
+  const existing = options.replaceSelected && selected ? selected : findRememberedPmtilesMapByFingerprint(fingerprint);
   const fallbackTitle = String(file.name || 'local.pmtiles').replace(/\.pmtiles$/i, '') || 'Локальная карта';
-  let mapRecord;
-  if (existing) {
-    mapRecord = { ...existing, fileName: file.name || existing.fileName, sizeBytes: file.size || existing.sizeBytes, lastModified: file.lastModified || existing.lastModified, lastSelectedAt: now };
-    rememberedPmtilesMapsState.maps = rememberedPmtilesMapsState.maps.map((item) => item.id === mapRecord.id ? mapRecord : item);
-  } else {
-    mapRecord = {
-      id: `remembered-pmtiles-${Date.now()}`,
-      fingerprint,
-      title: fallbackTitle,
-      fileName: file.name || 'local.pmtiles',
-      sizeBytes: file.size || null,
-      lastModified: file.lastModified || null,
-      sourceType: 'local-file-session',
-      createdAt: now,
-      lastSelectedAt: now,
-      notes: null
-    };
-    rememberedPmtilesMapsState.maps = [mapRecord, ...(rememberedPmtilesMapsState.maps || [])];
-  }
+  const recordId = existing?.id || `remembered-pmtiles-${Date.now()}`;
+  const storageName = existing?.storageName || `${recordId}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
+  const persisted = await persistPmtilesFile(file, storageName);
+  const sourceType = persisted.storageType === 'opfs' ? 'local-file-opfs' : 'local-file-idb';
+  const mapRecord = {
+    ...(existing || {}),
+    id: recordId,
+    fingerprint,
+    title: existing?.title || fallbackTitle,
+    fileName: file.name || existing?.fileName || 'local.pmtiles',
+    sizeBytes: file.size || existing?.sizeBytes || null,
+    lastModified: file.lastModified || existing?.lastModified || null,
+    sourceType,
+    storageType: persisted.storageType,
+    storageName: persisted.storageName,
+    persistent: true,
+    importedAt: now,
+    createdAt: existing?.createdAt || now,
+    lastSelectedAt: now,
+    notes: existing?.notes || null
+  };
+
+  const withoutRecord = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== mapRecord.id);
+  rememberedPmtilesMapsState.maps = [mapRecord, ...withoutRecord];
   rememberedPmtilesMapsState.selectedId = mapRecord.id;
-  saveRememberedPmtilesMaps(existing ? 'remembered PMTiles map matched selected file' : 'remembered PMTiles map added');
+  saveRememberedPmtilesMaps(existing ? 'persistent PMTiles map updated' : 'persistent PMTiles map imported');
   return mapRecord;
+}
+
+function makePersistedPmtilesPackage(record) {
+  if (!record) return null;
+  const packageId = `local-map-${record.id}`;
+  const key = `${packageId}-${record.storageName || record.fingerprint || Date.now()}`;
+  localPmtilesFileState = {
+    status: 'selected',
+    file: null,
+    storageType: record.storageType || null,
+    storageName: record.storageName || null,
+    persistent: Boolean(record.persistent && record.storageName),
+    packageId,
+    key,
+    name: record.fileName || 'local.pmtiles',
+    customName: record.title || null,
+    rememberedId: record.id,
+    fingerprint: record.fingerprint || null,
+    sizeBytes: record.sizeBytes || null,
+    lastModified: record.lastModified || null,
+    selectedAt: new Date().toISOString(),
+    error: null
+  };
+  return {
+    id: packageId,
+    name: `Локальная карта: ${record.title || record.fileName || 'карта'}`,
+    url: `${record.sourceType || 'local-file-opfs'}://${key}/${encodeURIComponent(record.fileName || 'local.pmtiles')}`,
+    sourceType: record.sourceType || (record.storageType === 'opfs' ? 'local-file-opfs' : 'local-file-idb'),
+    storageType: record.storageType || null,
+    storageName: record.storageName || null,
+    role: 'local-user-file',
+    version: null,
+    sizeBytes: record.sizeBytes || null,
+    bounds: null,
+    minZoom: null,
+    maxZoom: null,
+    enabled: Boolean(record.storageName),
+    required: false,
+    description: `Импортированный файл офлайн-карты “${record.fileName || 'local.pmtiles'}”. Файл сохранён внутри приложения и доступен после перезапуска PWA.`,
+    releaseTag: null,
+    checksum: null,
+    fileRef: true,
+    localSession: false,
+    persistent: Boolean(record.persistent && record.storageName),
+    rememberedId: record.id,
+    fingerprint: record.fingerprint || null
+  };
 }
 
 function getRememberedPmtilesMapsSnapshot() {
@@ -1698,34 +2026,44 @@ function getRememberedPmtilesMapsSnapshot() {
       sizeBytes: item.sizeBytes,
       lastModified: item.lastModified,
       lastSelectedAt: item.lastSelectedAt,
-      hasSessionFile: localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === item.fingerprint
+      storageType: item.storageType || null,
+      persistent: Boolean(item.persistent && item.storageName),
+      hasLocalFile: localPmtilesFileState.status === 'selected' && localPmtilesFileState.rememberedId === item.id
     }))
   };
 }
 
 function getUserFacingOfflineMapState() {
   const selected = getSelectedRememberedPmtilesMap();
-  const sessionFileSelected = localPmtilesFileState.status === 'selected';
-  const sessionMatchesSelected = sessionFileSelected && selected && localPmtilesFileState.fingerprint === selected.fingerprint;
+  const localSourceSelected = localPmtilesFileState.status === 'selected';
+  const sessionMatchesSelected = localSourceSelected && selected && localPmtilesFileState.rememberedId === selected.id;
   const title = localPmtilesFileState.customName || selected?.title || (localPmtilesFileState.name ? localPmtilesFileState.name.replace(/\.pmtiles$/i, '') : 'Офлайн-карта');
 
-  if (sessionFileSelected) {
+  if (localSourceSelected) {
+    const storageText = localPmtilesFileState.persistent
+      ? (localPmtilesFileState.storageType === 'opfs' ? 'импортирована в локальное хранилище приложения' : 'сохранена в локальное хранилище приложения')
+      : 'выбрана в этой сессии';
     return {
       mode: 'ready',
       title,
-      summary: `“${title}” — файл выбран в этой сессии.`,
-      detail: `Можно открыть предпросмотр офлайн-карты. Запись запомнена как “${title}”, сам файл после перезапуска приложения нужно выбрать заново.`,
+      summary: `“${title}” — карта готова.`,
+      detail: `Файл ${storageText}. Предпросмотр, GPS, точки и маршруты доступны без повторного выбора файла после перезапуска PWA.`,
       selected,
       sessionMatchesSelected
     };
   }
 
   if (selected) {
+    const hasPersistentRecord = Boolean(selected.persistent && selected.storageName);
     return {
-      mode: 'needs-file',
+      mode: hasPersistentRecord ? 'loading' : 'needs-file',
       title: selected.title,
-      summary: `“${selected.title}” — запись найдена, файл нужно выбрать заново.`,
-      detail: `Нажми “Выбрать файл карты” и выбери ${selected.fileName}. GPS, сохранённые точки и чат работают независимо от подложки карты.`,
+      summary: hasPersistentRecord
+        ? `“${selected.title}” — карта импортирована, подключаем файл…`
+        : `“${selected.title}” — запись найдена, файл нужно импортировать заново.`,
+      detail: hasPersistentRecord
+        ? 'Файл карты сохранён внутри приложения. Если он не открылся, возможно браузер очистил storage.'
+        : `Это старая запись без сохранённого файла. Нажми “Выбрать файл карты” и выбери ${selected.fileName}, чтобы импортировать файл внутрь приложения.`,
       selected,
       sessionMatchesSelected: false
     };
@@ -1763,7 +2101,7 @@ function renderRememberedPmtilesMapsList() {
 
   for (const item of maps) {
     const isSelected = item.id === rememberedPmtilesMapsState.selectedId;
-    const hasSessionFile = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === item.fingerprint;
+    const hasSessionFile = localPmtilesFileState.status === 'selected' && localPmtilesFileState.rememberedId === item.id;
     const card = document.createElement('article');
     card.className = 'remembered-map-card';
     if (isSelected) card.classList.add('selected');
@@ -1792,14 +2130,14 @@ function renderRememberedPmtilesMapsList() {
     openAction.className = 'secondary btn-secondary small-btn';
     openAction.textContent = isSelected ? 'Активна' : 'Открыть';
     openAction.disabled = isSelected;
-    openAction.onclick = () => selectRememberedPmtilesMap(item.id, true);
+    openAction.onclick = () => selectRememberedPmtilesMap(item.id, true).catch(console.warn);
 
     const renameAction = document.createElement('button');
     renameAction.type = 'button';
     renameAction.className = 'secondary btn-secondary small-btn';
     renameAction.textContent = 'Переименовать';
     renameAction.onclick = () => {
-      selectRememberedPmtilesMap(item.id, true);
+      selectRememberedPmtilesMap(item.id, true).catch(console.warn);
       const input = $('rememberedPmtilesMapNameInput');
       if (input) {
         input.focus();
@@ -1811,7 +2149,7 @@ function renderRememberedPmtilesMapsList() {
     deleteAction.type = 'button';
     deleteAction.className = 'secondary btn-secondary small-btn';
     deleteAction.textContent = 'Удалить';
-    deleteAction.onclick = () => forgetRememberedPmtilesMapById(item.id, true);
+    deleteAction.onclick = () => forgetRememberedPmtilesMapById(item.id, true).catch(console.warn);
 
     actions.append(openAction, renameAction, deleteAction);
     card.append(top, meta, actions);
@@ -1837,8 +2175,8 @@ function renderRememberedPmtilesMapsUi() {
       for (const item of rememberedPmtilesMapsState.maps) {
         const option = document.createElement('option');
         option.value = item.id;
-        const active = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === item.fingerprint;
-        option.textContent = `${item.title} · ${formatBytes(item.sizeBytes)}${active ? ' · файл выбран' : ''}`;
+        const active = localPmtilesFileState.status === 'selected' && localPmtilesFileState.rememberedId === item.id;
+        option.textContent = `${item.title} · ${formatBytes(item.sizeBytes)}${active ? ' · активна' : item.persistent ? ' · импортирована' : ''}`;
         select.appendChild(option);
       }
       select.value = rememberedPmtilesMapsState.selectedId || selected?.id || '';
@@ -1855,10 +2193,12 @@ function renderRememberedPmtilesMapsUi() {
     } else if (!rememberedPmtilesMapsState.maps.length) {
       status.textContent = 'Мои карты: пока нет. Выбери файл карты, дай ему понятное название и сохрани локально на устройстве.';
     } else if (selected) {
-      const active = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === selected.fingerprint;
+      const active = localPmtilesFileState.status === 'selected' && localPmtilesFileState.rememberedId === selected.id;
       status.textContent = active
-        ? `Активная карта: “${selected.title}” · ${formatBytes(selected.sizeBytes)}.`
-        : `Выбранная карта: “${selected.title}”. Чтобы использовать карту сейчас, нажми “Выбрать файл карты” и выбери ${selected.fileName}.`;
+        ? `Активная карта: “${selected.title}” · ${formatBytes(selected.sizeBytes)} · файл сохранён внутри приложения.`
+        : selected.persistent
+          ? `Выбранная карта: “${selected.title}”. Файл импортирован, можно открыть карту.`
+          : `Выбранная карта: “${selected.title}”. Это старая запись: выбери ${selected.fileName}, чтобы импортировать файл внутрь приложения.`;
     }
   }
   renderCurrentOfflineMapSummary();
@@ -1869,14 +2209,64 @@ function renderRememberedPmtilesMapsUi() {
   setDisabled('forgetRememberedPmtilesMapBtn', !canForget);
 }
 
-function selectRememberedPmtilesMap(recordId, userAction = false) {
+async function activatePersistedPmtilesMap(record, userAction = false) {
+  if (!record?.storageName) return null;
+  try {
+    // Verify that the browser still has the imported file before exposing it as the active package.
+    const file = await readPersistedPmtilesFile(record);
+    const verifiedRecord = {
+      ...record,
+      sizeBytes: record.sizeBytes || file.size || null,
+      lastSelectedAt: new Date().toISOString()
+    };
+    rememberedPmtilesMapsState.maps = (rememberedPmtilesMapsState.maps || []).map((item) => item.id === verifiedRecord.id ? verifiedRecord : item);
+    rememberedPmtilesMapsState.selectedId = verifiedRecord.id;
+    const pkg = makePersistedPmtilesPackage(verifiedRecord);
+    offlineMapManifest.packages = [pkg, ...(offlineMapManifest.packages || []).filter((item) => !(isLocalPmtilesPackage(item) && item.rememberedId === verifiedRecord.id))];
+    offlineMapManifest.selectedPackageId = pkg.id;
+    if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-persistent';
+    selectOfflineMapPackage(pkg.id, userAction);
+    saveRememberedPmtilesMaps('persistent PMTiles map activated');
+    return pkg;
+  } catch (err) {
+    localPmtilesFileState = {
+      status: 'error',
+      file: null,
+      storageType: record.storageType || null,
+      storageName: record.storageName || null,
+      persistent: Boolean(record.persistent),
+      packageId: null,
+      key: null,
+      name: record.fileName || null,
+      customName: record.title || null,
+      rememberedId: record.id,
+      fingerprint: record.fingerprint || null,
+      sizeBytes: record.sizeBytes || null,
+      lastModified: record.lastModified || null,
+      selectedAt: null,
+      error: err?.message || String(err)
+    };
+    recordMapDebug('persistent PMTiles map activation failed', localPmtilesFileState.error);
+    renderOfflineMapPackageUi();
+    return null;
+  }
+}
+
+async function selectRememberedPmtilesMap(recordId, userAction = false) {
   const found = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
   if (!found) return null;
   rememberedPmtilesMapsState.selectedId = found.id;
   saveRememberedPmtilesMaps('remembered PMTiles map selected');
-  const activePkg = getSelectedOfflineMapPackage(false);
-  if (localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === found.fingerprint && activePkg?.id === localPmtilesFileState.packageId) {
-    selectOfflineMapPackage(localPmtilesFileState.packageId, userAction);
+  if (found.persistent && found.storageName) {
+    const pkg = await activatePersistedPmtilesMap(found, userAction);
+    if (pkg && userAction && $('screen-offline') && !$('screen-offline').hidden) {
+      await showPmtilesPreviewMap();
+    }
+  } else {
+    const activePkg = getSelectedOfflineMapPackage(false);
+    if (localPmtilesFileState.status === 'selected' && localPmtilesFileState.rememberedId === found.id && activePkg?.id === localPmtilesFileState.packageId) {
+      selectOfflineMapPackage(localPmtilesFileState.packageId, userAction);
+    }
   }
   renderRememberedPmtilesMapsUi();
   updateMapDebugUi(false);
@@ -1900,7 +2290,7 @@ function renameSelectedRememberedPmtilesMap() {
   if (localPmtilesFileState.rememberedId === selected.id) {
     localPmtilesFileState = { ...localPmtilesFileState, customName: nextTitle };
     offlineMapManifest.packages = (offlineMapManifest.packages || []).map((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId
-      ? { ...pkg, name: `Локальная карта: ${nextTitle}`, description: `Локально выбранный файл офлайн-карты “${localPmtilesFileState.name}”. Хранится только в текущей сессии браузера.` }
+      ? { ...pkg, name: `Локальная карта: ${nextTitle}`, description: `Импортированный файл офлайн-карты “${localPmtilesFileState.name}”. Хранится внутри приложения.` }
       : pkg);
     pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, packageName: `Локальная карта: ${nextTitle}` };
   }
@@ -1911,19 +2301,20 @@ function renameSelectedRememberedPmtilesMap() {
   setButtonApiStatus(activeButtonDiagnostics, 'готово', `название: ${updated?.title || nextTitle}`);
 }
 
-function forgetRememberedPmtilesMapById(recordId, ask = true) {
+async function forgetRememberedPmtilesMapById(recordId, ask = true) {
   const target = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
   if (!target) {
     markButtonBlocked('нет выбранной запомненной карты');
     return false;
   }
   if (ask && !confirm(`Удалить офлайн-карту “${target.title}” из списка?`)) return false;
+  await deletePersistedPmtilesFile(target).catch((err) => recordMapDebug('persistent PMTiles file delete failed', err?.message || String(err)));
   rememberedPmtilesMapsState.maps = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== target.id);
   rememberedPmtilesMapsState.selectedId = rememberedPmtilesMapsState.selectedId === target.id
     ? (rememberedPmtilesMapsState.maps[0]?.id || null)
     : rememberedPmtilesMapsState.selectedId;
   if (localPmtilesFileState.rememberedId === target.id) {
-    localPmtilesFileState = { status: 'none', file: null, name: null, customName: null, rememberedId: null, fingerprint: null, packageId: null, key: null, sizeBytes: null, lastModified: null, selectedAt: null, error: null };
+    localPmtilesFileState = { status: 'none', file: null, storageType: null, storageName: null, persistent: false, name: null, customName: null, rememberedId: null, fingerprint: null, packageId: null, key: null, sizeBytes: null, lastModified: null, selectedAt: null, error: null };
     offlineMapManifest.packages = (offlineMapManifest.packages || []).filter((pkg) => !isLocalPmtilesPackage(pkg));
     offlineMapManifest.selectedPackageId = null;
     pmtilesPreviewState = { ...pmtilesPreviewState, visible: false, status: 'not-run', error: null };
@@ -2072,7 +2463,10 @@ function renderLocalPmtilesFileUi() {
   if (localPmtilesFileState.status === 'selected') {
     const modified = localPmtilesFileState.lastModified ? new Date(localPmtilesFileState.lastModified).toLocaleString('ru-RU') : 'дата неизвестна';
     const custom = localPmtilesFileState.customName ? ` · карта: “${localPmtilesFileState.customName}”` : '';
-    status.textContent = `Файл карты: ${localPmtilesFileState.name}${custom} · ${formatBytes(localPmtilesFileState.sizeBytes)} · выбран в этой сессии · изменён ${modified}. Название запоминается, сам файл после перезапуска PWA нужно выбрать заново.`;
+    const storage = localPmtilesFileState.persistent
+      ? (localPmtilesFileState.storageType === 'opfs' ? 'импортирован в OPFS' : 'импортирован в IndexedDB')
+      : 'выбран в этой сессии';
+    status.textContent = `Файл карты: ${localPmtilesFileState.name}${custom} · ${formatBytes(localPmtilesFileState.sizeBytes)} · ${storage} · изменён ${modified}. После перезапуска PWA повторно выбирать файл не нужно.`;
   } else if (localPmtilesFileState.status === 'error') {
     status.textContent = `Файл карты: ошибка — ${localPmtilesFileState.error || 'неизвестно'}`;
   } else {
@@ -2080,60 +2474,23 @@ function renderLocalPmtilesFileUi() {
   }
 }
 
-function makeLocalPmtilesPackage(file) {
+async function makeLocalPmtilesPackage(file, options = {}) {
   const safeName = String(file.name || 'local.pmtiles').trim() || 'local.pmtiles';
-  const remembered = upsertRememberedPmtilesMapForFile(file);
-  const customName = remembered?.title || safeName.replace(/\.pmtiles$/i, '') || safeName;
-  const fingerprint = makePmtilesFileFingerprint(file);
-  const packageId = `local-file-${Date.now()}`;
-  const key = `${packageId}-${Math.random().toString(16).slice(2)}`;
-  localPmtilesFileState = {
-    status: 'selected',
-    file,
-    packageId,
-    key,
-    name: safeName,
-    customName,
-    rememberedId: remembered?.id || null,
-    fingerprint,
-    sizeBytes: file.size || null,
-    lastModified: file.lastModified || null,
-    selectedAt: new Date().toISOString(),
-    error: null
-  };
-  return {
-    id: packageId,
-    name: `Локальная карта: ${customName}`,
-    url: `local-file://${key}/${encodeURIComponent(safeName)}`,
-    sourceType: 'local-file-session',
-    role: 'local-user-file',
-    version: null,
-    sizeBytes: file.size || null,
-    bounds: null,
-    minZoom: null,
-    maxZoom: null,
-    enabled: true,
-    required: false,
-    description: `Локально выбранный файл офлайн-карты “${safeName}”. Запись и название хранятся в localStorage, сам файл — только в текущей сессии браузера.`,
-    releaseTag: null,
-    checksum: null,
-    fileRef: true,
-    localSession: true,
-    rememberedId: remembered?.id || null,
-    fingerprint
-  };
+  const remembered = await upsertRememberedPmtilesMapForFile(file, options);
+  return makePersistedPmtilesPackage(remembered);
 }
 
 async function selectLocalPmtilesFile(file) {
   try {
     if (!file) return null;
     if (!/\.pmtiles$/i.test(file.name || '')) throw new Error('Выбери файл с расширением .pmtiles');
-    const pkg = makeLocalPmtilesPackage(file);
+    const replaceSelected = pendingLocalPmtilesImportMode === 'replace';
+    const pkg = await makeLocalPmtilesPackage(file, { replaceSelected });
     offlineMapManifest.packages = [pkg, ...(offlineMapManifest.packages || []).filter((item) => !isLocalPmtilesPackage(item))];
     offlineMapManifest.selectedPackageId = pkg.id;
     if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-session';
     selectOfflineMapPackage(pkg.id, true);
-    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)}`);
+    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)} · импортировано`);
     recordMapDebug('local offline map file selected', getLocalPmtilesFileSnapshot());
     renderOfflineMapPackageUi();
     updateMapDebugUi(true);
@@ -2147,6 +2504,8 @@ async function selectLocalPmtilesFile(file) {
     renderLocalPmtilesFileUi();
     updateMapDebugUi(true);
     return null;
+  } finally {
+    pendingLocalPmtilesImportMode = 'add';
   }
 }
 
@@ -2167,7 +2526,7 @@ async function loadOfflineMapManifest(userAction = false) {
     const json = await res.json();
     const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
     const packages = ensureSamplePackage(Array.isArray(json.packages) ? json.packages : []);
-    if (localPackage && localPmtilesFileState.file) packages.unshift(localPackage);
+    if (localPackage && localPmtilesFileState.status === 'selected') packages.unshift(localPackage);
     const savedSelectedId = localPackage ? localPackage.id : localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
     const selectedPackage = packages.find((pkg) => pkg.id === savedSelectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled) || defaultOfflineMapPackage();
     offlineMapManifest = {
@@ -2179,7 +2538,8 @@ async function loadOfflineMapManifest(userAction = false) {
       error: null,
       loadedAt: new Date().toISOString()
     };
-    localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, selectedPackage.id);
+    if (isLocalPmtilesPackage(selectedPackage)) localStorage.removeItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+    else localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, selectedPackage.id);
     pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: selectedPackage.url, packageId: selectedPackage.id, packageName: selectedPackage.name };
     pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
     renderOfflineMapPackageUi();
@@ -2189,17 +2549,20 @@ async function loadOfflineMapManifest(userAction = false) {
     }
     return offlineMapManifest;
   } catch (err) {
+    const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
     const sample = defaultOfflineMapPackage();
+    const packages = localPackage && localPmtilesFileState.status === 'selected' ? [localPackage, sample] : [sample];
+    const selectedPackage = localPackage && localPmtilesFileState.status === 'selected' ? localPackage : sample;
     offlineMapManifest = {
       url: OFFLINE_MAP_MANIFEST_URL,
       status: 'error',
-      packages: [sample],
-      selectedPackageId: sample.id,
+      packages,
+      selectedPackageId: selectedPackage.id,
       error: err?.message || String(err),
       loadedAt: null
     };
-    pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: sample.url, packageId: sample.id, packageName: sample.name };
-    pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: sample.url };
+    pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: selectedPackage.url, packageId: selectedPackage.id, packageName: selectedPackage.name };
+    pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
     renderOfflineMapPackageUi();
     recordMapDebug('offline map manifest load failed; sample fallback active', offlineMapManifest.error);
     if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
@@ -3258,7 +3621,7 @@ async function runLocalPmtilesFileDiagnostics(file, packageInfo = null) {
     absoluteUrl: packageInfo?.url || `local-file://${file.name}`,
     packageId: packageInfo?.id || localPmtilesFileState.packageId,
     packageName: packageInfo?.name || localPmtilesFileState.name,
-    sourceType: 'local-file-session',
+    sourceType: packageInfo?.sourceType || 'local-file-session',
     sameOrigin: true,
     status: ok ? 'local-file-ready' : 'unexpected-response',
     summary: ok ? `local file ok, ${bytes.byteLength} bytes, ${magic}` : `local file header unexpected, ${bytes.byteLength} bytes, ${magic || 'no magic'}`,
@@ -3266,7 +3629,7 @@ async function runLocalPmtilesFileDiagnostics(file, packageInfo = null) {
     head: {
       ok: true,
       status: 'local-file',
-      statusText: 'File API',
+      statusText: packageInfo?.storageType === 'opfs' ? 'OPFS File API' : packageInfo?.storageType === 'idb-blob' ? 'IndexedDB Blob' : 'File API',
       redirected: false,
       finalUrl: packageInfo?.url || `local-file://${file.name}`,
       contentLength: file.size || null,
@@ -3290,7 +3653,7 @@ async function runLocalPmtilesFileDiagnostics(file, packageInfo = null) {
       accessControlAllowOrigin: 'not-needed-local-file',
       error: null
     },
-    hint: ok ? 'Локальный File API работает: CORS/redirect/HTTP Range не используются.' : 'Первые байты локального файла не похожи на header файла карты.'
+    hint: ok ? 'Локальное хранилище карты работает: CORS/redirect/HTTP Range не используются.' : 'Первые байты локального файла не похожи на header файла карты.'
   };
 }
 
@@ -3385,6 +3748,8 @@ function renderPmtilesProbeDetails() {
   }
   const parts = [`Проверка: ${diag.summary || diag.status}`];
   if (diag.sourceType === 'local-file-session') parts.push('источник: локальный File API');
+  if (diag.sourceType === 'local-file-opfs') parts.push('источник: OPFS');
+  if (diag.sourceType === 'local-file-idb') parts.push('источник: IndexedDB');
   if (diag.head) parts.push(`HEAD ${diag.head.status || 'n/a'}`);
   if (diag.range) parts.push(`Range ${diag.range.status || 'n/a'}${diag.range.bytes != null ? ` / ${diag.range.bytes} bytes` : ''}`);
   if (diag.hint) parts.push(`Подсказка: ${diag.hint}`);
@@ -3394,9 +3759,11 @@ function renderPmtilesProbeDetails() {
 async function readPmtilesPackage(url = PMTILES_DEFAULT_URL, packageInfo = null) {
   let sizeBytes = null;
   const localFileMode = isLocalPmtilesPackage(packageInfo);
-  const localFile = localFileMode ? localPmtilesFileState.file : null;
+  const localFile = localFileMode
+    ? (isPersistentPmtilesPackage(packageInfo) ? await readPersistedPmtilesFile(packageInfo) : localPmtilesFileState.file)
+    : null;
   if (localFileMode && !localFile) {
-    throw Object.assign(new Error('Локальный файл офлайн-карты не выбран в этой сессии. Выбери файл заново.'), { code: 'PMTILES_LOCAL_FILE_MISSING' });
+    throw Object.assign(new Error('Локальный файл офлайн-карты не найден в хранилище приложения. Импортируй файл заново.'), { code: 'PMTILES_LOCAL_FILE_MISSING' });
   }
   const transportDiagnostics = localFileMode
     ? await runLocalPmtilesFileDiagnostics(localFile, packageInfo)
@@ -3800,7 +4167,7 @@ function renderSettingsDiagnostics() {
     ? (apiDebugEvents.length ? `настроена, запросов: ${apiDebugEvents.length}` : 'настроена, запросов ещё не было')
     : 'не настроена';
   const pmtilesText = localPmtilesFileState.status === 'selected'
-    ? `выбран файл: ${getUserFacingOfflineMapState().title}`
+    ? `импортирована карта: ${getUserFacingOfflineMapState().title}`
     : offlinePackageStatus === 'preview-ready-runtime-experimental'
       ? 'предпросмотр готов'
       : 'файл карты не выбран';
@@ -3824,6 +4191,11 @@ function renderSettingsDiagnostics() {
   setText('settingsOnlineDiagnostic', navigator.onLine ? 'онлайн' : 'офлайн');
   setText('settingsMapProviderDiagnostic', `${provider.mapProvider} / ${provider.mapSourceStatus}`);
   setText('settingsPmtilesRuntimeDiagnostic', `${offlinePackageStatus} / ${pmtilesRuntimeProbe.status}`);
+  const clearStatus = $('offlineMapFilesClearStatus');
+  if (clearStatus && !clearStatus.dataset.userUpdated) {
+    const count = (rememberedPmtilesMapsState.maps || []).length;
+    clearStatus.textContent = count ? `Импортированных офлайн-карт: ${count}.` : 'Файлы офлайн-карт не очищались.';
+  }
 }
 
 function bindAppNavigationShell() {
@@ -5120,6 +5492,9 @@ function openDb() {
         const trackStore = database.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
         trackStore.createIndex('createdAt', 'createdAt');
       }
+      if (!database.objectStoreNames.contains(OFFLINE_MAP_FILES_STORE)) {
+        database.createObjectStore(OFFLINE_MAP_FILES_STORE, { keyPath: 'id' });
+      }
     };
     req.onsuccess = () => {
       const database = req.result;
@@ -5170,6 +5545,18 @@ function writeToStore(storeName, operation) {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error || new Error('IndexedDB write transaction failed'));
     transaction.onabort = () => reject(transaction.error || new Error('IndexedDB write transaction aborted'));
+  });
+}
+
+function putStoreValue(storeName, value) {
+  return writeToStore(storeName, (objectStore) => objectStore.put(value));
+}
+
+function getStoreValue(storeName, key) {
+  return new Promise((resolve, reject) => {
+    const req = store(storeName).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -8592,20 +8979,22 @@ function bindUi() {
   if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').onclick = withButtonDiagnostics('cleanCurrentGroupDbBtn', cleanCurrentGroupDbRows);
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
+  if ($('clearOfflineMapFilesBtn')) $('clearOfflineMapFilesBtn').onclick = withButtonDiagnostics('clearOfflineMapFilesBtn', clearImportedOfflineMapFiles);
   if ($('loadOfflineManifestBtn')) $('loadOfflineManifestBtn').onclick = withButtonDiagnostics('loadOfflineManifestBtn', () => loadOfflineMapManifest(true));
-  const openLocalPmtilesPicker = () => {
+  const openLocalPmtilesPicker = (mode = 'add') => {
+    pendingLocalPmtilesImportMode = mode;
     setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
     $('localPmtilesFileInput')?.click();
   };
-  if ($('chooseLocalPmtilesBtn')) $('chooseLocalPmtilesBtn').onclick = withButtonDiagnostics('chooseLocalPmtilesBtn', openLocalPmtilesPicker);
-  if ($('replaceLocalPmtilesBtn')) $('replaceLocalPmtilesBtn').onclick = withButtonDiagnostics('replaceLocalPmtilesBtn', openLocalPmtilesPicker);
+  if ($('chooseLocalPmtilesBtn')) $('chooseLocalPmtilesBtn').onclick = withButtonDiagnostics('chooseLocalPmtilesBtn', () => openLocalPmtilesPicker('add'));
+  if ($('replaceLocalPmtilesBtn')) $('replaceLocalPmtilesBtn').onclick = withButtonDiagnostics('replaceLocalPmtilesBtn', () => openLocalPmtilesPicker('replace'));
   if ($('localPmtilesFileInput')) $('localPmtilesFileInput').onchange = async (event) => {
     const file = event.target.files && event.target.files[0];
     await selectLocalPmtilesFile(file);
     event.target.value = '';
   };
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
-  if ($('rememberedPmtilesMapSelect')) $('rememberedPmtilesMapSelect').onchange = (event) => selectRememberedPmtilesMap(event.target.value, true);
+  if ($('rememberedPmtilesMapSelect')) $('rememberedPmtilesMapSelect').onchange = (event) => selectRememberedPmtilesMap(event.target.value, true).catch(console.warn);
   if ($('renameRememberedPmtilesMapBtn')) $('renameRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('renameRememberedPmtilesMapBtn', renameSelectedRememberedPmtilesMap);
   if ($('forgetRememberedPmtilesMapBtn')) $('forgetRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('forgetRememberedPmtilesMapBtn', forgetSelectedRememberedPmtilesMap);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
@@ -8657,7 +9046,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.32.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.33.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -8669,6 +9058,10 @@ async function init() {
   restoreMapAdvancedControlsPreference();
   restoreAppScreen();
   loadRememberedPmtilesMaps();
+  await activatePersistedPmtilesMap(getSelectedRememberedPmtilesMap(), false);
+  if ($('screen-offline') && !$('screen-offline').hidden && localPmtilesFileState.status === 'selected') {
+    showPmtilesPreviewMap().catch((err) => recordMapDebug('persistent PMTiles preview startup failed', err?.message || String(err)));
+  }
   loadOfflineMapManifest(false).catch((err) => recordMapDebug('offline map manifest startup load failed', err?.message || String(err)));
   recordMapDebug('app initialized');
   const groupFromUrl = loadLiveInputs();
