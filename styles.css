@@ -2614,3 +2614,44 @@ select {
     width: 100%;
   }
 }
+
+/* Sprint 5.36 — Offline region release catalog. */
+.offline-region-catalog .field {
+  margin: 0.65rem 0;
+}
+.offline-region-catalog input {
+  width: 100%;
+  max-width: 100%;
+}
+.offline-region-catalog-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+.offline-region-card,
+.offline-region-empty {
+  padding: 0.75rem;
+  border: 1px solid rgba(36, 75, 47, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 253, 247, 0.82);
+}
+.offline-region-card.installed {
+  border-color: rgba(36, 75, 47, 0.34);
+  background: rgba(232, 238, 220, 0.88);
+}
+.offline-region-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.offline-region-card h4 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+.offline-region-actions {
+  margin-top: 0.6rem;
+}
+.offline-region-download-link {
+  text-decoration: none;
+}

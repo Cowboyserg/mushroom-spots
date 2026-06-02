@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.35';
+const APP_VERSION = '0.7.36';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -42,6 +42,8 @@ const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
 const PMTILES_SAMPLE_URL = './offline-test.pmtiles';
 const PMTILES_DEFAULT_URL = PMTILES_SAMPLE_URL;
 const OFFLINE_MAP_MANIFEST_URL = './offline-map-packages.json';
+const OFFLINE_MAP_MANIFEST_URL_STORAGE_KEY = 'mushroom_offline_map_manifest_url_v1';
+const OFFLINE_MAP_DEFAULT_RELEASE_TAG = 'maps-2026-06-02';
 const MAPLIBRE_GL_VERSION = '5.24.0';
 const PMTILES_JS_VERSION = '4.4.1';
 const PROTOMAPS_BASEMAPS_VERSION = '5';
@@ -61,6 +63,19 @@ const PROTOMAPS_BASEMAPS_SCRIPT_URLS = [
   `https://unpkg.com/@protomaps/basemaps@${PROTOMAPS_BASEMAPS_VERSION}/dist/basemaps.js`,
   `https://cdn.jsdelivr.net/npm/@protomaps/basemaps@${PROTOMAPS_BASEMAPS_VERSION}/dist/basemaps.js`
 ];
+
+const OFFLINE_REGION_NAMES_RU = {
+  'central-fed-district': 'Центральный федеральный округ',
+  'crimean-fed-district': 'Крымский федеральный округ',
+  'far-eastern-fed-district': 'Дальневосточный федеральный округ',
+  'north-caucasus-fed-district': 'Северо-Кавказский федеральный округ',
+  'northwestern-fed-district': 'Северо-Западный федеральный округ',
+  'siberian-fed-district': 'Сибирский федеральный округ',
+  'south-fed-district': 'Южный федеральный округ',
+  'ural-fed-district': 'Уральский федеральный округ',
+  'volga-fed-district': 'Приволжский федеральный округ',
+  'kaliningrad': 'Калининградская область'
+};
 
 const MAP_PROVIDER_LABELS = {
   [MAP_PROVIDER_ONLINE_RASTER]: 'online raster',
@@ -280,6 +295,8 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   cleanStaleGroupDbBtn: 'Удалить старые записи группы',
   resetAppCacheBtn: 'Сбросить кэш приложения',
   loadOfflineManifestBtn: 'Обновить список карт',
+  refreshOfflineRegionCatalogBtn: 'Обновить каталог регионов',
+  saveOfflineManifestUrlBtn: 'Сохранить URL каталога регионов',
   chooseLocalPmtilesBtn: 'Выбрать файл карты',
   probePmtilesBtn: 'Проверить выбранный файл карты',
   previewPmtilesBtn: 'Предпросмотр офлайн-карты',
@@ -1854,6 +1871,7 @@ function normalizeOfflineMapPackage(pkg = {}, index = 0) {
   return {
     id,
     name: String(pkg.name || id || fallback.name).trim(),
+    fileName: String(pkg.fileName || pkg.filename || (url ? url.split('/').pop() : '') || '').trim(),
     url,
     sourceType: String(pkg.sourceType || pkg.source || inferPmtilesSourceType(url)).trim(),
     role: pkg.role || null,
@@ -1888,6 +1906,114 @@ function inferPmtilesSourceType(url = '') {
   return 'remote-url';
 }
 
+function inferGitHubReleaseManifestUrlFromLocation() {
+  try {
+    const host = window.location.hostname;
+    const match = host.match(/^([^.]+)\.github\.io$/i);
+    const repo = window.location.pathname.split('/').filter(Boolean)[0];
+    if (match && repo) {
+      return `https://github.com/${match[1]}/${repo}/releases/download/${OFFLINE_MAP_DEFAULT_RELEASE_TAG}/offline-map-packages.json`;
+    }
+  } catch (err) {
+    console.warn('Could not infer GitHub release manifest URL', err);
+  }
+  return OFFLINE_MAP_MANIFEST_URL;
+}
+
+function getConfiguredOfflineMapManifestUrl() {
+  const saved = String(localStorage.getItem(OFFLINE_MAP_MANIFEST_URL_STORAGE_KEY) || '').trim();
+  return saved || inferGitHubReleaseManifestUrlFromLocation();
+}
+
+function setConfiguredOfflineMapManifestUrl(url) {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) {
+    localStorage.removeItem(OFFLINE_MAP_MANIFEST_URL_STORAGE_KEY);
+    offlineMapManifest.url = inferGitHubReleaseManifestUrlFromLocation();
+    return offlineMapManifest.url;
+  }
+  try {
+    // Accept relative same-origin URLs and absolute HTTP(S) URLs only.
+    const parsed = new URL(trimmed, window.location.href);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported protocol');
+  } catch (err) {
+    throw new Error('Укажи ссылку на offline-map-packages.json или относительный путь вроде ./offline-map-packages.json');
+  }
+  localStorage.setItem(OFFLINE_MAP_MANIFEST_URL_STORAGE_KEY, trimmed);
+  offlineMapManifest.url = trimmed;
+  return trimmed;
+}
+
+function renderOfflineManifestUrlUi() {
+  const input = $('offlineManifestUrlInput');
+  if (input) input.value = offlineMapManifest.url || getConfiguredOfflineMapManifestUrl();
+}
+
+function parseGitHubReleaseDownloadUrl(url) {
+  try {
+    const parsed = new URL(url, window.location.href);
+    const match = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/([^/]+)$/);
+    if (!match || parsed.hostname !== 'github.com') return null;
+    return { owner: match[1], repo: match[2], tag: decodeURIComponent(match[3]), assetName: decodeURIComponent(match[4]) };
+  } catch {
+    return null;
+  }
+}
+
+function getOfflineRegionDisplayName(regionId) {
+  return OFFLINE_REGION_NAMES_RU[regionId] || regionId.split('-').map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(' ');
+}
+
+async function loadGitHubReleaseManifestFallback(manifestUrl) {
+  const info = parseGitHubReleaseDownloadUrl(manifestUrl);
+  if (!info) return null;
+  const apiUrl = `https://api.github.com/repos/${info.owner}/${info.repo}/releases/tags/${encodeURIComponent(info.tag)}`;
+  const res = await fetch(apiUrl, { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
+  if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
+  const release = await res.json();
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  const pmtilesAssets = assets.filter((asset) => String(asset.name || '').endsWith('.pmtiles'));
+  if (!pmtilesAssets.length) throw new Error('GitHub Release найден, но .pmtiles assets не найдены');
+  return {
+    schemaVersion: 1,
+    releaseTag: info.tag,
+    generatedFrom: 'github-release-assets-api',
+    packages: pmtilesAssets.map((asset) => {
+      const fileName = String(asset.name || '').trim();
+      const id = fileName.replace(/\.pmtiles$/i, '');
+      const url = asset.browser_download_url || `https://github.com/${info.owner}/${info.repo}/releases/download/${info.tag}/${fileName}`;
+      return {
+        id,
+        name: getOfflineRegionDisplayName(id),
+        fileName,
+        url,
+        sourceType: 'github-release-asset',
+        version: info.tag,
+        sizeBytes: headerNumber(asset.size),
+        enabled: true,
+        role: 'regional-map',
+        schema: 'openmaptiles-planetiler',
+        description: `Офлайн-карта: ${getOfflineRegionDisplayName(id)}.`
+      };
+    })
+  };
+}
+
+async function fetchOfflineMapManifestJson(manifestUrl) {
+  try {
+    const res = await fetch(manifestUrl, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    const fallback = await loadGitHubReleaseManifestFallback(manifestUrl);
+    if (fallback) {
+      recordMapDebug('offline map manifest synthesized from GitHub Release assets', { manifestUrl, error: err?.message || String(err) });
+      return fallback;
+    }
+    throw err;
+  }
+}
+
 function getOfflineMapManifestSnapshot() {
   const selected = getSelectedOfflineMapPackage(false);
   return {
@@ -1904,6 +2030,7 @@ function getOfflineMapManifestSnapshot() {
       id: pkg.id,
       name: pkg.name,
       url: pkg.url,
+      fileName: pkg.fileName,
       sourceType: pkg.sourceType,
       version: pkg.version,
       sizeBytes: pkg.sizeBytes,
@@ -2010,6 +2137,19 @@ function findRememberedPmtilesMapForFile(file) {
   return findRememberedPmtilesMapByFingerprint(fingerprint)
     || (rememberedPmtilesMapsState.maps || []).find((item) => rememberedPmtilesMapMatchesFile(item, file))
     || null;
+}
+
+function findRememberedPmtilesMapForPackage(pkg) {
+  if (!pkg) return null;
+  const fileName = String(pkg.fileName || pkg.url?.split('/').pop() || '').trim().toLowerCase();
+  const sizeBytes = Number(pkg.sizeBytes || 0);
+  if (!fileName || sizeBytes <= 0) return null;
+  return (rememberedPmtilesMapsState.maps || []).find((item) => String(item.fileName || '').trim().toLowerCase() === fileName && Number(item.sizeBytes || 0) === sizeBytes) || null;
+}
+
+function getRemoteOfflineMapPackages() {
+  if (offlineMapManifest.status !== 'loaded') return [];
+  return (offlineMapManifest.packages || []).filter((pkg) => pkg && pkg.enabled && !isLocalPmtilesPackage(pkg) && pkg.id !== defaultOfflineMapPackage().id);
 }
 
 function getSelectedRememberedPmtilesMap() {
@@ -2561,6 +2701,153 @@ function formatBytes(bytes) {
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
+function renderOfflineRegionCatalogUi() {
+  renderOfflineManifestUrlUi();
+  const status = $('offlineRegionCatalogStatus');
+  const pill = $('offlineRegionCatalogPill');
+  const list = $('offlineRegionCatalogList');
+  const remotePackages = getRemoteOfflineMapPackages();
+
+  if (pill) {
+    if (offlineMapManifest.status === 'loaded') {
+      pill.textContent = remotePackages.length ? `${remotePackages.length} регионов` : 'пусто';
+      pill.className = `pill ${remotePackages.length ? 'on' : 'warn'}`.trim();
+    } else if (offlineMapManifest.status === 'loading') {
+      pill.textContent = 'загрузка';
+      pill.className = 'pill warn';
+    } else if (offlineMapManifest.status === 'error') {
+      pill.textContent = 'ошибка';
+      pill.className = 'pill warn';
+    } else {
+      pill.textContent = 'не загружен';
+      pill.className = 'pill warn';
+    }
+  }
+
+  if (status) {
+    if (offlineMapManifest.status === 'loaded') {
+      status.textContent = remotePackages.length
+        ? `Каталог регионов: загружено ${remotePackages.length}. Скачивание сейчас ручное: открой файл региона, затем импортируй его кнопкой “Выбрать файл карты”.`
+        : 'Каталог регионов: загружен, но региональных .pmtiles в manifest нет.';
+    } else if (offlineMapManifest.status === 'loading') {
+      status.textContent = 'Каталог регионов: загружается…';
+    } else if (offlineMapManifest.status === 'error') {
+      status.textContent = `Каталог регионов: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Проверь URL manifest или доступность GitHub Release.`;
+    } else {
+      status.textContent = 'Каталог регионов: не загружен. Вставь URL offline-map-packages.json из GitHub Release и нажми “Обновить каталог”.';
+    }
+  }
+
+  if (!list) return;
+  list.innerHTML = '';
+  if (!remotePackages.length) {
+    const empty = document.createElement('p');
+    empty.className = 'hint offline-region-empty';
+    empty.textContent = offlineMapManifest.status === 'loaded'
+      ? 'В manifest нет доступных региональных карт.'
+      : 'После загрузки manifest здесь появятся регионы для ручного скачивания.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const pkg of remotePackages) {
+    const installed = findRememberedPmtilesMapForPackage(pkg);
+    const card = document.createElement('article');
+    card.className = `offline-region-card${installed ? ' installed' : ''}`;
+    card.setAttribute('role', 'listitem');
+    card.dataset.packageId = pkg.id;
+
+    const top = document.createElement('div');
+    top.className = 'offline-region-card-top';
+    const titleWrap = document.createElement('div');
+    const title = document.createElement('h4');
+    title.textContent = pkg.name || pkg.id;
+    const meta = document.createElement('p');
+    meta.className = 'hint';
+    meta.textContent = `${pkg.fileName || pkg.url.split('/').pop() || 'pmtiles'} · ${formatBytes(pkg.sizeBytes)}${pkg.version ? ` · ${pkg.version}` : ''}`;
+    titleWrap.append(title, meta);
+    const state = document.createElement('span');
+    state.className = `pill ${installed ? 'on' : 'warn'}`.trim();
+    state.textContent = installed ? 'установлена' : 'не скачана';
+    top.append(titleWrap, state);
+
+    const desc = document.createElement('p');
+    desc.className = 'hint';
+    desc.textContent = pkg.description || 'Региональная офлайн-карта из GitHub Release.';
+
+    const actions = document.createElement('div');
+    actions.className = 'row offline-region-actions';
+
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'secondary btn-secondary small-btn';
+    selectBtn.textContent = 'Выбрать для проверки';
+    selectBtn.addEventListener('click', () => selectOfflineMapPackage(pkg.id, true));
+    actions.appendChild(selectBtn);
+
+    if (pkg.url) {
+      const download = document.createElement('a');
+      download.className = 'secondary btn-secondary small-btn offline-region-download-link';
+      download.href = pkg.url;
+      download.target = '_blank';
+      download.rel = 'noopener noreferrer';
+      download.textContent = installed ? 'Открыть файл' : 'Скачать вручную';
+      actions.appendChild(download);
+    }
+
+    if (installed) {
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'btn-primary small-btn';
+      openBtn.textContent = 'Открыть установленную';
+      openBtn.addEventListener('click', () => selectRememberedPmtilesMap(installed.id, true).catch(console.warn));
+      actions.appendChild(openBtn);
+    }
+
+    card.append(top, desc, actions);
+    list.appendChild(card);
+  }
+}
+
+function saveOfflineManifestUrlFromInput() {
+  try {
+    const value = $('offlineManifestUrlInput')?.value || '';
+    const savedUrl = setConfiguredOfflineMapManifestUrl(value);
+    const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
+    const sample = defaultOfflineMapPackage();
+    offlineMapManifest = {
+      ...offlineMapManifest,
+      url: savedUrl,
+      status: 'not-loaded',
+      packages: localPackage && localPmtilesFileState.status === 'selected' ? [localPackage, sample] : [sample],
+      selectedPackageId: localPackage && localPmtilesFileState.status === 'selected' ? localPackage.id : sample.id,
+      error: null,
+      loadedAt: null
+    };
+    renderOfflineMapPackageUi();
+    setButtonApiStatus(activeButtonDiagnostics, 'готово', 'URL каталога сохранён');
+    return savedUrl;
+  } catch (err) {
+    setButtonApiStatus(activeButtonDiagnostics, 'ошибка', err?.message || String(err));
+    const status = $('offlineRegionCatalogStatus');
+    if (status) status.textContent = `Каталог регионов: ошибка URL — ${err?.message || String(err)}`;
+    return null;
+  }
+}
+
+async function refreshOfflineRegionCatalogFromUi() {
+  const value = $('offlineManifestUrlInput')?.value || '';
+  try {
+    setConfiguredOfflineMapManifestUrl(value);
+  } catch (err) {
+    setButtonApiStatus(activeButtonDiagnostics, 'ошибка', err?.message || String(err));
+    const status = $('offlineRegionCatalogStatus');
+    if (status) status.textContent = `Каталог регионов: ошибка URL — ${err?.message || String(err)}`;
+    return null;
+  }
+  return loadOfflineMapManifest(true);
+}
+
 function renderOfflineMapPackageUi() {
   const select = $('offlinePackageSelect');
   const status = $('offlinePackageManifestStatus');
@@ -2591,6 +2878,7 @@ function renderOfflineMapPackageUi() {
     }
   }
   renderLocalPmtilesFileUi();
+  renderOfflineRegionCatalogUi();
   renderRememberedPmtilesMapsUi();
   renderPmtilesProbeDetails();
   updateMapDebugUi(false);
@@ -2740,21 +3028,20 @@ async function loadOfflineMapManifest(userAction = false) {
     error: null
   };
   renderOfflineMapPackageUi();
-  if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
-    setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'загрузка offline-map-packages.json');
+  if (userAction && ['loadOfflineManifestBtn', 'refreshOfflineRegionCatalogBtn'].includes(activeButtonDiagnostics?.buttonId)) {
+    setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'загрузка каталога регионов');
   }
 
   try {
-    const res = await fetch(OFFLINE_MAP_MANIFEST_URL, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
+    const manifestUrl = offlineMapManifest.url || getConfiguredOfflineMapManifestUrl();
+    const json = await fetchOfflineMapManifestJson(manifestUrl);
     const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
     const packages = ensureSamplePackage(Array.isArray(json.packages) ? json.packages : []);
     if (localPackage && localPmtilesFileState.status === 'selected') packages.unshift(localPackage);
     const savedSelectedId = localPackage ? localPackage.id : localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
     const selectedPackage = packages.find((pkg) => pkg.id === savedSelectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled) || defaultOfflineMapPackage();
     offlineMapManifest = {
-      url: OFFLINE_MAP_MANIFEST_URL,
+      url: manifestUrl,
       status: 'loaded',
       schemaVersion: json.schemaVersion || null,
       packages,
@@ -2768,7 +3055,7 @@ async function loadOfflineMapManifest(userAction = false) {
     pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
     renderOfflineMapPackageUi();
     recordMapDebug('offline map manifest loaded', getOfflineMapManifestSnapshot());
-    if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
+    if (userAction && ['loadOfflineManifestBtn', 'refreshOfflineRegionCatalogBtn'].includes(activeButtonDiagnostics?.buttonId)) {
       setButtonApiStatus(activeButtonDiagnostics, 'готово', `найдено пакетов: ${packages.length}`);
     }
     return offlineMapManifest;
@@ -2778,7 +3065,7 @@ async function loadOfflineMapManifest(userAction = false) {
     const packages = localPackage && localPmtilesFileState.status === 'selected' ? [localPackage, sample] : [sample];
     const selectedPackage = localPackage && localPmtilesFileState.status === 'selected' ? localPackage : sample;
     offlineMapManifest = {
-      url: OFFLINE_MAP_MANIFEST_URL,
+      url: offlineMapManifest.url || getConfiguredOfflineMapManifestUrl(),
       status: 'error',
       packages,
       selectedPackageId: selectedPackage.id,
@@ -2789,7 +3076,7 @@ async function loadOfflineMapManifest(userAction = false) {
     pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
     renderOfflineMapPackageUi();
     recordMapDebug('offline map manifest load failed; sample fallback active', offlineMapManifest.error);
-    if (userAction && activeButtonDiagnostics?.buttonId === 'loadOfflineManifestBtn') {
+    if (userAction && ['loadOfflineManifestBtn', 'refreshOfflineRegionCatalogBtn'].includes(activeButtonDiagnostics?.buttonId)) {
       setButtonApiStatus(activeButtonDiagnostics, 'ошибка', offlineMapManifest.error);
     }
     return offlineMapManifest;
@@ -9392,6 +9679,9 @@ function bindUi() {
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
   if ($('clearOfflineMapFilesBtn')) $('clearOfflineMapFilesBtn').onclick = withButtonDiagnostics('clearOfflineMapFilesBtn', clearImportedOfflineMapFiles);
   if ($('loadOfflineManifestBtn')) $('loadOfflineManifestBtn').onclick = withButtonDiagnostics('loadOfflineManifestBtn', () => loadOfflineMapManifest(true));
+  if ($('saveOfflineManifestUrlBtn')) $('saveOfflineManifestUrlBtn').onclick = withButtonDiagnostics('saveOfflineManifestUrlBtn', saveOfflineManifestUrlFromInput);
+  if ($('refreshOfflineRegionCatalogBtn')) $('refreshOfflineRegionCatalogBtn').onclick = withButtonDiagnostics('refreshOfflineRegionCatalogBtn', refreshOfflineRegionCatalogFromUi);
+  if ($('offlineManifestUrlInput')) $('offlineManifestUrlInput').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); refreshOfflineRegionCatalogFromUi(); } };
   const openLocalPmtilesPicker = (mode = 'add') => {
     pendingLocalPmtilesImportMode = mode;
     setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
@@ -9463,7 +9753,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.35`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.36`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -9472,6 +9762,8 @@ async function init() {
   ensureUserId();
   initMap();
   bindUi();
+  offlineMapManifest.url = getConfiguredOfflineMapManifestUrl();
+  renderOfflineMapPackageUi();
   restoreMapAdvancedControlsPreference();
   restoreAppScreen();
   loadRememberedPmtilesMaps();

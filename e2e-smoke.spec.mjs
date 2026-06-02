@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.35 · Sprint 5\.35/;
+const EXPECTED_APP_VERSION = /v0\.7\.36 · Sprint 5\.36/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -140,6 +140,46 @@ async function bootApp(page, options = {}) {
         status: 200,
         contentType: 'application/javascript',
         body: `window.MUSHROOM_CONFIG = { SUPABASE_URL: 'https://fake.supabase.test', SUPABASE_ANON_KEY: 'fake-anon-key' };`
+      });
+      return;
+    }
+
+    if (options.fakeOfflineManifest && url.pathname.endsWith('/offline-map-packages.json')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schemaVersion: 1,
+          releaseTag: 'maps-2026-06-02',
+          packages: [
+            {
+              id: 'central-fed-district',
+              name: 'Центральный федеральный округ',
+              fileName: 'central-fed-district.pmtiles',
+              url: 'https://github.com/test-owner/mushroom-spots/releases/download/maps-2026-06-02/central-fed-district.pmtiles',
+              sourceType: 'github-release-asset',
+              version: 'maps-2026-06-02',
+              sizeBytes: 1155000283,
+              enabled: true,
+              role: 'regional-map',
+              schema: 'openmaptiles-planetiler',
+              description: 'Офлайн-карта: Центральный федеральный округ.'
+            },
+            {
+              id: 'kaliningrad',
+              name: 'Калининградская область',
+              fileName: 'kaliningrad.pmtiles',
+              url: 'https://github.com/test-owner/mushroom-spots/releases/download/maps-2026-06-02/kaliningrad.pmtiles',
+              sourceType: 'github-release-asset',
+              version: 'maps-2026-06-02',
+              sizeBytes: 37574071,
+              enabled: true,
+              role: 'regional-map',
+              schema: 'openmaptiles-planetiler',
+              description: 'Офлайн-карта: Калининградская область.'
+            }
+          ]
+        })
       });
       return;
     }
@@ -451,6 +491,29 @@ test('offline maps screen presents empty manager before a map is added', async (
   await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
   await expect(page.locator('.offline-diagnostics-panel > summary').getByText('Диагностика карты', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить выбранный файл карты' })).toBeHidden();
+});
+
+
+test('offline region catalog loads release manifest without installing maps', async ({ page }) => {
+  await bootApp(page, { fakeOfflineManifest: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Каталог регионов' })).toBeVisible();
+  await expect(page.locator('#offlineManifestUrlInput')).toHaveValue(/offline-map-packages\.json/);
+  await page.locator('#refreshOfflineRegionCatalogBtn').click();
+
+  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 регионов');
+  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText('загружено 2');
+  await expect(page.locator('#offlineRegionCatalogList')).toContainText('Центральный федеральный округ');
+  await expect(page.locator('#offlineRegionCatalogList')).toContainText('Калининградская область');
+  await expect(page.locator('#offlineRegionCatalogList')).toContainText('1.1 GB');
+  await expect(page.locator('#offlineRegionCatalogList')).toContainText('не скачана');
+  await expect(page.locator('#offlineRegionCatalogList').getByRole('link', { name: 'Скачать вручную' }).first()).toHaveAttribute('href', /central-fed-district\.pmtiles$/);
+
+  await page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' }).getByRole('button', { name: 'Выбрать для проверки' }).click();
+  await expect(page.locator('#offlinePackageManifestStatus')).toContainText('Центральный федеральный округ');
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
 });
 
 
@@ -1237,7 +1300,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.35');
+  expect(backup.appVersion).toBe('0.7.36');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1366,7 +1429,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.35',
+    appVersion: '0.7.36',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
