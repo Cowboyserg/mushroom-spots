@@ -2505,9 +2505,12 @@ select {
 }
 .offline-preview-center-btn {
   position: absolute;
-  right: 10px;
+  left: 10px;
+  right: auto;
   top: 10px;
   z-index: 3;
+  max-width: calc(100% - 78px);
+  white-space: nowrap;
   box-shadow: 0 8px 22px rgba(0,0,0,.14);
 }
 .offline-preview-point-actions {
@@ -2544,7 +2547,8 @@ select {
     flex-direction: column;
   }
   .offline-preview-center-btn {
-    right: 8px;
+    left: 8px;
+    right: auto;
     top: 8px;
   }
 }

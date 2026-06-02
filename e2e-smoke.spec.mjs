@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.36-hotfix\.2 · Sprint 5\.36\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.36-hotfix\.3 · Sprint 5\.36\.3/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -544,6 +544,13 @@ test('offline region catalog opens the installed local map instead of remote pac
   await expect(page.locator('#offlinePackageManifestStatus')).toContainText('Локальная карта: Калининград');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  const centerButtonStyle = await page.locator('#centerPmtilesOnMeBtn').evaluate((el) => {
+    const style = window.getComputedStyle(el);
+    return { left: style.left, right: style.right, top: style.top, position: style.position };
+  });
+  expect(centerButtonStyle.position).toBe('absolute');
+  expect(centerButtonStyle.left).not.toBe('auto');
+  expect(centerButtonStyle.right).toBe('auto');
 });
 
 
@@ -1330,7 +1337,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.36-hotfix.2');
+  expect(backup.appVersion).toBe('0.7.36-hotfix.3');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1459,7 +1466,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.36-hotfix.2',
+    appVersion: '0.7.36-hotfix.3',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
