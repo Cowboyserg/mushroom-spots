@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.33-hotfix.3';
+const APP_VERSION = '0.7.34-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -167,6 +167,11 @@ let localPmtilesFileState = {
   error: null
 };
 let pendingLocalPmtilesImportMode = 'add';
+let pendingDuplicatePmtilesImport = null;
+let pendingOfflineImportNameMapId = null;
+let appToastTimer = null;
+const OFFLINE_IMPORT_TOAST_STEP_MS = 650;
+const OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS = 900;
 let rememberedPmtilesMapsState = {
   status: 'not-loaded',
   maps: [],
@@ -788,6 +793,94 @@ function setHidden(id, hidden) {
 function setText(id, text) {
   const el = $(id);
   if (el) el.textContent = text;
+}
+
+function waitForMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function showAppToast(message, mode = 'info') {
+  const toast = $('appToast');
+  if (!toast) return;
+  toast.textContent = String(message || '');
+  toast.className = `app-toast ${mode || 'info'}`.trim();
+  toast.hidden = false;
+  if (appToastTimer) clearTimeout(appToastTimer);
+  appToastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 3200);
+}
+
+function closeDialogSafely(id) {
+  const dialog = $(id);
+  if (dialog && typeof dialog.close === 'function' && dialog.open) dialog.close();
+}
+
+function showDialogSafely(id) {
+  const dialog = $(id);
+  if (!dialog) return;
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.hidden = false;
+  }
+}
+
+function closeOfflineImportDialogs() {
+  closeDialogSafely('offlineImportNameDialog');
+  closeDialogSafely('offlineDuplicateMapDialog');
+  closeDialogSafely('offlineImportErrorDialog');
+}
+
+function offlineImportErrorMessage(errOrCode, fallback = 'Файл не удалось импортировать') {
+  const message = typeof errOrCode === 'string' ? errOrCode : (errOrCode?.message || fallback);
+  if (/QuotaExceededError|quota|storage quota|недостаточно места/i.test(message)) return 'Недостаточно места для сохранения карты.';
+  if (/расширением \.pmtiles|не \.pmtiles/i.test(message)) return 'Это не .pmtiles файл.';
+  if (/пустой/i.test(message)) return 'Файл пустой.';
+  if (/слишком маленький/i.test(message)) return 'Файл слишком маленький для карты.';
+  if (/не читается|read/i.test(message)) return 'Файл не удалось прочитать.';
+  if (/не найден/i.test(message)) return 'Сохранённый файл карты не найден.';
+  return message || fallback;
+}
+
+function showOfflineImportError(message, detail = '') {
+  showAppToast('Файл не удалось импортировать', 'error');
+  const text = $('offlineImportErrorText');
+  if (text) text.textContent = detail ? `${message} ${detail}` : message;
+  showDialogSafely('offlineImportErrorDialog');
+}
+
+function showOfflineImportNameDialog(record) {
+  if (!record) return;
+  pendingOfflineImportNameMapId = record.id;
+  const input = $('offlineImportNameInput');
+  const meta = $('offlineImportNameMeta');
+  if (input) {
+    input.value = record.title || String(record.fileName || '').replace(/\.pmtiles$/i, '') || 'Офлайн-карта';
+    setTimeout(() => {
+      try { input.focus(); input.select(); } catch (_) {}
+    }, 0);
+  }
+  if (meta) meta.textContent = `${record.fileName || 'map.pmtiles'} · ${formatBytes(record.sizeBytes)}.`;
+  showDialogSafely('offlineImportNameDialog');
+}
+
+async function showOfflineDuplicateMapDialog(file, existing) {
+  pendingDuplicatePmtilesImport = { file, existingId: existing?.id || null };
+  const text = $('offlineDuplicateMapText');
+  if (text) text.textContent = `Файл ${file?.name || 'map.pmtiles'} уже есть в “Мои карты” как “${existing?.title || 'карта'}”.`;
+  showAppToast('Карта уже добавлена', 'info');
+  await waitForMs(OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS);
+  showDialogSafely('offlineDuplicateMapDialog');
+}
+
+function validatePmtilesImportFile(file) {
+  if (!file) throw new Error('Файл не выбран.');
+  if (!/\.pmtiles$/i.test(file.name || '')) throw new Error('Это не .pmtiles файл.');
+  const size = Number(file.size || 0);
+  if (size <= 0) throw new Error('Файл пустой.');
+  if (size < 16) throw new Error('Файл слишком маленький для карты.');
+  if (typeof file.arrayBuffer !== 'function') throw new Error('Файл не удалось прочитать.');
 }
 
 function setPillState(id, state) {
@@ -1513,6 +1606,12 @@ async function persistPmtilesFile(file, preferredStorageName) {
   }
 }
 
+async function verifyPersistedPmtilesFile(persisted) {
+  const file = await readPersistedPmtilesFile(persisted);
+  if (!file || Number(file.size || 0) <= 0) throw new Error('Файл сохранён, но не читается.');
+  return file;
+}
+
 async function readPersistedPmtilesFile(recordOrPackage = {}) {
   const storageType = recordOrPackage.storageType || localPmtilesFileState.storageType;
   const storageName = recordOrPackage.storageName || localPmtilesFileState.storageName;
@@ -1954,11 +2053,15 @@ async function upsertRememberedPmtilesMapForFile(file, options = {}) {
   const fingerprint = makePmtilesFileFingerprint(file);
   const now = new Date().toISOString();
   const selected = getSelectedRememberedPmtilesMap();
-  const existing = options.replaceSelected && selected ? selected : findRememberedPmtilesMapByFingerprint(fingerprint);
+  const replaceTarget = options.replaceRecordId
+    ? (rememberedPmtilesMapsState.maps || []).find((item) => item.id === options.replaceRecordId)
+    : null;
+  const existing = replaceTarget || (options.replaceSelected && selected ? selected : findRememberedPmtilesMapByFingerprint(fingerprint));
   const fallbackTitle = String(file.name || 'local.pmtiles').replace(/\.pmtiles$/i, '') || 'Локальная карта';
   const recordId = existing?.id || `remembered-pmtiles-${Date.now()}`;
   const storageName = existing?.storageName || `${recordId}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
   const persisted = await persistPmtilesFile(file, storageName);
+  await verifyPersistedPmtilesFile(persisted);
   const sourceType = persisted.storageType === 'opfs' ? 'local-file-opfs' : 'local-file-idb';
   const mapRecord = {
     ...(existing || {}),
@@ -2295,32 +2398,79 @@ async function selectRememberedPmtilesMap(recordId, userAction = false) {
   return found;
 }
 
-function renameSelectedRememberedPmtilesMap() {
-  const selected = getSelectedRememberedPmtilesMap();
-  const input = $('rememberedPmtilesMapNameInput');
-  const nextTitle = String(input?.value || '').trim();
+function renameRememberedPmtilesMapById(recordId, nextTitle, statusTarget = activeButtonDiagnostics) {
+  const selected = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
+  const title = String(nextTitle || '').trim();
   if (!selected) {
     markButtonBlocked('нет выбранной запомненной карты');
-    return;
+    return null;
   }
-  if (!nextTitle) {
+  if (!title) {
     markButtonBlocked('введи название карты');
-    return;
+    return null;
   }
-  rememberedPmtilesMapsState.maps = rememberedPmtilesMapsState.maps.map((item) => item.id === selected.id ? { ...item, title: nextTitle } : item);
-  const updated = getSelectedRememberedPmtilesMap();
+  rememberedPmtilesMapsState.maps = rememberedPmtilesMapsState.maps.map((item) => item.id === selected.id ? { ...item, title } : item);
+  const updated = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === selected.id);
   if (localPmtilesFileState.rememberedId === selected.id) {
-    localPmtilesFileState = { ...localPmtilesFileState, customName: nextTitle };
+    localPmtilesFileState = { ...localPmtilesFileState, customName: title };
     offlineMapManifest.packages = (offlineMapManifest.packages || []).map((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId
-      ? { ...pkg, name: `Локальная карта: ${nextTitle}`, description: `Импортированный файл офлайн-карты “${localPmtilesFileState.name}”. Хранится внутри приложения.` }
+      ? { ...pkg, name: `Локальная карта: ${title}`, description: `Импортированный файл офлайн-карты “${localPmtilesFileState.name}”. Хранится внутри приложения.` }
       : pkg);
-    pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, packageName: `Локальная карта: ${nextTitle}` };
+    pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, packageName: `Локальная карта: ${title}` };
   }
   saveRememberedPmtilesMaps('remembered PMTiles map renamed');
   renderOfflineMapPackageUi();
   renderRememberedPmtilesMapsUi();
   updateMapDebugUi(true);
-  setButtonApiStatus(activeButtonDiagnostics, 'готово', `название: ${updated?.title || nextTitle}`);
+  setButtonApiStatus(statusTarget, 'готово', `название: ${updated?.title || title}`);
+  return updated;
+}
+
+function renameSelectedRememberedPmtilesMap() {
+  const selected = getSelectedRememberedPmtilesMap();
+  const input = $('rememberedPmtilesMapNameInput');
+  return renameRememberedPmtilesMapById(selected?.id, input?.value || '', activeButtonDiagnostics);
+}
+
+function saveOfflineImportNameFromDialog() {
+  const recordId = pendingOfflineImportNameMapId || rememberedPmtilesMapsState.selectedId;
+  const input = $('offlineImportNameInput');
+  const updated = renameRememberedPmtilesMapById(recordId, input?.value || '', { buttonId: 'offlineImportNameSaveBtn', label: 'Сохранить название карты' });
+  if (updated) {
+    closeDialogSafely('offlineImportNameDialog');
+    pendingOfflineImportNameMapId = null;
+    showAppToast('Название сохранено', 'success');
+  }
+}
+
+function keepOfflineImportNameFromDialog() {
+  closeDialogSafely('offlineImportNameDialog');
+  pendingOfflineImportNameMapId = null;
+}
+
+async function openExistingDuplicateOfflineMap() {
+  const existingId = pendingDuplicatePmtilesImport?.existingId;
+  closeDialogSafely('offlineDuplicateMapDialog');
+  pendingDuplicatePmtilesImport = null;
+  if (!existingId) return;
+  await selectRememberedPmtilesMap(existingId, true);
+  showAppToast('Открыта существующая карта', 'success');
+}
+
+async function replaceDuplicateOfflineMap() {
+  const pending = pendingDuplicatePmtilesImport;
+  closeDialogSafely('offlineDuplicateMapDialog');
+  pendingDuplicatePmtilesImport = null;
+  if (!pending?.file || !pending?.existingId) return;
+  await selectLocalPmtilesFile(pending.file, {
+    replaceRecordId: pending.existingId,
+    skipDuplicateCheck: true
+  });
+}
+
+function cancelDuplicateOfflineMap() {
+  closeDialogSafely('offlineDuplicateMapDialog');
+  pendingDuplicatePmtilesImport = null;
 }
 
 async function forgetRememberedPmtilesMapById(recordId, ask = true) {
@@ -2497,32 +2647,62 @@ function renderLocalPmtilesFileUi() {
 }
 
 async function makeLocalPmtilesPackage(file, options = {}) {
-  const safeName = String(file.name || 'local.pmtiles').trim() || 'local.pmtiles';
   const remembered = await upsertRememberedPmtilesMapForFile(file, options);
   return makePersistedPmtilesPackage(remembered);
 }
 
-async function selectLocalPmtilesFile(file) {
+async function importLocalPmtilesFile(file, options = {}) {
+  validatePmtilesImportFile(file);
+  const replaceSelected = Boolean(options.replaceSelected || pendingLocalPmtilesImportMode === 'replace');
+  const replaceRecordId = options.replaceRecordId || null;
+  showAppToast('Проверяю файл карты', 'info');
+  await waitForMs(OFFLINE_IMPORT_TOAST_STEP_MS);
+
+  const duplicate = !options.skipDuplicateCheck && !replaceSelected && !replaceRecordId
+    ? findRememberedPmtilesMapByFingerprint(makePmtilesFileFingerprint(file))
+    : null;
+  if (duplicate) {
+    await showOfflineDuplicateMapDialog(file, duplicate);
+    return null;
+  }
+
+  showAppToast('Импорт карты начался', 'info');
+  await waitForMs(OFFLINE_IMPORT_TOAST_STEP_MS);
+  setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'пендинг', `${file.name} · импорт`);
+  const pkg = await makeLocalPmtilesPackage(file, { replaceSelected, replaceRecordId });
+  offlineMapManifest.packages = [pkg, ...(offlineMapManifest.packages || []).filter((item) => !isLocalPmtilesPackage(item))];
+  offlineMapManifest.selectedPackageId = pkg.id;
+  if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-persistent';
+  selectOfflineMapPackage(pkg.id, true);
+  const importedRecord = getSelectedRememberedPmtilesMap();
+  setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)} · импортировано`);
+  showAppToast('Карта импортирована', 'success');
+  recordMapDebug('local offline map file imported', getLocalPmtilesFileSnapshot());
+  renderOfflineMapPackageUi();
+  updateMapDebugUi(true);
+  if ($('screen-offline') && !$('screen-offline').hidden) {
+    try {
+      await showPmtilesPreviewMap();
+    } catch (previewErr) {
+      recordMapDebug('offline map preview after import failed', previewErr?.message || String(previewErr));
+      showOfflineImportError('Карта импортирована, но предпросмотр не открылся.', previewErr?.message || '');
+      return pkg;
+    }
+  }
+  await waitForMs(OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS);
+  showOfflineImportNameDialog(importedRecord);
+  return pkg;
+}
+
+async function selectLocalPmtilesFile(file, options = {}) {
   try {
     if (!file) return null;
-    if (!/\.pmtiles$/i.test(file.name || '')) throw new Error('Выбери файл с расширением .pmtiles');
-    const replaceSelected = pendingLocalPmtilesImportMode === 'replace';
-    const pkg = await makeLocalPmtilesPackage(file, { replaceSelected });
-    offlineMapManifest.packages = [pkg, ...(offlineMapManifest.packages || []).filter((item) => !isLocalPmtilesPackage(item))];
-    offlineMapManifest.selectedPackageId = pkg.id;
-    if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-session';
-    selectOfflineMapPackage(pkg.id, true);
-    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)} · импортировано`);
-    recordMapDebug('local offline map file selected', getLocalPmtilesFileSnapshot());
-    renderOfflineMapPackageUi();
-    updateMapDebugUi(true);
-    if ($('screen-offline') && !$('screen-offline').hidden) {
-      await showPmtilesPreviewMap();
-    }
-    return pkg;
+    return await importLocalPmtilesFile(file, options);
   } catch (err) {
-    localPmtilesFileState = { ...localPmtilesFileState, status: 'error', error: err?.message || String(err) };
-    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'ошибка', localPmtilesFileState.error);
+    const message = offlineImportErrorMessage(err);
+    localPmtilesFileState = { ...localPmtilesFileState, status: 'error', error: message };
+    setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'ошибка', message);
+    showOfflineImportError(message);
     renderLocalPmtilesFileUi();
     updateMapDebugUi(true);
     return null;
@@ -9018,6 +9198,12 @@ function bindUi() {
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('rememberedPmtilesMapSelect')) $('rememberedPmtilesMapSelect').onchange = (event) => selectRememberedPmtilesMap(event.target.value, true).catch(console.warn);
   if ($('renameRememberedPmtilesMapBtn')) $('renameRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('renameRememberedPmtilesMapBtn', renameSelectedRememberedPmtilesMap);
+  if ($('offlineImportNameForm')) $('offlineImportNameForm').onsubmit = (event) => { event.preventDefault(); saveOfflineImportNameFromDialog(); };
+  if ($('offlineImportNameSaveBtn')) $('offlineImportNameSaveBtn').onclick = (event) => { event.preventDefault(); saveOfflineImportNameFromDialog(); };
+  if ($('offlineImportNameKeepBtn')) $('offlineImportNameKeepBtn').onclick = keepOfflineImportNameFromDialog;
+  if ($('openDuplicateOfflineMapBtn')) $('openDuplicateOfflineMapBtn').onclick = () => openExistingDuplicateOfflineMap().catch(console.warn);
+  if ($('replaceDuplicateOfflineMapBtn')) $('replaceDuplicateOfflineMapBtn').onclick = () => replaceDuplicateOfflineMap().catch(console.warn);
+  if ($('cancelDuplicateOfflineMapBtn')) $('cancelDuplicateOfflineMapBtn').onclick = cancelDuplicateOfflineMap;
   if ($('forgetRememberedPmtilesMapBtn')) $('forgetRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('forgetRememberedPmtilesMapBtn', forgetSelectedRememberedPmtilesMap);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
@@ -9068,7 +9254,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.33.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.34.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

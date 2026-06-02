@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.33-hotfix.3" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.33-hotfix.3" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.34-hotfix.1" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.34-hotfix.1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.33-hotfix.3" />
+  <link rel="stylesheet" href="styles.css?v=0.7.34-hotfix.1" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.33-hotfix.3 · Sprint 5.33.3</p>
+      <p id="appVersion">v0.7.34-hotfix.1 · Sprint 5.34.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -597,7 +597,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.33-hotfix.3 · Sprint 5.33.3</span>
+          <span class="pill">v0.7.34-hotfix.1 · Sprint 5.34.1</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -613,9 +613,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.33-hotfix.3</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.33.3 — Persistent Offline Map Import</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.33-hotfix.3</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.34-hotfix.1</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.34.1 — Offline Map Import Feedback</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.34-hotfix.1</strong></div>
         </div>
       </section>
 
@@ -784,6 +784,54 @@
     </button>
   </nav>
 
+  <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="offlineImportNameDialog" class="offline-import-dialog">
+    <form method="dialog" id="offlineImportNameForm">
+      <div class="section-title compact-title">
+        <h2>Название карты</h2>
+        <span class="pill on">импортировано</span>
+      </div>
+      <p class="hint" id="offlineImportNameMeta">Файл карты импортирован.</p>
+      <div class="field">
+        <label for="offlineImportNameInput">Название карты</label>
+        <input id="offlineImportNameInput" autocomplete="off" />
+      </div>
+      <menu class="dialog-actions">
+        <button id="offlineImportNameKeepBtn" class="secondary btn-secondary" value="keep" type="button">Оставить</button>
+        <button id="offlineImportNameSaveBtn" class="btn-primary" value="save" type="submit">Сохранить</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="offlineDuplicateMapDialog" class="offline-import-dialog">
+    <form method="dialog">
+      <div class="section-title compact-title">
+        <h2>Карта уже добавлена</h2>
+        <span class="pill warn">дубликат</span>
+      </div>
+      <p class="hint" id="offlineDuplicateMapText">Такой файл уже есть в “Мои карты”.</p>
+      <menu class="dialog-actions stacked-actions">
+        <button id="openDuplicateOfflineMapBtn" class="btn-primary" value="open" type="button">Открыть существующую</button>
+        <button id="replaceDuplicateOfflineMapBtn" class="secondary btn-secondary" value="replace" type="button">Заменить файл</button>
+        <button id="cancelDuplicateOfflineMapBtn" class="secondary btn-secondary" value="cancel" type="button">Отмена</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="offlineImportErrorDialog" class="offline-import-dialog">
+    <form method="dialog">
+      <div class="section-title compact-title">
+        <h2 id="offlineImportErrorTitle">Файл не удалось импортировать</h2>
+        <span class="pill warn">ошибка</span>
+      </div>
+      <p class="hint" id="offlineImportErrorText">Проверь файл карты.</p>
+      <menu class="dialog-actions">
+        <button id="offlineImportErrorCloseBtn" class="btn-primary" value="close" type="submit">Закрыть</button>
+      </menu>
+    </form>
+  </dialog>
+
   <dialog id="helpDialog">
     <h2>Как установить</h2>
     <p><strong>iPhone:</strong> открой ссылку в Safari → Поделиться → На экран «Домой».</p>
@@ -806,10 +854,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.33-hotfix.3"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.34-hotfix.1"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.33-hotfix.3"></script>
-  <script src="app.js?v=0.7.33-hotfix.3"></script>
+  <script src="config.js?v=0.7.34-hotfix.1"></script>
+  <script src="app.js?v=0.7.34-hotfix.1"></script>
 </body>
 </html>

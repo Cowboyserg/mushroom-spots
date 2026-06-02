@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.33-hotfix\.3 · Sprint 5\.33\.3/;
+const EXPECTED_APP_VERSION = /v0\.7\.34-hotfix\.1 · Sprint 5\.34\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -442,24 +442,31 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
     buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
   });
 
+  await expect(page.locator('#appToast')).toContainText('Проверяю файл карты');
+  await expect(page.locator('#appToast')).toContainText('Импорт карты начался');
+  await expect(page.locator('#appToast')).toContainText('Карта импортирована');
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameInput').fill('Карелия');
+  await page.locator('#offlineImportNameSaveBtn').click();
+  await expect(page.locator('#offlineImportNameDialog')).toBeHidden();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
-  await expect(page.locator('#currentOfflineMapStatus')).toContainText('karelia');
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
   await expect(page.locator('#offlineActiveMapPill')).toContainText('Активна');
   await expect(page.locator('#offlineMapListSection')).toBeVisible();
-  await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('karelia');
-
-  await page.locator('#rememberedPmtilesMapNameInput').fill('Карелия');
-  await page.locator('#renameRememberedPmtilesMapBtn').click();
-  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
   await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Карелия');
+
+  await page.locator('#rememberedPmtilesMapNameInput').fill('Карелия север');
+  await page.locator('#renameRememberedPmtilesMapBtn').click();
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия север');
+  await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Карелия север');
 
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
-  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия север');
   await expect(page.locator('#offlineMapEmptyState')).toContainText('повторного выбора файла');
   await expect(page.locator('#offlineMapEmptyState')).not.toContainText('файл нужно выбрать заново');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
@@ -473,6 +480,48 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
 });
 
 
+test('offline map import rejects invalid files without adding a map', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'not-a-map.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('not pmtiles')
+  });
+
+  await expect(page.locator('#offlineImportErrorDialog')).toBeVisible();
+  await expect(page.locator('#offlineImportErrorText')).toContainText('Это не .pmtiles файл');
+  await page.locator('#offlineImportErrorCloseBtn').click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+});
+
+test('offline map import warns before importing a duplicate file', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  const filePayload = {
+    name: 'duplicate.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  };
+  await page.locator('#localPmtilesFileInput').setInputFiles(filePayload);
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameInput').fill('Дубликат');
+  await page.locator('#offlineImportNameSaveBtn').click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+
+  await page.locator('#localPmtilesFileInput').setInputFiles(filePayload);
+  await expect(page.locator('#appToast')).toContainText('Карта уже добавлена');
+  await expect(page.locator('#offlineDuplicateMapDialog')).toBeVisible();
+  await expect(page.locator('#offlineDuplicateMapText')).toContainText('duplicate.pmtiles');
+  await page.locator('#cancelDuplicateOfflineMapBtn').click();
+  await expect(page.locator('#offlineDuplicateMapDialog')).toBeHidden();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+});
+
+
 
 test('settings can emergency clear imported offline map files', async ({ page }) => {
   await bootApp(page, { fakePmtilesRuntime: true });
@@ -483,6 +532,9 @@ test('settings can emergency clear imported offline map files', async ({ page })
     mimeType: 'application/octet-stream',
     buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
   });
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(page.locator('#offlineImportNameDialog')).toBeHidden();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
 
@@ -515,6 +567,9 @@ test('offline map preview supports Ko me, picked point save and shared overlays'
     mimeType: 'application/octet-stream',
     buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
   });
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(page.locator('#offlineImportNameDialog')).toBeHidden();
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
   await expect(page.locator('#pmtilesPreviewStatus')).toContainText('Нажми на карту');
@@ -1114,7 +1169,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.33-hotfix.3');
+  expect(backup.appVersion).toBe('0.7.34-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1243,7 +1298,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.33-hotfix.3',
+    appVersion: '0.7.34-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
