@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.33-hotfix.1';
+const APP_VERSION = '0.7.33-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -1438,12 +1438,18 @@ async function getOfflineMapsOpfsDirectory(create = true) {
   return root.getDirectoryHandle(OPFS_OFFLINE_MAPS_DIR, { create });
 }
 
+async function fileToArrayBuffer(file) {
+  if (!file || typeof file.arrayBuffer !== 'function') throw new Error('Файл офлайн-карты не читается браузером');
+  return file.arrayBuffer();
+}
+
 async function writePmtilesFileToOpfs(file, storageName) {
   const dir = await getOfflineMapsOpfsDirectory(true);
   const handle = await dir.getFileHandle(storageName, { create: true });
   const writable = await handle.createWritable();
   try {
-    await writable.write(file);
+    const bytes = await fileToArrayBuffer(file);
+    await writable.write(bytes);
   } finally {
     await writable.close();
   }
@@ -1469,21 +1475,23 @@ async function deletePmtilesFileFromOpfs(storageName) {
 }
 
 async function putPmtilesFileBlobToIndexedDb(file, storageName) {
+  const bytes = await fileToArrayBuffer(file);
   await putStoreValue(OFFLINE_MAP_FILES_STORE, {
     id: storageName,
     fileName: file.name || 'local.pmtiles',
-    sizeBytes: file.size || null,
+    sizeBytes: file.size || bytes.byteLength || null,
     contentType: file.type || 'application/octet-stream',
     updatedAt: new Date().toISOString(),
-    blob: file
+    bytes
   });
   return { storageType: 'idb-blob', storageName };
 }
 
 async function readPmtilesFileBlobFromIndexedDb(storageName) {
   const record = await getStoreValue(OFFLINE_MAP_FILES_STORE, storageName);
-  if (!record?.blob) throw new Error('Файл офлайн-карты не найден в IndexedDB');
-  return record.blob;
+  if (record?.bytes) return new Blob([record.bytes], { type: record.contentType || 'application/octet-stream' });
+  if (record?.blob) return record.blob;
+  throw new Error('Файл офлайн-карты не найден в IndexedDB');
 }
 
 async function deletePmtilesFileBlobFromIndexedDb(storageName) {
@@ -1630,26 +1638,40 @@ async function clearImportedOfflineMapFiles() {
     : 'Удалить все файлы офлайн-карт из локального хранилища приложения? Грибные точки, маршруты, backup JSON, группы и чат не будут удалены.';
   if (!confirm(message)) return false;
 
+  const statusEl = $('offlineMapFilesClearStatus');
+  const setClearStatus = (text) => {
+    if (!statusEl) return;
+    statusEl.dataset.userUpdated = 'true';
+    statusEl.textContent = text;
+  };
+
   setDisabled('clearOfflineMapFilesBtn', true);
   setButtonApiStatus(activeButtonDiagnostics || 'clearOfflineMapFilesBtn', 'pending', 'удаляю файлы офлайн-карт');
-  const opfsResult = await clearPmtilesFilesFromOpfs();
-  const idbResult = await clearPmtilesFilesFromIndexedDb();
-  resetOfflineMapRuntimeAfterFileClear();
-  renderOfflineMapPackageUi();
-  renderRememberedPmtilesMapsUi();
-  updateSettingsSummary();
-  updateMapDebugUi(true);
-  setDisabled('clearOfflineMapFilesBtn', false);
+  let statusText = 'файлы офлайн-карт удалены';
+  try {
+    const opfsResult = await clearPmtilesFilesFromOpfs();
+    const idbResult = await clearPmtilesFilesFromIndexedDb();
+    resetOfflineMapRuntimeAfterFileClear();
+    const details = [opfsResult.detail, idbResult.detail].filter(Boolean).join('; ');
+    statusText = details || statusText;
+    setClearStatus(`${statusText}. Записи “Мои карты” очищены.`);
 
-  const details = [opfsResult.detail, idbResult.detail].filter(Boolean).join('; ');
-  const statusText = details || 'файлы офлайн-карт удалены';
-  const statusEl = $('offlineMapFilesClearStatus');
-  if (statusEl) {
-    statusEl.dataset.userUpdated = 'true';
-    statusEl.textContent = `${statusText}. Записи “Мои карты” очищены.`;
+    try { renderOfflineMapPackageUi(); } catch (err) { recordMapDebug('offline clear render package UI failed', err?.message || String(err)); }
+    try { renderRememberedPmtilesMapsUi(); } catch (err) { recordMapDebug('offline clear render remembered maps UI failed', err?.message || String(err)); }
+    try { updateSettingsSummary(); } catch (err) { recordMapDebug('offline clear settings summary failed', err?.message || String(err)); }
+    try { updateMapDebugUi(true); } catch (err) { recordMapDebug('offline clear map debug UI failed', err?.message || String(err)); }
+
+    setClearStatus(`${statusText}. Записи “Мои карты” очищены.`);
+    setButtonApiStatus(activeButtonDiagnostics || 'clearOfflineMapFilesBtn', 'готово', statusText);
+    return true;
+  } catch (err) {
+    const errorText = `Не удалось очистить файлы офлайн-карт: ${err?.message || String(err)}`;
+    setClearStatus(errorText);
+    setButtonApiStatus(activeButtonDiagnostics || 'clearOfflineMapFilesBtn', 'ошибка', errorText);
+    throw err;
+  } finally {
+    setDisabled('clearOfflineMapFilesBtn', false);
   }
-  setButtonApiStatus(activeButtonDiagnostics || 'clearOfflineMapFilesBtn', 'готово', statusText);
-  return true;
 }
 
 function createLocalPmtilesSource(file, key) {
@@ -9046,7 +9068,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.33.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.33.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
