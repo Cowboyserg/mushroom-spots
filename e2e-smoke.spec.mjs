@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.31 · Sprint 5\.31/;
+const EXPECTED_APP_VERSION = /v0\.7\.32 · Sprint 5\.32/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -404,21 +404,55 @@ test('app loads and bottom navigation switches screens', async ({ page }) => {
   await expect(page.locator('#screen-map')).toBeVisible();
 });
 
-test('offline maps screen presents map manager structure', async ({ page }) => {
+test('offline maps screen presents empty manager before a map is added', async ({ page }) => {
   await bootApp(page);
 
   await page.getByRole('button', { name: 'Офлайн' }).click();
   await expect(page.locator('#screen-offline')).toBeVisible();
 
   await expect(page.getByRole('heading', { name: 'Мои карты' })).toBeVisible();
-  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Офлайн-карта не выбрана');
-  await expect(page.locator('#offlineMapEmptyState')).toContainText('Можно пользоваться GPS и сохранёнными точками');
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+  await expect(page.locator('#offlineAddMapPanel')).toContainText('Офлайн-карт пока нет');
   await expect(page.getByRole('button', { name: 'Выбрать файл карты' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Предпросмотр офлайн-карты' })).toBeVisible();
-  await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Мои карты пока пусты');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+  await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
+  await expect(page.locator('#offlineMapListSection')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Предпросмотр офлайн-карты' })).toBeHidden();
   await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
   await expect(page.locator('.offline-diagnostics-panel > summary').getByText('Диагностика карты', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить выбранный файл карты' })).toBeHidden();
+});
+
+
+test('offline map manager imports, previews and deletes a local map', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'karelia.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('karelia');
+  await expect(page.locator('#offlineActiveMapPill')).toContainText('Активна');
+  await expect(page.locator('#offlineMapListSection')).toBeVisible();
+  await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('karelia');
+
+  await page.locator('#rememberedPmtilesMapNameInput').fill('Карелия');
+  await page.getByRole('button', { name: 'Переименовать' }).click();
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
+  await expect(page.locator('#rememberedPmtilesMapsList')).toContainText('Карелия');
+
+  page.once('dialog', async (dialog) => { await dialog.accept(); });
+  await page.locator('#forgetRememberedPmtilesMapBtn').click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+  await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
+  await expect(page.locator('#offlineMapListSection')).toBeHidden();
 });
 
 
@@ -431,7 +465,11 @@ test('offline map preview supports Ko me, picked point save and shared overlays'
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
   await page.getByRole('button', { name: 'Офлайн' }).click();
-  await page.locator('#previewPmtilesBtn').click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'forest.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
   await expect(page.locator('#pmtilesPreviewStatus')).toContainText('Нажми на карту');
@@ -1030,7 +1068,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.31');
+  expect(backup.appVersion).toBe('0.7.32');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1159,7 +1197,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.31',
+    appVersion: '0.7.32',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

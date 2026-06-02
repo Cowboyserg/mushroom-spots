@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.31';
+const APP_VERSION = '0.7.32';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 3;
 const SPOTS_STORE = 'spots';
@@ -272,6 +272,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   chooseLocalPmtilesBtn: 'Выбрать файл карты',
   probePmtilesBtn: 'Проверить выбранный файл карты',
   previewPmtilesBtn: 'Предпросмотр офлайн-карты',
+  replaceLocalPmtilesBtn: 'Заменить файл карты',
   centerPmtilesOnMeBtn: 'Показать меня на офлайн-карте',
   renameRememberedPmtilesMapBtn: 'Сохранить название карты',
   forgetRememberedPmtilesMapBtn: 'Забыть карту',
@@ -1324,7 +1325,8 @@ function updatePmtilesPreviewUi() {
   const statusEl = $('pmtilesPreviewStatus');
   if (!panel || !statusEl) return;
 
-  panel.hidden = !pmtilesPreviewState.visible;
+  const hasOfflineMaps = (rememberedPmtilesMapsState.maps || []).length > 0;
+  panel.hidden = !hasOfflineMaps || !pmtilesPreviewState.visible;
 
   if (pmtilesPreviewState.status === 'loaded') {
     const styleText = pmtilesPreviewState.styleName ? ` · style: ${pmtilesPreviewState.styleName}` : '';
@@ -1597,6 +1599,60 @@ function getSelectedRememberedPmtilesMap() {
   return (rememberedPmtilesMapsState.maps || []).find((item) => item.id === id) || null;
 }
 
+function offlineMapCountLabel(count) {
+  const value = Number(count) || 0;
+  if (value <= 0) return 'Офлайн-карт нет';
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${value} офлайн-карта`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${value} офлайн-карты`;
+  return `${value} офлайн-карт`;
+}
+
+function getRememberedPmtilesMapUiStatus(item) {
+  if (!item) return { label: 'Нет карты', mode: 'warn' };
+  const isSelected = item.id === rememberedPmtilesMapsState.selectedId;
+  const hasSessionFile = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === item.fingerprint;
+  if (isSelected && hasSessionFile) return { label: 'Активна', mode: 'on' };
+  if (hasSessionFile) return { label: 'Файл выбран', mode: 'on' };
+  if (isSelected) return { label: 'Нужен файл', mode: 'warn' };
+  return { label: 'Готова', mode: '' };
+}
+
+function renderOfflineMapsManagerShell() {
+  const maps = rememberedPmtilesMapsState.maps || [];
+  const selected = getSelectedRememberedPmtilesMap();
+  const count = maps.length;
+  const hasMaps = count > 0;
+  const countPill = $('offlineMapsCountPill');
+  const details = $('offlineActiveMapDetails');
+  const listSection = $('offlineMapListSection');
+  const addPanel = $('offlineAddMapPanel');
+  const addTitle = $('offlineAddMapTitle');
+  const addHint = $('offlineAddMapHint');
+  const activePill = $('offlineActiveMapPill');
+
+  if (countPill) {
+    countPill.textContent = offlineMapCountLabel(count);
+    countPill.className = `pill ${hasMaps ? 'on' : 'warn'}`.trim();
+  }
+  if (details) details.hidden = !hasMaps;
+  if (listSection) listSection.hidden = !hasMaps;
+  if (addPanel) addPanel.classList.toggle('empty-mode', !hasMaps);
+  if (addTitle) addTitle.textContent = hasMaps ? 'Добавить карту' : 'Офлайн-карт пока нет';
+  if (addHint) {
+    addHint.textContent = hasMaps
+      ? 'Можно добавить ещё один .pmtiles-файл. Новая карта появится в списке и станет активной.'
+      : 'Добавь файл .pmtiles, чтобы использовать карту без интернета. После добавления здесь появится предпросмотр карты.';
+  }
+  if (activePill) {
+    const state = getRememberedPmtilesMapUiStatus(selected);
+    activePill.textContent = state.label;
+    activePill.className = `pill ${state.mode}`.trim();
+  }
+  updatePmtilesPreviewUi();
+}
+
 function upsertRememberedPmtilesMapForFile(file) {
   const fingerprint = makePmtilesFileFingerprint(file);
   const now = new Date().toISOString();
@@ -1695,6 +1751,7 @@ function renderCurrentOfflineMapSummary() {
     empty.classList.toggle('warn-state', state.mode !== 'ready');
     empty.classList.toggle('ok-state', state.mode === 'ready');
   }
+  renderOfflineMapsManagerShell();
 }
 
 function renderRememberedPmtilesMapsList() {
@@ -1702,19 +1759,7 @@ function renderRememberedPmtilesMapsList() {
   if (!list) return;
   list.innerHTML = '';
   const maps = rememberedPmtilesMapsState.maps || [];
-  if (!maps.length) {
-    const emptyCard = document.createElement('div');
-    emptyCard.className = 'empty-state remembered-map-empty';
-    emptyCard.setAttribute('role', 'listitem');
-    const title = document.createElement('strong');
-    title.textContent = 'Мои карты пока пусты';
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = 'Нажми “Выбрать файл карты”. После выбора появится запись с названием, которое можно переименовать.';
-    emptyCard.append(title, hint);
-    list.appendChild(emptyCard);
-    return;
-  }
+  if (!maps.length) return;
 
   for (const item of maps) {
     const isSelected = item.id === rememberedPmtilesMapsState.selectedId;
@@ -1730,22 +1775,46 @@ function renderRememberedPmtilesMapsList() {
     const heading = document.createElement('h3');
     heading.textContent = item.title || 'Без названия';
     const pill = document.createElement('span');
-    pill.className = `pill ${hasSessionFile ? 'on' : 'warn'}`;
-    pill.textContent = hasSessionFile ? 'файл выбран' : (isSelected ? 'текущая запись' : 'запомнена');
+    const uiStatus = getRememberedPmtilesMapUiStatus(item);
+    pill.className = `pill ${uiStatus.mode}`.trim();
+    pill.textContent = uiStatus.label;
     top.append(heading, pill);
 
     const meta = document.createElement('p');
     meta.className = 'hint remembered-map-meta';
     meta.textContent = `${item.fileName} · ${formatBytes(item.sizeBytes)}${item.lastSelectedAt ? ` · выбиралась ${new Date(item.lastSelectedAt).toLocaleString('ru-RU')}` : ''}`;
 
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = 'secondary btn-secondary small-btn';
-    action.textContent = isSelected ? 'Текущая' : 'Сделать текущей';
-    action.disabled = isSelected;
-    action.onclick = () => selectRememberedPmtilesMap(item.id, true);
+    const actions = document.createElement('div');
+    actions.className = 'row remembered-map-actions';
 
-    card.append(top, meta, action);
+    const openAction = document.createElement('button');
+    openAction.type = 'button';
+    openAction.className = 'secondary btn-secondary small-btn';
+    openAction.textContent = isSelected ? 'Активна' : 'Открыть';
+    openAction.disabled = isSelected;
+    openAction.onclick = () => selectRememberedPmtilesMap(item.id, true);
+
+    const renameAction = document.createElement('button');
+    renameAction.type = 'button';
+    renameAction.className = 'secondary btn-secondary small-btn';
+    renameAction.textContent = 'Переименовать';
+    renameAction.onclick = () => {
+      selectRememberedPmtilesMap(item.id, true);
+      const input = $('rememberedPmtilesMapNameInput');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    };
+
+    const deleteAction = document.createElement('button');
+    deleteAction.type = 'button';
+    deleteAction.className = 'secondary btn-secondary small-btn';
+    deleteAction.textContent = 'Удалить';
+    deleteAction.onclick = () => forgetRememberedPmtilesMapById(item.id, true);
+
+    actions.append(openAction, renameAction, deleteAction);
+    card.append(top, meta, actions);
     list.appendChild(card);
   }
 }
@@ -1784,12 +1853,12 @@ function renderRememberedPmtilesMapsUi() {
     if (rememberedPmtilesMapsState.status === 'error') {
       status.textContent = `Мои карты: ошибка — ${rememberedPmtilesMapsState.error || 'неизвестно'}`;
     } else if (!rememberedPmtilesMapsState.maps.length) {
-      status.textContent = 'Мои карты: пока нет. Выбери файл карты, и запись появится здесь.';
+      status.textContent = 'Мои карты: пока нет. Выбери файл карты, дай ему понятное название и сохрани локально на устройстве.';
     } else if (selected) {
       const active = localPmtilesFileState.status === 'selected' && localPmtilesFileState.fingerprint === selected.fingerprint;
       status.textContent = active
-        ? `Текущая карта: “${selected.title}” · ${formatBytes(selected.sizeBytes)}.`
-        : `Текущая запись: “${selected.title}”. Чтобы использовать карту сейчас, нажми “Выбрать файл карты” и выбери ${selected.fileName}.`;
+        ? `Активная карта: “${selected.title}” · ${formatBytes(selected.sizeBytes)}.`
+        : `Выбранная карта: “${selected.title}”. Чтобы использовать карту сейчас, нажми “Выбрать файл карты” и выбери ${selected.fileName}.`;
     }
   }
   renderCurrentOfflineMapSummary();
@@ -1842,22 +1911,38 @@ function renameSelectedRememberedPmtilesMap() {
   setButtonApiStatus(activeButtonDiagnostics, 'готово', `название: ${updated?.title || nextTitle}`);
 }
 
-function forgetSelectedRememberedPmtilesMap() {
-  const selected = getSelectedRememberedPmtilesMap();
-  if (!selected) {
+function forgetRememberedPmtilesMapById(recordId, ask = true) {
+  const target = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
+  if (!target) {
     markButtonBlocked('нет выбранной запомненной карты');
-    return;
+    return false;
   }
-  rememberedPmtilesMapsState.maps = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== selected.id);
-  rememberedPmtilesMapsState.selectedId = rememberedPmtilesMapsState.maps[0]?.id || null;
-  if (localPmtilesFileState.rememberedId === selected.id) {
-    localPmtilesFileState = { ...localPmtilesFileState, rememberedId: null, customName: null };
+  if (ask && !confirm(`Удалить офлайн-карту “${target.title}” из списка?`)) return false;
+  rememberedPmtilesMapsState.maps = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== target.id);
+  rememberedPmtilesMapsState.selectedId = rememberedPmtilesMapsState.selectedId === target.id
+    ? (rememberedPmtilesMapsState.maps[0]?.id || null)
+    : rememberedPmtilesMapsState.selectedId;
+  if (localPmtilesFileState.rememberedId === target.id) {
+    localPmtilesFileState = { status: 'none', file: null, name: null, customName: null, rememberedId: null, fingerprint: null, packageId: null, key: null, sizeBytes: null, lastModified: null, selectedAt: null, error: null };
+    offlineMapManifest.packages = (offlineMapManifest.packages || []).filter((pkg) => !isLocalPmtilesPackage(pkg));
+    offlineMapManifest.selectedPackageId = null;
+    pmtilesPreviewState = { ...pmtilesPreviewState, visible: false, status: 'not-run', error: null };
+    if (pmtilesPreviewMap) {
+      try { pmtilesPreviewMap.remove(); } catch (err) { console.warn('Offline map preview remove failed', err); }
+      pmtilesPreviewMap = null;
+    }
   }
   saveRememberedPmtilesMaps('remembered PMTiles map forgotten');
   renderOfflineMapPackageUi();
   renderRememberedPmtilesMapsUi();
   updateMapDebugUi(true);
-  setButtonApiStatus(activeButtonDiagnostics, 'готово', `запись забыта: ${selected.title}`);
+  setButtonApiStatus(activeButtonDiagnostics, 'готово', `карта удалена: ${target.title}`);
+  return true;
+}
+
+function forgetSelectedRememberedPmtilesMap() {
+  const selected = getSelectedRememberedPmtilesMap();
+  return forgetRememberedPmtilesMapById(selected?.id, true);
 }
 
 function getSelectedOfflineMapPackage(allowFallback = true) {
@@ -2052,6 +2137,9 @@ async function selectLocalPmtilesFile(file) {
     recordMapDebug('local offline map file selected', getLocalPmtilesFileSnapshot());
     renderOfflineMapPackageUi();
     updateMapDebugUi(true);
+    if ($('screen-offline') && !$('screen-offline').hidden) {
+      await showPmtilesPreviewMap();
+    }
     return pkg;
   } catch (err) {
     localPmtilesFileState = { ...localPmtilesFileState, status: 'error', error: err?.message || String(err) };
@@ -8505,10 +8593,12 @@ function bindUi() {
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
   if ($('loadOfflineManifestBtn')) $('loadOfflineManifestBtn').onclick = withButtonDiagnostics('loadOfflineManifestBtn', () => loadOfflineMapManifest(true));
-  if ($('chooseLocalPmtilesBtn')) $('chooseLocalPmtilesBtn').onclick = withButtonDiagnostics('chooseLocalPmtilesBtn', () => {
+  const openLocalPmtilesPicker = () => {
     setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
     $('localPmtilesFileInput')?.click();
-  });
+  };
+  if ($('chooseLocalPmtilesBtn')) $('chooseLocalPmtilesBtn').onclick = withButtonDiagnostics('chooseLocalPmtilesBtn', openLocalPmtilesPicker);
+  if ($('replaceLocalPmtilesBtn')) $('replaceLocalPmtilesBtn').onclick = withButtonDiagnostics('replaceLocalPmtilesBtn', openLocalPmtilesPicker);
   if ($('localPmtilesFileInput')) $('localPmtilesFileInput').onchange = async (event) => {
     const file = event.target.files && event.target.files[0];
     await selectLocalPmtilesFile(file);
@@ -8567,7 +8657,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.31`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.32`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
