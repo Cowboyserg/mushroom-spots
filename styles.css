@@ -2561,3 +2561,53 @@ select {
   padding-top: 12px;
   border-top: 1px solid rgba(127, 92, 0, 0.18);
 }
+
+/* Sprint 5.34 offline map import feedback. */
+.app-toast {
+  position: fixed;
+  left: 50%;
+  top: calc(14px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  z-index: 1200;
+  max-width: min(420px, calc(100vw - 28px));
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #244b2f;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 14px 34px rgba(0,0,0,.22);
+  text-align: center;
+}
+.app-toast.success {
+  background: #2f6f3e;
+}
+.app-toast.error {
+  background: #8a2d21;
+}
+.offline-import-dialog {
+  width: min(440px, calc(100vw - 24px));
+}
+.offline-import-dialog menu {
+  padding: 0;
+  margin: 1rem 0 0;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.stacked-actions {
+  align-items: stretch;
+  flex-direction: column;
+}
+.stacked-actions button {
+  width: 100%;
+}
+@media (max-width: 560px) {
+  .dialog-actions {
+    flex-direction: column;
+  }
+  .dialog-actions button {
+    width: 100%;
+  }
+}

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.34-hotfix.2';
+const APP_VERSION = '0.7.34-hotfix.3';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -170,8 +170,8 @@ let pendingLocalPmtilesImportMode = 'add';
 let pendingDuplicatePmtilesImport = null;
 let pendingOfflineImportNameMapId = null;
 let appToastTimer = null;
-const OFFLINE_IMPORT_TOAST_STEP_MS = 650;
-const OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS = 900;
+const OFFLINE_IMPORT_TOAST_STEP_MS = 1200;
+const OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS = 1600;
 let rememberedPmtilesMapsState = {
   status: 'not-loaded',
   maps: [],
@@ -9276,7 +9276,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.34.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.34.3`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
