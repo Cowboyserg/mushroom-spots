@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.36-hotfix.1';
+const APP_VERSION = '0.7.36-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -205,6 +205,8 @@ let pmtilesPreviewState = {
   styleName: null,
   appliedBounds: null,
   appliedCenter: null,
+  appliedZoom: null,
+  viewportMode: null,
   vectorLayers: null
 };
 let pmtilesPreviewUserLayerState = {
@@ -1119,6 +1121,8 @@ function formatDiagnosticsText() {
   if (provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode) lines.push(`- pmtiles style: ${provider.pmtilesPreview.styleName || provider.pmtilesPreview.styleMode}`);
   if (provider.pmtilesPreview.appliedBounds) lines.push(`- pmtiles bounds: ${provider.pmtilesPreview.appliedBounds.join(',')}`);
   if (provider.pmtilesPreview.appliedCenter) lines.push(`- pmtiles center: ${provider.pmtilesPreview.appliedCenter.join(',')}`);
+  if (provider.pmtilesPreview.appliedZoom != null) lines.push(`- pmtiles zoom: ${provider.pmtilesPreview.appliedZoom}`);
+  if (provider.pmtilesPreview.viewportMode) lines.push(`- pmtiles viewport: ${provider.pmtilesPreview.viewportMode}`);
   if (provider.pmtilesPreview.focus) {
     lines.push(`- pmtiles focus: ${provider.pmtilesPreview.focus.status}${provider.pmtilesPreview.focus.target ? ` / ${provider.pmtilesPreview.focus.target}` : ''}`);
     if (provider.pmtilesPreview.focus.coords) lines.push(`- pmtiles focus coords: ${provider.pmtilesPreview.focus.coords.join(',')}`);
@@ -1283,6 +1287,8 @@ function mapProviderSnapshot() {
       styleName: pmtilesPreviewState.styleName,
       appliedBounds: pmtilesPreviewState.appliedBounds,
       appliedCenter: pmtilesPreviewState.appliedCenter,
+      appliedZoom: pmtilesPreviewState.appliedZoom,
+      viewportMode: pmtilesPreviewState.viewportMode,
       vectorLayers: pmtilesPreviewState.vectorLayers,
       userLayers: {
         status: pmtilesPreviewUserLayerState.status,
@@ -2932,6 +2938,8 @@ function selectOfflineMapPackage(packageId, userAction = false) {
     styleName: null,
     appliedBounds: null,
     appliedCenter: null,
+    appliedZoom: null,
+    viewportMode: null,
     vectorLayers: null,
     error: null,
     loadedAt: null,
@@ -3214,6 +3222,14 @@ function createOpenMapTilesVectorPreviewLayers(sourceName, vectorLayers = []) {
   if (has('transportation')) {
     layers.push(
       {
+        id: 'pmtiles-preview-omt-road-all',
+        type: 'line',
+        source: sourceName,
+        'source-layer': 'transportation',
+        minzoom: 4,
+        paint: { 'line-color': '#9a8568', 'line-opacity': 0.58, 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.35, 8, 0.75, 11, 1.35, 14, 2.8, 17, 5.4] }
+      },
+      {
         id: 'pmtiles-preview-omt-road-casing',
         type: 'line',
         source: sourceName,
@@ -3418,23 +3434,45 @@ function getPmtilesPreviewBounds(meta = {}, packageInfo = {}) {
   return null;
 }
 
+function getExplicitPmtilesPreviewCenter(meta = {}) {
+  const candidates = [meta?.center, meta?.metadata?.center];
+  for (const candidate of candidates) {
+    if (candidate && Number.isFinite(candidate.lon) && Number.isFinite(candidate.lat)) {
+      if (Math.abs(candidate.lon) > 0.0001 || Math.abs(candidate.lat) > 0.0001) return [candidate.lon, candidate.lat];
+    }
+  }
+  return null;
+}
+
 function getPmtilesPreviewCenter(meta = {}, bounds = null) {
-  if (bounds) {
-    return [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2];
-  }
-  if (meta?.center && Number.isFinite(meta.center.lon) && Number.isFinite(meta.center.lat)) {
-    if (Math.abs(meta.center.lon) > 0.0001 || Math.abs(meta.center.lat) > 0.0001) return [meta.center.lon, meta.center.lat];
-  }
-  if (meta?.metadata?.center && Number.isFinite(meta.metadata.center.lon) && Number.isFinite(meta.metadata.center.lat)) {
-    return [meta.metadata.center.lon, meta.metadata.center.lat];
-  }
+  const explicitCenter = getExplicitPmtilesPreviewCenter(meta);
+  if (explicitCenter) return explicitCenter;
+  if (bounds) return [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2];
   return getMainMapCenterForPreview() || [37.6176, 55.7558];
 }
 
+function getPmtilesBoundsSize(bounds = null) {
+  if (!Array.isArray(bounds) || bounds.length !== 4) return null;
+  const [west, south, east, north] = bounds.map(Number);
+  if (![west, south, east, north].every(Number.isFinite)) return null;
+  return { width: Math.abs(east - west), height: Math.abs(north - south) };
+}
+
+function shouldFocusSmallVectorPmtilesRegion(bounds = null, isVectorPreview = false) {
+  if (!isVectorPreview) return false;
+  const size = getPmtilesBoundsSize(bounds);
+  if (!size) return false;
+  return size.width <= 6 && size.height <= 4;
+}
+
 function getPmtilesPreviewZoom(meta = {}, bounds = null, isVectorPreview = false) {
-  if (bounds) return isVectorPreview ? 11 : 0;
   const centerZoom = meta?.center?.zoom ?? meta?.metadata?.center?.zoom;
-  if (Number.isFinite(centerZoom) && centerZoom > 0) return centerZoom;
+  if (Number.isFinite(centerZoom) && centerZoom > 0) {
+    if (shouldFocusSmallVectorPmtilesRegion(bounds, isVectorPreview)) return Math.max(10, Math.min(centerZoom, 13));
+    return centerZoom;
+  }
+  if (shouldFocusSmallVectorPmtilesRegion(bounds, isVectorPreview)) return 10;
+  if (bounds) return isVectorPreview ? 11 : 0;
   return isVectorPreview ? 10 : 0;
 }
 
@@ -3458,6 +3496,8 @@ async function showPmtilesPreviewMap() {
     styleName: null,
     appliedBounds: null,
     appliedCenter: null,
+    appliedZoom: null,
+    viewportMode: null,
     vectorLayers: null,
     error: null,
     loadedAt: null
@@ -3512,8 +3552,10 @@ async function showPmtilesPreviewMap() {
     const protocolUrl = registration?.protocolUrl || `pmtiles://${getAbsolutePmtilesUrl(activeUrl)}`;
     const vectorLayers = result.meta?.metadata?.vectorLayers || [];
     const previewBounds = getPmtilesPreviewBounds(result.meta, activePackage);
+    const focusedSmallRegion = shouldFocusSmallVectorPmtilesRegion(previewBounds, isVectorPreview);
     const center = getPmtilesPreviewCenter(result.meta, previewBounds);
     const zoom = getPmtilesPreviewZoom(result.meta, previewBounds, isVectorPreview);
+    const viewportMode = previewBounds && !focusedSmallRegion ? 'fit-bounds' : (focusedSmallRegion ? 'focused-small-region' : 'center-zoom');
     const vectorStyleResult = isVectorPreview ? await createPmtilesVectorPreviewStyle(protocolUrl, vectorLayers) : null;
     const style = isVectorPreview ? vectorStyleResult.style : createPmtilesRasterPreviewStyle(protocolUrl);
     const styleName = isVectorPreview ? vectorStyleResult.styleName : 'raster-pmtiles-basic';
@@ -3554,7 +3596,7 @@ async function showPmtilesPreviewMap() {
       const applyViewport = () => {
         try {
           pmtilesPreviewMap.resize();
-          if (previewBounds) {
+          if (previewBounds && !focusedSmallRegion) {
             pmtilesPreviewMap.fitBounds([[previewBounds[0], previewBounds[1]], [previewBounds[2], previewBounds[3]]], {
               padding: 26,
               duration: 0,
@@ -3579,6 +3621,8 @@ async function showPmtilesPreviewMap() {
           styleName,
           appliedBounds: previewBounds,
           appliedCenter: center,
+          appliedZoom: zoom,
+          viewportMode,
           vectorLayers
         }, 'PMTiles preview MapLibre load event');
       });
@@ -3606,6 +3650,8 @@ async function showPmtilesPreviewMap() {
       styleName,
       appliedBounds: previewBounds,
       appliedCenter: center,
+      appliedZoom: zoom,
+      viewportMode,
       vectorLayers,
       error: null,
       loadedAt: new Date().toISOString()
@@ -9768,7 +9814,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.36.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.36.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
