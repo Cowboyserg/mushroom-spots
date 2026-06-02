@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.37-hotfix.4';
+const APP_VERSION = '0.7.37-hotfix.5';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -7804,9 +7804,20 @@ function closeSpotFolderPanels() {
   if (folderMenu) folderMenu.open = false;
 }
 
+function syncKebabMenuOpenClass(menu) {
+  if (!menu || !menu.classList?.contains('kebab-menu')) return;
+  const spotItem = menu.closest?.('.spot-item');
+  if (spotItem) spotItem.classList.toggle('spot-menu-open', Boolean(menu.open));
+  const folderHead = menu.closest?.('.spot-folder-head');
+  if (folderHead) folderHead.classList.toggle('folder-menu-open', Boolean(menu.open));
+}
+
 function closeKebabMenus(except = null) {
   document.querySelectorAll('details.kebab-menu[open]').forEach((menu) => {
-    if (menu !== except) menu.open = false;
+    if (menu !== except) {
+      menu.open = false;
+      syncKebabMenuOpenClass(menu);
+    }
   });
 }
 
@@ -7825,7 +7836,9 @@ function bindKebabMenuBehavior() {
 
   document.addEventListener('toggle', (event) => {
     const menu = event.target;
-    if (!menu || menu.tagName !== 'DETAILS' || !menu.classList?.contains('kebab-menu') || !menu.open) return;
+    if (!menu || menu.tagName !== 'DETAILS' || !menu.classList?.contains('kebab-menu')) return;
+    syncKebabMenuOpenClass(menu);
+    if (!menu.open) return;
     closeKebabMenus(menu);
   }, true);
 
@@ -10215,7 +10228,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.37.5`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

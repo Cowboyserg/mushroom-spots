@@ -2840,3 +2840,33 @@ select {
     max-width: calc(100vw - 58px);
   }
 }
+
+/* Sprint 5.37.5 — Spot item menu stacking hotfix.
+   The dropdown must be an overlay, but the opened spot card must paint above
+   following spot cards so menu actions do not look disabled or clipped. */
+#spotsList {
+  position: relative;
+  overflow: visible;
+}
+
+.spot-item {
+  isolation: auto;
+  z-index: 1;
+}
+
+.spot-item.spot-menu-open {
+  z-index: 320;
+}
+
+.spot-item.spot-menu-open .spot-item-kebab-menu {
+  z-index: 330;
+}
+
+.spot-item.spot-menu-open .kebab-menu-panel {
+  z-index: 340;
+}
+
+.spot-item-kebab-menu .kebab-menu-panel {
+  background: var(--surface);
+  opacity: 1;
+}

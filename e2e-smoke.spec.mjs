@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.37-hotfix\.4 · Sprint 5\.37\.4/;
+const EXPECTED_APP_VERSION = /v0\.7\.37-hotfix\.5 · Sprint 5\.37\.5/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1290,12 +1290,18 @@ test('spots screen opens as folder list and filters marks inside folder', async 
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья');
   const chanterelleMenuCard = page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' });
-  await chanterelleMenuCard.locator('.spot-item-kebab-menu summary').click();
+  const chanterelleMenuSummary = chanterelleMenuCard.locator('.spot-item-kebab-menu summary');
+  const summaryBeforeOpen = await chanterelleMenuSummary.boundingBox();
+  await chanterelleMenuSummary.click();
+  const summaryAfterOpen = await chanterelleMenuSummary.boundingBox();
+  expect(Math.abs((summaryAfterOpen?.x ?? 0) - (summaryBeforeOpen?.x ?? 0))).toBeLessThan(2);
+  expect(Math.abs((summaryAfterOpen?.y ?? 0) - (summaryBeforeOpen?.y ?? 0))).toBeLessThan(2);
+  await expect(chanterelleMenuCard.locator('.kebab-menu-panel')).toBeVisible();
   await expect(chanterelleMenuCard.getByRole('button', { name: 'Показать на карте' })).toBeVisible();
   await expect(chanterelleMenuCard.getByRole('button', { name: 'Показать на карте' })).toBeEnabled();
   await expect(chanterelleMenuCard.getByRole('button', { name: 'Отправить в чат' })).toBeVisible();
-  await expect(chanterelleMenuCard.getByRole('button', { name: 'Править' })).toBeVisible();
-  await expect(chanterelleMenuCard.getByRole('button', { name: 'Править' })).toBeEnabled();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Править', exact: true })).toBeVisible();
+  await expect(chanterelleMenuCard.getByRole('button', { name: 'Править', exact: true })).toBeEnabled();
   await expect(chanterelleMenuCard.getByRole('button', { name: 'Удалить' })).toBeVisible();
   await expect(chanterelleMenuCard.getByRole('button', { name: 'Удалить' })).toBeEnabled();
   await chanterelleMenuCard.locator('.spot-item-kebab-menu summary').click();
@@ -1347,7 +1353,7 @@ test('custom spot collections can be created renamed and deleted from folder men
   await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
   await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).locator('.spot-item-kebab-menu summary').click();
-  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Править' }).click();
+  await page.locator('.spot-item').filter({ hasText: 'Лисички у тропы' }).getByRole('button', { name: 'Править', exact: true }).click();
   await expect(page.locator('#spotListEditor')).toBeVisible();
   await page.locator('#spotListCollection').selectOption({ label: 'Секретные места' });
   await page.locator('#spotListSaveEditBtn').click();
@@ -1406,7 +1412,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.37-hotfix.4');
+  expect(backup.appVersion).toBe('0.7.37-hotfix.5');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1535,7 +1541,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.37-hotfix.4',
+    appVersion: '0.7.37-hotfix.5',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
