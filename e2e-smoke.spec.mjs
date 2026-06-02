@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.33-hotfix\.2 · Sprint 5\.33\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.33-hotfix\.3 · Sprint 5\.33\.3/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -415,7 +415,7 @@ test('app loads and bottom navigation switches screens', async ({ page }) => {
 test('offline maps screen presents empty manager before a map is added', async ({ page }) => {
   await bootApp(page);
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await expect(page.locator('#screen-offline')).toBeVisible();
 
   await expect(page.getByRole('heading', { name: 'Мои карты' })).toBeVisible();
@@ -435,7 +435,7 @@ test('offline maps screen presents empty manager before a map is added', async (
 test('offline map manager imports, previews and deletes a local map', async ({ page }) => {
   await bootApp(page, { fakePmtilesRuntime: true });
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#localPmtilesFileInput').setInputFiles({
     name: 'karelia.pmtiles',
     mimeType: 'application/octet-stream',
@@ -457,7 +457,7 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
 
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
   await expect(page.locator('#currentOfflineMapStatus')).toContainText('Карелия');
   await expect(page.locator('#offlineMapEmptyState')).toContainText('повторного выбора файла');
@@ -477,7 +477,7 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
 test('settings can emergency clear imported offline map files', async ({ page }) => {
   await bootApp(page, { fakePmtilesRuntime: true });
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#localPmtilesFileInput').setInputFiles({
     name: 'emergency.pmtiles',
     mimeType: 'application/octet-stream',
@@ -495,7 +495,7 @@ test('settings can emergency clear imported offline map files', async ({ page })
   await page.getByRole('button', { name: 'Удалить файлы офлайн-карт' }).click();
   await expect(page.locator('#offlineMapFilesClearStatus')).toContainText('Записи “Мои карты” очищены');
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
   await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
@@ -509,7 +509,7 @@ test('offline map preview supports Ko me, picked point save and shared overlays'
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#localPmtilesFileInput').setInputFiles({
     name: 'forest.pmtiles',
     mimeType: 'application/octet-stream',
@@ -538,7 +538,7 @@ test('offline map preview supports Ko me, picked point save and shared overlays'
 test('offline map region rectangle creates a pmtiles bbox command', async ({ page }) => {
   await bootApp(page);
 
-  await page.getByRole('button', { name: 'Офлайн' }).click();
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#startBboxExportBtn').click();
   await expect(page.locator('#screen-map')).toBeVisible();
 
@@ -1114,7 +1114,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.33-hotfix.2');
+  expect(backup.appVersion).toBe('0.7.33-hotfix.3');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1243,7 +1243,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.33-hotfix.2',
+    appVersion: '0.7.33-hotfix.3',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
