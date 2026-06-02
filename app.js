@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.34-hotfix.1';
+const APP_VERSION = '0.7.34-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -1986,8 +1986,30 @@ function makePmtilesFileFingerprint(file) {
   return `pmtiles:${name}:${size}:${modified}`;
 }
 
+function makePmtilesFileDuplicateKey(file) {
+  return {
+    fileName: String(file?.name || 'local.pmtiles').trim().toLowerCase(),
+    sizeBytes: Number(file?.size || 0)
+  };
+}
+
+function rememberedPmtilesMapMatchesFile(item, file) {
+  if (!item || !file) return false;
+  const incoming = makePmtilesFileDuplicateKey(file);
+  const storedName = String(item.fileName || item.name || '').trim().toLowerCase();
+  const storedSize = Number(item.sizeBytes || item.size || 0);
+  return Boolean(incoming.fileName && storedName === incoming.fileName && incoming.sizeBytes > 0 && storedSize === incoming.sizeBytes);
+}
+
 function findRememberedPmtilesMapByFingerprint(fingerprint) {
   return (rememberedPmtilesMapsState.maps || []).find((item) => item.fingerprint === fingerprint) || null;
+}
+
+function findRememberedPmtilesMapForFile(file) {
+  const fingerprint = makePmtilesFileFingerprint(file);
+  return findRememberedPmtilesMapByFingerprint(fingerprint)
+    || (rememberedPmtilesMapsState.maps || []).find((item) => rememberedPmtilesMapMatchesFile(item, file))
+    || null;
 }
 
 function getSelectedRememberedPmtilesMap() {
@@ -2056,7 +2078,7 @@ async function upsertRememberedPmtilesMapForFile(file, options = {}) {
   const replaceTarget = options.replaceRecordId
     ? (rememberedPmtilesMapsState.maps || []).find((item) => item.id === options.replaceRecordId)
     : null;
-  const existing = replaceTarget || (options.replaceSelected && selected ? selected : findRememberedPmtilesMapByFingerprint(fingerprint));
+  const existing = replaceTarget || (options.replaceSelected && selected ? selected : findRememberedPmtilesMapForFile(file));
   const fallbackTitle = String(file.name || 'local.pmtiles').replace(/\.pmtiles$/i, '') || 'Локальная карта';
   const recordId = existing?.id || `remembered-pmtiles-${Date.now()}`;
   const storageName = existing?.storageName || `${recordId}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
@@ -2659,7 +2681,7 @@ async function importLocalPmtilesFile(file, options = {}) {
   await waitForMs(OFFLINE_IMPORT_TOAST_STEP_MS);
 
   const duplicate = !options.skipDuplicateCheck && !replaceSelected && !replaceRecordId
-    ? findRememberedPmtilesMapByFingerprint(makePmtilesFileFingerprint(file))
+    ? findRememberedPmtilesMapForFile(file)
     : null;
   if (duplicate) {
     await showOfflineDuplicateMapDialog(file, duplicate);
@@ -9254,7 +9276,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.34.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.34.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
