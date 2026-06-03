@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.39-hotfix\.3 · Sprint 5\.39\.3/;
+const EXPECTED_APP_VERSION = /v0\.7\.40 · Sprint 5\.40/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1000,6 +1000,45 @@ test('map screen keeps GPS controls but does not duplicate bottom navigation in 
   }
 });
 
+
+test('online map floating controls use one square touch target system', async ({ page }) => {
+  await bootApp(page);
+
+  const controls = [
+    page.locator('#mapExpandBtn'),
+    page.locator('#startGpsBtn'),
+    page.locator('#centerMeBtn')
+  ];
+
+  const boxes = [];
+  for (const control of controls) {
+    await expect(control).toBeVisible();
+    const box = await control.boundingBox();
+    expect(box, 'online map control must have visible bounds').not.toBeNull();
+    boxes.push(box);
+  }
+
+  for (const box of boxes) {
+    expect(Math.abs(box.width - box.height), 'online map control must be square').toBeLessThanOrEqual(2);
+    expect(box.width, 'online map control must be finger-sized').toBeGreaterThanOrEqual(48);
+  }
+
+  const [expandBox, gpsBox, centerBox] = boxes;
+  expect(Math.abs(gpsBox.width - expandBox.width), 'GPS control width must match expand control').toBeLessThanOrEqual(2);
+  expect(Math.abs(centerBox.width - expandBox.width), 'center-on-me control width must match expand control').toBeLessThanOrEqual(2);
+  expect(centerBox.y, 'center-on-me control must sit below GPS control').toBeGreaterThan(gpsBox.y + gpsBox.height - 1);
+
+  const mapBox = await page.locator('.map-wrap-home').boundingBox();
+  expect(mapBox, 'map must have visible bounds').not.toBeNull();
+  for (const box of boxes) {
+    expect(box.x, 'online map control must stay inside map horizontally').toBeGreaterThanOrEqual(mapBox.x - 1);
+    expect(box.y, 'online map control must stay inside map vertically').toBeGreaterThanOrEqual(mapBox.y - 1);
+    expect(box.x + box.width, 'online map control must not overflow map horizontally').toBeLessThanOrEqual(mapBox.x + mapBox.width + 1);
+  }
+
+  await expect(page.locator('#centerMeBtn')).toHaveAccessibleName('Ко мне');
+});
+
 test('expanded map workspace keeps map as the primary viewport above bottom navigation', async ({ page }) => {
   await bootApp(page);
 
@@ -1040,6 +1079,16 @@ test('online map expand button fills app workspace while keeping bottom navigati
   expect(expandedButtonBox.x - expandedMapBox.x, 'expand button must stay near the expanded map left edge').toBeLessThanOrEqual(24);
   expect(expandedButtonBox.y, 'expand button must remain inside the expanded map vertically').toBeGreaterThanOrEqual(expandedMapBox.y - 1);
   expect(expandedButtonBox.y - expandedMapBox.y, 'expand button must stay near the expanded map top edge').toBeLessThanOrEqual(24);
+
+  const expandedGpsBox = await page.locator('#startGpsBtn').boundingBox();
+  const expandedCenterBox = await page.locator('#centerMeBtn').boundingBox();
+  expect(expandedGpsBox, 'GPS control must remain visible after expand').not.toBeNull();
+  expect(expandedCenterBox, 'center-on-me control must remain visible after expand').not.toBeNull();
+  for (const box of [expandedButtonBox, expandedGpsBox, expandedCenterBox]) {
+    expect(Math.abs(box.width - expandedButtonBox.width), 'expanded map controls must keep matching widths').toBeLessThanOrEqual(2);
+    expect(Math.abs(box.height - expandedButtonBox.height), 'expanded map controls must keep matching heights').toBeLessThanOrEqual(2);
+  }
+
   expect(expandedMapBox.height, 'expanded map must become taller').toBeGreaterThan(beforeMapBox.height + 40);
   expect(expandedMapBox.y + expandedMapBox.height, 'expanded map must not cover bottom navigation').toBeLessThanOrEqual(expandedNavBox.y + 2);
 
@@ -1496,7 +1545,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.39-hotfix.3');
+  expect(backup.appVersion).toBe('0.7.40');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1625,7 +1674,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.39-hotfix.3',
+    appVersion: '0.7.40',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

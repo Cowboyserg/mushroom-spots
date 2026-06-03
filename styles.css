@@ -2945,3 +2945,117 @@ body.online-map-expanded #screen-map .map-object-sheet {
 body.online-map-expanded .bottom-nav {
   z-index: 30;
 }
+
+/* Sprint 5.40 — Online Map Controls Unification.
+   Make the visible online-map floating controls share the same geometry:
+   expand/collapse, Leaflet zoom in/out, GPS, and center-on-me. */
+.map-wrap-home {
+  --online-map-control-size: 54px;
+  --online-map-control-radius: 16px;
+  --online-map-control-gap: 10px;
+  --online-map-control-offset: 12px;
+}
+
+.map-wrap-home .map-control-btn,
+.map-wrap-home .leaflet-control-zoom a {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: var(--online-map-control-size) !important;
+  height: var(--online-map-control-size) !important;
+  min-width: var(--online-map-control-size) !important;
+  min-height: var(--online-map-control-size) !important;
+  box-sizing: border-box;
+  padding: 0 !important;
+  border-radius: var(--online-map-control-radius) !important;
+  border: 1px solid rgba(36, 75, 47, 0.20) !important;
+  background: rgba(255, 253, 247, 0.96) !important;
+  color: var(--green) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.16) !important;
+  font-weight: 900;
+  line-height: 1 !important;
+  text-align: center;
+  text-decoration: none !important;
+}
+
+.map-wrap-home .map-control-btn:focus-visible,
+.map-wrap-home .leaflet-control-zoom a:focus-visible {
+  outline: 3px solid rgba(47, 111, 71, .30);
+  outline-offset: 2px;
+}
+
+.map-wrap-home .map-expand-btn {
+  top: var(--online-map-control-offset);
+  left: var(--online-map-control-offset);
+  font-size: 26px;
+}
+
+.map-wrap-home .map-fab-stack {
+  top: var(--online-map-control-offset);
+  right: var(--online-map-control-offset);
+  gap: var(--online-map-control-gap);
+}
+
+.map-wrap-home .map-fab-stack > button {
+  font-size: 18px;
+}
+
+.map-wrap-home #startGpsBtn {
+  background: var(--green) !important;
+  border-color: rgba(255,255,255,.40) !important;
+  color: #fffdf7 !important;
+}
+
+.map-wrap-home #centerMeBtn {
+  font-size: 27px;
+}
+
+.map-wrap-home .leaflet-left .leaflet-control {
+  margin-left: var(--online-map-control-offset) !important;
+  margin-top: calc(var(--online-map-control-offset) + var(--online-map-control-size) + var(--online-map-control-gap)) !important;
+}
+
+.map-wrap-home .leaflet-control-zoom {
+  display: grid !important;
+  gap: var(--online-map-control-gap);
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.map-wrap-home .leaflet-control-zoom a {
+  float: none !important;
+  margin: 0 !important;
+  font-family: inherit !important;
+  font-size: 28px !important;
+}
+
+.map-wrap-home .leaflet-control-zoom-in,
+.map-wrap-home .leaflet-control-zoom-out {
+  border-bottom: 1px solid rgba(36, 75, 47, 0.20) !important;
+}
+
+@media (max-width: 560px) {
+  .map-wrap-home {
+    --online-map-control-size: 50px;
+    --online-map-control-radius: 15px;
+    --online-map-control-gap: 8px;
+    --online-map-control-offset: 10px;
+  }
+
+  .map-wrap-home .map-expand-btn {
+    font-size: 24px;
+  }
+
+  .map-wrap-home .map-fab-stack > button {
+    font-size: 16px;
+  }
+
+  .map-wrap-home #centerMeBtn {
+    font-size: 25px;
+  }
+
+  .map-wrap-home .leaflet-control-zoom a {
+    font-size: 26px !important;
+  }
+}

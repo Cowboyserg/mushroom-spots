@@ -180,6 +180,19 @@ function checkRuntimeStateDeclarations() {
   assertIncludes(appJs, 'let selectedMapObject = null;', 'selectedMapObject runtime state declaration');
 }
 
+function checkOnlineMapControlsContract() {
+  const indexHtml = read('index.html');
+  const stylesCss = read('styles.css');
+
+  assertIncludes(indexHtml, 'id="mapExpandBtn" class="map-expand-btn map-control-btn', 'online map expand unified control class');
+  assertIncludes(indexHtml, 'id="startGpsBtn" class="map-fab map-control-btn', 'online map GPS unified control class');
+  assertIncludes(indexHtml, 'id="centerMeBtn" class="map-fab map-control-btn', 'online map center unified control class');
+  assertIncludes(indexHtml, 'aria-label="Ко мне"', 'online map center accessible label');
+  assertIncludes(stylesCss, '--online-map-control-size', 'online map shared control size variable');
+  assertIncludes(stylesCss, '.map-wrap-home .leaflet-control-zoom a', 'Leaflet zoom button unified control styling');
+  assertIncludes(stylesCss, '.map-wrap-home .map-control-btn', 'online map app button unified control styling');
+}
+
 function checkDomIdContracts() {
   const indexHtml = read('index.html');
   const appJs = read('app.js');
@@ -297,6 +310,7 @@ checkVersionConsistency();
 checkVersionedAppShellAssets();
 checkDomIdContracts();
 checkRuntimeStateDeclarations();
+checkOnlineMapControlsContract();
 checkServiceWorkerCacheRules();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
