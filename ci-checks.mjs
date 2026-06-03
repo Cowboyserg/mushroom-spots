@@ -193,6 +193,16 @@ function checkOnlineMapControlsContract() {
   assertIncludes(stylesCss, '.map-wrap-home .map-control-btn', 'online map app button unified control styling');
 }
 
+function checkGpsDesktopFallbackContract() {
+  const appJs = read('app.js');
+  assertIncludes(appJs, 'GPS_PRIMARY_POSITION_OPTIONS', 'GPS primary position options');
+  assertIncludes(appJs, 'GPS_DESKTOP_FALLBACK_POSITION_OPTIONS', 'GPS desktop fallback position options');
+  assertIncludes(appJs, 'function requestCurrentPositionWithDesktopFallback', 'GPS desktop fallback helper');
+  assertIncludes(appJs, 'isRetryableGeolocationError(primaryError)', 'GPS fallback must only retry recoverable errors');
+  assertIncludes(appJs, 'enableHighAccuracy: false, timeout: 30000, maximumAge: 120000', 'GPS fallback lower-accuracy longer timeout options');
+  assertIncludes(appJs, "fallbackUsed ? 'GPS fallback' : 'GPS'", 'main GPS diagnostic must report fallback use');
+}
+
 function checkDomIdContracts() {
   const indexHtml = read('index.html');
   const appJs = read('app.js');
@@ -311,6 +321,7 @@ checkVersionedAppShellAssets();
 checkDomIdContracts();
 checkRuntimeStateDeclarations();
 checkOnlineMapControlsContract();
+checkGpsDesktopFallbackContract();
 checkServiceWorkerCacheRules();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();

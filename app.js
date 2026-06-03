@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.41-hotfix.1';
+const APP_VERSION = '0.7.41-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -7043,20 +7043,9 @@ async function startTrackRecording() {
   renderTrackRecorderUi();
   const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'route recorder start');
   try {
-    await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          finishApiRequest(requestId, 'готово', `route GPS ${meters(pos.coords.accuracy)}`);
-          updateUserPosition(pos, false);
-          resolve();
-        },
-        (err) => {
-          finishApiRequest(requestId, 'ошибка', err.message);
-          reject(err);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    });
+    const { position, fallbackUsed } = await requestCurrentPositionWithDesktopFallback();
+    finishApiRequest(requestId, 'готово', `${fallbackUsed ? 'route GPS fallback' : 'route GPS'} ${meters(position.coords.accuracy)}`);
+    updateUserPosition(position, false);
     startTrackWatch();
     renderTrackRecorderUi();
     return true;
@@ -7235,6 +7224,44 @@ async function deleteTrack(id) {
 window.showTrackOnMap = showTrackOnMap;
 window.deleteTrack = deleteTrack;
 
+const GPS_PRIMARY_POSITION_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+const GPS_DESKTOP_FALLBACK_POSITION_OPTIONS = { enableHighAccuracy: false, timeout: 30000, maximumAge: 120000 };
+
+function isRetryableGeolocationError(err) {
+  return err?.code === 2 || err?.code === 3;
+}
+
+function requestCurrentPositionWithDesktopFallback(primaryOptions = GPS_PRIMARY_POSITION_OPTIONS, fallbackOptions = GPS_DESKTOP_FALLBACK_POSITION_OPTIONS) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Геолокация не поддерживается этим браузером.'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ position, fallbackUsed: false }),
+      (primaryError) => {
+        if (!fallbackOptions || !isRetryableGeolocationError(primaryError)) {
+          reject(primaryError);
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => resolve({ position, fallbackUsed: true, primaryError }),
+          (fallbackError) => {
+            if (primaryError?.message && fallbackError && !fallbackError.primaryMessage) {
+              fallbackError.primaryMessage = primaryError.message;
+            }
+            reject(fallbackError);
+          },
+          fallbackOptions
+        );
+      },
+      primaryOptions
+    );
+  });
+}
+
 function startGps(center=true) {
   if (!navigator.geolocation) {
     alert('Геолокация не поддерживается этим браузером.');
@@ -7242,19 +7269,17 @@ function startGps(center=true) {
   }
   $('gpsStatus').textContent = 'запрос разрешения…';
   const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'GPS permission/current position');
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      finishApiRequest(requestId, 'готово', `GPS ${meters(pos.coords.accuracy)}`);
-      updateUserPosition(pos, center);
-    },
-    (err) => {
+  requestCurrentPositionWithDesktopFallback()
+    .then(({ position, fallbackUsed }) => {
+      finishApiRequest(requestId, 'готово', `${fallbackUsed ? 'GPS fallback' : 'GPS'} ${meters(position.coords.accuracy)}`);
+      updateUserPosition(position, center);
+    })
+    .catch((err) => {
       finishApiRequest(requestId, 'ошибка', err.message);
       $('gpsStatus').textContent = err.code === 1 ? 'доступ запрещён' : 'ошибка';
       setText('saveFlowDescription', err.code === 1 ? 'GPS запрещён в браузере. Можно сохранить выбранную точку вручную: зажми место на карте примерно на секунду.' : 'GPS не дал координаты. Можно попробовать ещё раз или выбрать точку на карте вручную.');
       alert(`GPS ошибка: ${err.message}. Можно сохранить место вручную долгим нажатием на карте.`);
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-  );
+    });
   if (watchId == null) {
     const watchRequestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', 'GPS live updates');
     watchId = navigator.geolocation.watchPosition(
@@ -10430,7 +10455,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.41.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.41.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
