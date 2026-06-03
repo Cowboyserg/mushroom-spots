@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44';
+const APP_VERSION = '0.7.44-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -255,6 +255,7 @@ let apiRequestSeq = 0;
 let activeButtonDiagnostics = null;
 let peopleProfiles = [];
 let activeProfileId = null;
+let groupEntryDraft = { liveName: '', groupId: '' };
 let memberSyncPending = false;
 let memberSyncTimer = null;
 
@@ -434,7 +435,8 @@ function loadPeopleProfiles() {
 function updateActiveProfileFromInputs() {
   const profile = getActiveProfile();
   if (!profile) return null;
-  const name = $('liveName')?.value?.trim() || profile.displayName || '';
+  rememberGroupEntryInputs();
+  const name = currentLiveName() || profile.displayName || '';
   const group = currentGroupId();
   if (name) profile.displayName = name;
   profile.lastGroupId = group;
@@ -450,6 +452,7 @@ function applyProfileToInputs(profile, keepCurrentGroup = false) {
   if (!profile) return;
   if ($('liveName')) $('liveName').value = profile.displayName || '';
   if ($('groupId') && !keepCurrentGroup) $('groupId').value = profile.lastGroupId || '';
+  rememberGroupEntryInputs();
   localStorage.setItem('mushroom_live_user_id', profile.id);
   localStorage.setItem('mushroom_live_name', profile.displayName || '');
   localStorage.setItem('mushroom_live_group_id', currentGroupId() || profile.lastGroupId || '');
@@ -469,6 +472,7 @@ function clearGroupInviteFromUrl() {
 
 function clearPersistedGroupSelection() {
   if ($('groupId')) $('groupId').value = '';
+  groupEntryDraft.groupId = '';
   localStorage.removeItem('mushroom_live_group_id');
   const profile = getActiveProfile();
   if (profile) {
@@ -995,7 +999,7 @@ function updateSaveSpotFlowUi() {
 function updateActionButtonsUi() {
   const hasSupabase = Boolean(getSupabaseConfig());
   const hasGroup = Boolean(currentGroupId());
-  const hasLiveName = Boolean($('liveName')?.value?.trim());
+  const hasLiveName = Boolean(currentLiveName());
   const hasPosition = Boolean(currentPosition);
   const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
@@ -9250,6 +9254,7 @@ function parseGroupFromUrl() {
   const group = url.searchParams.get('group');
   if (group && $('groupId')) {
     $('groupId').value = group;
+    groupEntryDraft.groupId = group;
     localStorage.setItem('mushroom_live_group_id', group);
     return group;
   }
@@ -9257,10 +9262,12 @@ function parseGroupFromUrl() {
 }
 
 async function createGroup() {
-  const name = $('liveName')?.value?.trim();
+  rememberGroupEntryInputs();
+  const name = currentLiveName();
   if (!name) { markButtonBlocked('не указан профиль'); return alert('Укажи профиль на этом устройстве.'); }
   const group = crypto.randomUUID ? crypto.randomUUID() : uid();
   $('groupId').value = group;
+  groupEntryDraft.groupId = group;
   localStorage.setItem('mushroom_live_group_id', group);
   const joined = await joinGroup(true);
   updateLiveUi();
@@ -9292,6 +9299,7 @@ async function copyInvite() {
 }
 
 function saveLiveInputs() {
+  rememberGroupEntryInputs();
   updateActiveProfileFromInputs();
   renderPeopleProfiles();
 }
@@ -9300,11 +9308,13 @@ function loadLiveInputs() {
   const profile = getActiveProfile();
   $('liveName').value = localStorage.getItem('mushroom_live_name') || profile?.displayName || '';
   $('groupId').value = localStorage.getItem('mushroom_live_group_id') || profile?.lastGroupId || '';
+  rememberGroupEntryInputs();
   const groupFromUrl = parseGroupFromUrl();
   if (groupFromUrl && profile) {
     profile.lastGroupId = groupFromUrl;
     savePeopleProfiles();
   }
+  rememberGroupEntryInputs();
   updateLiveUi();
   renderPeopleProfiles();
   return groupFromUrl;
@@ -9319,8 +9329,9 @@ function clearFriendMarkers() {
 }
 
 async function joinGroup(silent = false) {
+  rememberGroupEntryInputs();
   const group = syncNormalizedGroupInput();
-  const name = $('liveName').value.trim();
+  const name = currentLiveName();
   if (!group) {
     if (!silent) { markButtonBlocked('нет кода группы'); alert('Создай группу или вставь код/ссылку от друга.'); }
     return false;
@@ -9382,7 +9393,7 @@ async function leaveGroup() {
 async function publishMyLocation() {
   if (!liveEnabled) return;
   const group = syncNormalizedGroupInput();
-  const name = $('liveName').value.trim();
+  const name = currentLiveName();
   if (!group || !name) throw new Error('Укажи имя и код группы.');
   if (!currentPosition) {
     startGps(false);
@@ -9568,21 +9579,34 @@ function normalizeGroupInput(value) {
   }
 }
 
+function rememberGroupEntryInputs() {
+  const liveInput = $('liveName');
+  const groupInput = $('groupId');
+  if (liveInput) groupEntryDraft.liveName = liveInput.value;
+  if (groupInput) groupEntryDraft.groupId = groupInput.value;
+}
+
+function currentLiveName() {
+  const direct = $('liveName')?.value?.trim() || '';
+  return direct || String(groupEntryDraft.liveName || '').trim();
+}
+
 function currentGroupId() {
-  return normalizeGroupInput($('groupId')?.value);
+  const direct = $('groupId')?.value?.trim() || '';
+  return normalizeGroupInput(direct || groupEntryDraft.groupId);
 }
 
 function syncNormalizedGroupInput() {
   const input = $('groupId');
-  if (!input) return '';
-  const raw = input.value.trim();
+  const raw = input?.value?.trim() || String(groupEntryDraft.groupId || '').trim();
   const normalized = normalizeGroupInput(raw);
-  if (normalized && normalized !== raw) input.value = normalized;
+  if (input && normalized && normalized !== input.value.trim()) input.value = normalized;
+  groupEntryDraft.groupId = normalized || raw;
   return normalized;
 }
 
 function currentChatName() {
-  return $('liveName')?.value?.trim() || 'Без имени';
+  return currentLiveName() || 'Без имени';
 }
 
 
@@ -10540,6 +10564,7 @@ function bindUi() {
   $('chooseFolderBtn').onclick = withButtonDiagnostics('chooseFolderBtn', chooseBackupFolder);
   $('saveFolderBackupBtn').onclick = withButtonDiagnostics('saveFolderBackupBtn', () => saveBackupToFolder(true).catch(err => alert(`Ошибка backup: ${err.message}`)));
   $('requestPersistentBtn').onclick = withButtonDiagnostics('requestPersistentBtn', requestPersistentStorage);
+  $('groupId').onblur = () => { rememberGroupEntryInputs(); updateActionButtonsUi(); };
   $('createGroupBtn').onclick = withButtonDiagnostics('createGroupBtn', createGroup);
   $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
   if ($('savePersonProfileBtn')) $('savePersonProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', saveCurrentPersonProfile);
@@ -10622,9 +10647,10 @@ function bindUi() {
   });
   window.addEventListener('focus', () => safeInvalidateMap(250, 'focus'));
 
-  $('liveName').oninput = () => { updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); };
+  $('liveName').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); };
   $('liveName').onchange = saveLiveInputs;
-  $('groupId').oninput = () => { updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); };
+  $('liveName').onblur = () => { rememberGroupEntryInputs(); updateActionButtonsUi(); };
+  $('groupId').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); };
   $('groupId').onchange = () => {
     saveLiveInputs();
     groupJoined = false;
@@ -10644,7 +10670,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
