@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.42';
+const APP_VERSION = '0.7.42-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -98,6 +98,7 @@ let customSpotCollections = [];
 let deletedSpotCollections = [];
 let activeSpotCollection = null;
 let spotFolderDeleteDialogState = null;
+let spotFolderRenameDialogState = null;
 let suppressSpotHistorySync = false;
 const SPOTS_HISTORY_STATE_KEY = 'mushroomSpotsUiState';
 let spotMarkers = new Map();
@@ -7921,6 +7922,7 @@ function setSpotCollectionManagerHint(text) {
 function closeSpotFolderPanels() {
   setHidden('spotFolderEditPanel', true);
   setHidden('spotFolderDeletePanel', true);
+  closeSpotFolderRenameDialog();
   closeSpotFolderDeleteDialogs();
   const folderMenu = $('spotFolderMenu');
   if (folderMenu) folderMenu.open = false;
@@ -8161,10 +8163,9 @@ async function createSpotCollection() {
   return true;
 }
 
-async function renameSelectedSpotCollection() {
-  const select = $('spotCollectionManageSelect');
-  const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
-  const newName = normalizeSpotCollectionName($('spotCollectionRenameInput')?.value);
+async function renameSpotCollection(oldNameRaw, newNameRaw, { keepInFolders = false } = {}) {
+  const oldName = normalizeSpotCollectionName(oldNameRaw);
+  const newName = normalizeSpotCollectionName(newNameRaw);
   if (!oldName) { setSpotCollectionManagerHint('Выбери папку для переименования.'); return false; }
   if (!newName) { setSpotCollectionManagerHint('Введи новое название папки.'); return false; }
   if (spotCollectionEquals(oldName, newName)) {
@@ -8190,16 +8191,56 @@ async function renameSelectedSpotCollection() {
     customSpotCollections.push(newName);
   }
   await saveSpotCollections();
-  if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) activeSpotCollection = newName;
+  if (keepInFolders) {
+    activeSpotCollection = null;
+  } else if (activeSpotCollection && spotCollectionEquals(activeSpotCollection, oldName)) {
+    activeSpotCollection = newName;
+  }
   const filter = $('spotCollectionFilter');
   if (filter && spotCollectionEquals(filter.value, oldName)) filter.value = newName;
   await afterDataChanged();
-  updateSpotCollectionFilterOptions(newName);
-  updateSpotCollectionUi(newName);
+  updateSpotCollectionFilterOptions(keepInFolders ? 'all' : newName);
+  updateSpotCollectionUi(keepInFolders ? null : newName);
   closeSpotFolderPanels();
   renderList();
   setSpotCollectionManagerHint(`Папка «${oldName}» переименована в «${newName}». Обновлено меток: ${affected.length}.`);
   return true;
+}
+
+async function renameSelectedSpotCollection() {
+  const select = $('spotCollectionManageSelect');
+  const oldName = normalizeSpotCollectionName(activeSpotCollection || select?.value);
+  const newName = normalizeSpotCollectionName($('spotCollectionRenameInput')?.value);
+  return renameSpotCollection(oldName, newName, { keepInFolders: false });
+}
+
+function openSpotFolderRenameDialog(collection) {
+  const normalized = normalizeSpotCollectionName(collection || activeSpotCollection);
+  if (!normalized || !spotCollectionExists(normalized)) return false;
+  spotFolderRenameDialogState = { collection: normalized };
+  setText('spotFolderRenameDialogTitle', `Переименовать папку «${normalized}»`);
+  const input = $('spotFolderRenameDialogInput');
+  if (input) input.value = normalized;
+  closeKebabMenus();
+  showDialogSafely('spotFolderRenameDialog');
+  window.requestAnimationFrame(() => {
+    try { input?.focus({ preventScroll: true }); input?.select(); } catch {}
+  });
+  return true;
+}
+
+function closeSpotFolderRenameDialog() {
+  spotFolderRenameDialogState = null;
+  closeDialogSafely('spotFolderRenameDialog');
+  return true;
+}
+
+async function renameSpotCollectionFromDialog() {
+  const oldName = normalizeSpotCollectionName(spotFolderRenameDialogState?.collection);
+  const newName = normalizeSpotCollectionName($('spotFolderRenameDialogInput')?.value);
+  const ok = await renameSpotCollection(oldName, newName, { keepInFolders: true });
+  if (ok) closeSpotFolderRenameDialog();
+  return ok;
 }
 
 async function deleteSelectedSpotCollection() {
@@ -8431,12 +8472,11 @@ function renderSpotFolderCard(collection, count) {
   renameBtn.type = 'button';
   renameBtn.className = 'secondary btn-secondary';
   renameBtn.textContent = 'Переименовать';
-  renameBtn.onclick = withButtonDiagnostics('spotFolderCardRenameBtn', () => {
+  renameBtn.onclick = withButtonDiagnostics('spotFolderCardRenameBtn', (event) => {
+    event?.stopPropagation?.();
     menu.open = false;
-    activeSpotCollection = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
-    openSpotCollection(activeSpotCollection);
-    window.requestAnimationFrame(() => openSpotFolderRenamePanel());
-    return true;
+    syncKebabMenuOpenClass(menu);
+    return openSpotFolderRenameDialog(collection);
   });
   panel.appendChild(renameBtn);
 
@@ -8444,11 +8484,13 @@ function renderSpotFolderCard(collection, count) {
   deleteBtn.type = 'button';
   deleteBtn.className = 'danger btn-danger';
   deleteBtn.textContent = 'Удалить';
-  deleteBtn.onclick = withButtonDiagnostics('spotFolderCardDeleteBtn', () => {
+  deleteBtn.onclick = withButtonDiagnostics('spotFolderCardDeleteBtn', (event) => {
+    event?.stopPropagation?.();
     menu.open = false;
-    activeSpotCollection = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
-    spotFolderDeleteDialogState = { collection: activeSpotCollection };
-    renderSpotCollectionManager(activeSpotCollection);
+    syncKebabMenuOpenClass(menu);
+    const selectedCollection = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
+    spotFolderDeleteDialogState = { collection: selectedCollection };
+    renderSpotCollectionManager(selectedCollection);
     renderSpotFolderDeleteDialog();
     showDialogSafely('spotFolderDeleteDialog');
     return true;
@@ -10378,6 +10420,12 @@ function bindUi() {
   if ($('spotCollectionCreateBtn')) $('spotCollectionCreateBtn').onclick = withButtonDiagnostics('spotCollectionCreateBtn', createSpotCollection);
   if ($('spotCollectionCreateCancelBtn')) $('spotCollectionCreateCancelBtn').onclick = withButtonDiagnostics('spotCollectionCreateCancelBtn', closeSpotCollectionCreateDialog);
   if ($('spotCollectionCreateDialogCloseBtn')) $('spotCollectionCreateDialogCloseBtn').onclick = withButtonDiagnostics('spotCollectionCreateDialogCloseBtn', closeSpotCollectionCreateDialog);
+  if ($('spotFolderRenameDialogSaveBtn')) $('spotFolderRenameDialogSaveBtn').onclick = withButtonDiagnostics('spotFolderRenameDialogSaveBtn', renameSpotCollectionFromDialog);
+  if ($('spotFolderRenameDialogCancelBtn')) $('spotFolderRenameDialogCancelBtn').onclick = withButtonDiagnostics('spotFolderRenameDialogCancelBtn', closeSpotFolderRenameDialog);
+  if ($('spotFolderRenameDialogCloseBtn')) $('spotFolderRenameDialogCloseBtn').onclick = withButtonDiagnostics('spotFolderRenameDialogCloseBtn', closeSpotFolderRenameDialog);
+  if ($('spotFolderRenameDialogInput')) $('spotFolderRenameDialogInput').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); renameSpotCollectionFromDialog(); } };
+  const renameDialog = $('spotFolderRenameDialog');
+  if (renameDialog) renameDialog.addEventListener('close', () => { spotFolderRenameDialogState = null; });
   if ($('spotCollectionManageSelect')) $('spotCollectionManageSelect').onchange = () => renderSpotCollectionManager();
   if ($('spotCollectionRenameBtn')) $('spotCollectionRenameBtn').onclick = withButtonDiagnostics('spotCollectionRenameBtn', renameSelectedSpotCollection);
   if ($('spotCollectionDeleteBtn')) $('spotCollectionDeleteBtn').onclick = withButtonDiagnostics('spotCollectionDeleteBtn', openSpotFolderDeleteDialog);
@@ -10524,7 +10572,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.42`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.42.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

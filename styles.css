@@ -3154,3 +3154,24 @@ body.online-map-expanded .bottom-nav {
   margin: 0;
   padding: 0 12px 12px;
 }
+
+/* Sprint 5.42.1 — Folder card menu popover hotfix.
+   The folder card dropdown must behave like a compact popover anchored to the
+   kebab button, not like a lower row that visually belongs to the next card. */
+.folder-card-kebab-menu .kebab-menu-panel {
+  top: 0;
+  right: calc(100% + 8px);
+  z-index: 260;
+}
+
+.spot-folder-card.folder-card-menu-open .folder-card-kebab-menu {
+  z-index: 270;
+}
+
+.spot-folder-card.folder-card-menu-open .kebab-menu-panel {
+  z-index: 280;
+}
+
+.spot-folder-rename-dialog .field {
+  margin-top: 12px;
+}

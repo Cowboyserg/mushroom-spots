@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.42 · Sprint 5\.42/;
+const EXPECTED_APP_VERSION = /v0\.7\.42-hotfix\.1 · Sprint 5\.42\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1433,10 +1433,18 @@ test('spots screen opens as folder list and filters marks inside folder', async 
   const folderSummaryAfter = await folderMenuSummary.boundingBox();
   expect(Math.abs((folderSummaryAfter?.x ?? 0) - (folderSummaryBefore?.x ?? 0))).toBeLessThan(2);
   expect(Math.abs((folderSummaryAfter?.y ?? 0) - (folderSummaryBefore?.y ?? 0))).toBeLessThan(2);
+  const folderPanelBox = await folderCard.locator('.kebab-menu-panel').boundingBox();
+  expect((folderPanelBox?.y ?? 0), 'folder card menu should open near the kebab instead of dropping into the next row').toBeLessThanOrEqual((folderSummaryAfter?.y ?? 0) + 2);
   await expect(folderCard.getByRole('button', { name: 'Переименовать' })).toBeVisible();
   await expect(folderCard.getByRole('button', { name: 'Удалить' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(folderCard.locator('.kebab-menu-panel')).toBeHidden();
+  await folderCard.getByRole('button', { name: 'Переименовать' }).click();
+  await expect(page.locator('#spotFolderRenameDialog')).toBeVisible();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await expect(page.locator('#spotFolderDetailView')).toBeHidden();
+  await page.locator('#spotFolderRenameDialogCancelBtn').click();
+  await expect(page.locator('#spotFolderRenameDialog')).toBeHidden();
+  await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await expect(page.locator('#spotFolderDetailView')).toBeHidden();
   await folderCard.click();
   await expect(page.locator('#spotFolderMenu')).toBeVisible();
   await page.locator('#spotFolderMenu summary').click();
@@ -1591,7 +1599,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.42');
+  expect(backup.appVersion).toBe('0.7.42-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1722,7 +1730,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.42',
+    appVersion: '0.7.42-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
