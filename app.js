@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.43-hotfix.3';
+const APP_VERSION = '0.7.43-hotfix.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -6334,6 +6334,40 @@ function readLegacySpotFormData() {
   };
 }
 
+function rememberSavePlaceDialogDraftField(field, value) {
+  if (!savePlaceDialogState) return;
+  if (!savePlaceDialogState.draft) savePlaceDialogState.draft = {};
+  savePlaceDialogState.draft[field] = typeof value === 'string' ? value : '';
+}
+
+function readSavePlaceDialogFormData() {
+  const live = readLegacySpotFormData();
+  const draft = savePlaceDialogState?.draft || {};
+  const draftText = (field) => typeof draft[field] === 'string' ? draft[field].trim() : '';
+  return {
+    name: live.name || draftText('name'),
+    mushroomType: live.mushroomType || draftText('mushroomType'),
+    note: live.note || draftText('note'),
+    collection: live.collection || draftText('collection') || SPOT_DEFAULT_COLLECTION,
+    photoFile: live.photoFile || null
+  };
+}
+
+function bindSavePlaceDialogDraftTracking() {
+  const bindings = [
+    ['spotName', 'name'],
+    ['mushroomType', 'mushroomType'],
+    ['spotNote', 'note'],
+    ['spotCollection', 'collection']
+  ];
+  for (const [id, field] of bindings) {
+    const el = $(id);
+    if (!el) continue;
+    const sync = () => rememberSavePlaceDialogDraftField(field, el.value || '');
+    el.addEventListener('input', sync);
+    el.addEventListener('change', sync);
+  }
+}
 
 function resetSavePlaceDialogForm({ preserveCollection = true } = {}) {
   for (const id of ['spotName', 'mushroomType', 'spotNote']) {
@@ -6384,10 +6418,12 @@ function openSavePlaceDialog(source, { shareAfterSave = false } = {}) {
     source: target.source,
     position: { ...target.position },
     shareAfterSave: Boolean(shareAfterSave),
+    draft: {},
     openedAt: new Date().toISOString()
   };
   updateSpotCollectionChoiceOptions();
   resetSavePlaceDialogForm({ preserveCollection: true });
+  rememberSavePlaceDialogDraftField('collection', $('spotCollection')?.value || SPOT_DEFAULT_COLLECTION);
   setText('savePlaceDialogTitle', target.title);
   setText('savePlaceDialogSubtitle', shareAfterSave
     ? `${target.subtitle} После сохранения точка будет отправлена в чат группы.`
@@ -6420,7 +6456,7 @@ async function submitSavePlaceDialog() {
   }
   if (savePlaceDialogState.shareAfterSave && !requireGroupChatReady()) return false;
   const state = { ...savePlaceDialogState, position: { ...savePlaceDialogState.position } };
-  const spot = await saveSpotFromPosition(state.position, state.source, readLegacySpotFormData());
+  const spot = await saveSpotFromPosition(state.position, state.source, readSavePlaceDialogFormData());
   if (!spot) return false;
   closeSavePlaceDialog({ reset: true });
   if (state.shareAfterSave) {
@@ -10430,6 +10466,7 @@ function bindUi() {
   if ($('sharePickedMapPointToChatBtn')) $('sharePickedMapPointToChatBtn').onclick = withButtonDiagnostics('sharePickedMapPointToChatBtn', sendPickedMapPointToChat);
   if ($('savePlaceDialogSaveBtn')) $('savePlaceDialogSaveBtn').onclick = withButtonDiagnostics('savePlaceDialogSaveBtn', submitSavePlaceDialog);
   if ($('savePlaceDialogCancelBtn')) $('savePlaceDialogCancelBtn').onclick = withButtonDiagnostics('savePlaceDialogCancelBtn', () => closeSavePlaceDialog());
+  bindSavePlaceDialogDraftTracking();
   const savePlaceDialog = $('savePlaceDialog');
   if (savePlaceDialog) savePlaceDialog.addEventListener('close', () => { savePlaceDialogState = null; setDisabled('savePlaceDialogSaveBtn', true); });
   if ($('saveResultShareBtn')) $('saveResultShareBtn').onclick = withButtonDiagnostics('saveResultShareBtn', shareLastSavedSpotToChat);
@@ -10595,7 +10632,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43.4`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
