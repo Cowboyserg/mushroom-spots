@@ -1,16 +1,18 @@
 {
   "name": "mushroom-spots-pwa",
-  "version": "0.7.46-hotfix.1",
+  "version": "0.7.46-hotfix.2",
   "private": true,
   "type": "module",
   "scripts": {
-    "check:syntax": "node --check app.js && node --check sw.js && node --check leaflet-offline-lite.js && node --check geo.js && node --check export.js && node --check map.js && node --check db.js && node --check ci-checks.mjs && node --check package-checks.mjs && node --check geo.test.mjs && node --check serve-static.mjs && node --check playwright.config.mjs && node --check e2e-smoke.spec.mjs",
+    "check:syntax": "node --check app.js && node --check sw.js && node --check leaflet-offline-lite.js && node --check geo.js && node --check export.js && node --check map.js && node --check db.js && node --check ci-checks.mjs && node --check package-checks.mjs && node --check version-preflight.mjs && node --check geo.test.mjs && node --check serve-static.mjs && node --check playwright.config.mjs && node --check e2e-smoke.spec.mjs",
     "check:source": "node ci-checks.mjs",
     "check:package": "node package-checks.mjs",
     "test": "node --test geo.test.mjs",
-    "ci": "npm run check:syntax && npm run check:source && npm test",
+    "ci": "npm run check:version && npm run check:syntax && npm run check:source && npm test",
     "test:e2e": "playwright test",
-    "ci:e2e": "npm run ci && npm run test:e2e"
+    "ci:e2e": "npm run check:version && npm run ci && npm run test:e2e",
+    "check:version": "node version-preflight.mjs",
+    "pretest:e2e": "npm run check:version"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0"

@@ -86,6 +86,7 @@ function checkRequiredProjectFiles() {
     'package.json',
     'ci-checks.mjs',
     'package-checks.mjs',
+    'version-preflight.mjs',
     'geo.test.mjs',
     'package-lock.json',
     'serve-static.mjs',
@@ -173,6 +174,54 @@ function checkVersionedAppShellAssets() {
   for (const asset of versionedAssets) {
     assertIncludes(indexHtml, `${asset}?v=${version}`, `index.html versioned asset ${asset}`);
   }
+}
+
+
+function sliceBetween(text, startToken, endToken, label) {
+  const start = text.indexOf(startToken);
+  assert.ok(start >= 0, `${label} must include ${startToken}`);
+  const end = text.indexOf(endToken, start + startToken.length);
+  assert.ok(end >= 0, `${label} must include ${endToken} after ${startToken}`);
+  return text.slice(start, end);
+}
+
+function checkOfflineMapsUxContract() {
+  const indexHtml = read('index.html');
+
+  const builderStart = indexHtml.indexOf('id="offlineRegionBuilderSection"');
+  const systemStart = indexHtml.indexOf('id="offlineSystemDetails"');
+  assert.ok(builderStart >= 0, 'Offline screen must include visible region builder section');
+  assert.ok(systemStart >= 0, 'Offline screen must include system information details');
+  assert.ok(
+    builderStart < systemStart,
+    'Offline region rectangle preparation must stay in the visible user flow before System information'
+  );
+
+  const builderHtml = sliceBetween(
+    indexHtml,
+    'id="offlineRegionBuilderSection"',
+    'id="offlineAddMapPanel"',
+    'Offline region builder section'
+  );
+  assertIncludes(builderHtml, 'id="startBboxExportBtn"', 'visible offline region builder');
+  assertIncludes(builderHtml, 'id="useVisibleBboxBtn"', 'visible offline region builder');
+  assertIncludes(builderHtml, 'id="bboxCommandOutput"', 'visible offline region builder');
+
+  const systemHtml = indexHtml.slice(systemStart);
+  assertIncludes(systemHtml, 'id="probePmtilesBtn"', 'System information PMTiles diagnostics');
+  assertIncludes(systemHtml, 'id="offlinePackageSelect"', 'System information technical package select');
+  assert.ok(
+    !systemHtml.includes('id="startBboxExportBtn"'),
+    'System information must not hide the user-facing rectangle preparation action'
+  );
+
+  const catalogSourceDetails = sliceBetween(
+    indexHtml,
+    'offline-catalog-source-details',
+    'id="offlineRegionCatalogStatus"',
+    'Offline catalog source details'
+  );
+  assertIncludes(catalogSourceDetails, 'id="offlineManifestUrlInput"', 'catalog source details');
 }
 
 function checkRuntimeStateDeclarations() {
@@ -273,8 +322,9 @@ function checkDependencyAndLockfilePolicy() {
   if (packageJson.devDependencies?.['@playwright/test']) {
     assert.ok(pathExists('playwright.config.mjs'), 'Playwright config is required when @playwright/test is installed');
     assert.ok(pathExists('e2e-smoke.spec.mjs'), 'Playwright smoke spec is required when @playwright/test is installed');
+    assertIncludes(JSON.stringify(packageJson.scripts || {}), 'node version-preflight.mjs', 'version preflight script');
     assertIncludes(JSON.stringify(packageJson.scripts || {}), 'playwright test', 'Playwright test script');
-    assertIncludes(JSON.stringify(packageJson.scripts || {}), 'npm run ci && npm run test:e2e', 'E2E CI script');
+    assertIncludes(JSON.stringify(packageJson.scripts || {}), 'npm run check:version && npm run ci && npm run test:e2e', 'E2E CI script');
     const playwrightConfig = read('playwright.config.mjs');
     assertIncludes(playwrightConfig, "name: 'desktop-chromium'", 'Playwright desktop project');
     assertIncludes(playwrightConfig, "name: 'android-chromium'", 'Playwright Android project');
@@ -319,6 +369,7 @@ checkGitignoreGuard();
 checkVersionConsistency();
 checkVersionedAppShellAssets();
 checkDomIdContracts();
+checkOfflineMapsUxContract();
 checkRuntimeStateDeclarations();
 checkOnlineMapControlsContract();
 checkGpsDesktopFallbackContract();

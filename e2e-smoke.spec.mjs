@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.46-hotfix\.1 · Sprint 5\.46\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.46-hotfix\.2 · Sprint 5\.46\.2/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -546,6 +546,28 @@ test('offline maps screen presents empty manager before a map is added', async (
   await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
   await expect(page.locator('#startBboxExportBtn')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить выбранный файл карты' })).toBeHidden();
+});
+
+
+test('offline maps keep region preparation visible while system details stay collapsed', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await expect(page.locator('#offlineRegionBuilderSection')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
+  await expect(page.locator('#startBboxExportBtn')).toBeVisible();
+  await expect(page.locator('#useVisibleBboxBtn')).toBeVisible();
+  await expect(page.locator('#bboxCommandOutput')).toBeVisible();
+  await expect(page.locator('#offlineSystemDetails')).not.toHaveAttribute('open', '');
+  await expect(page.locator('#probePmtilesBtn')).toBeHidden();
+  await expect(page.locator('#offlinePackageSelect')).toBeHidden();
+
+  const bboxInsideSystemDetails = await page.locator('#startBboxExportBtn').evaluate((button) => Boolean(button.closest('#offlineSystemDetails')));
+  expect(bboxInsideSystemDetails, 'rectangle preparation action must not be hidden inside System information').toBe(false);
+
+  await expect(page.locator('#offlineManifestUrlInput')).toBeHidden();
+  await page.locator('.offline-catalog-source-details > summary').click();
+  await expect(page.locator('#offlineManifestUrlInput')).toBeVisible();
 });
 
 
@@ -1697,7 +1719,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.46-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.46-hotfix.2');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1828,7 +1850,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.46-hotfix.1',
+    appVersion: '0.7.46-hotfix.2',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

@@ -40,6 +40,7 @@ const REQUIRED_PACKAGE_FILES = [
   'package.json',
   'ci-checks.mjs',
   'package-checks.mjs',
+  'version-preflight.mjs',
   'geo.test.mjs',
   'package-lock.json',
   'serve-static.mjs',
