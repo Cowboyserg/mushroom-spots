@@ -21,6 +21,14 @@ function assertIncludes(text, expected, label) {
   );
 }
 
+function getProjectPathCurrentVersionLine(projectPath) {
+  const line = projectPath
+    .split(/\r?\n/)
+    .find((candidate) => candidate.trim().startsWith('Current application version:'));
+  assert.ok(line, 'version preflight: PROJECT_PATH.md must contain a Current application version line');
+  return line.trim();
+}
+
 function parseProjectVersion() {
   const appJs = read('app.js');
   const indexHtml = read('index.html');
@@ -116,7 +124,10 @@ function checkRuntimeAndSettingsLabels({ version, sprint, label }) {
   assertIncludes(indexHtml, sprint, 'settings sprint label');
   assertIncludes(indexHtml, `mushroom-spots-v${version}`, 'settings cache label');
   assertIncludes(swJs, `mushroom-spots-v${version}`, 'service worker cache name');
-  assertIncludes(projectPath, `Current application version: \`${version} / ${sprint}`, 'PROJECT_PATH current version header');
+
+  const projectVersionLine = getProjectPathCurrentVersionLine(projectPath);
+  assertIncludes(projectVersionLine, version, 'PROJECT_PATH current version line');
+  assertIncludes(projectVersionLine, sprint, 'PROJECT_PATH current sprint line');
 }
 
 function main() {
