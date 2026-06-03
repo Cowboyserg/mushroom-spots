@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.44-hotfix.8" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.44-hotfix.8" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.45" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.45" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.44-hotfix.8" />
+  <link rel="stylesheet" href="styles.css?v=0.7.45" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.44-hotfix.8 · Sprint 5.44.8</p>
+      <p id="appVersion">v0.7.45 · Sprint 5.45</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -347,7 +347,7 @@
     <section class="app-screen" id="screen-group" data-app-screen="group" aria-labelledby="screenTitleGroup" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleGroup">Группа</h2>
-        <p class="hint">Мобильный экран входа: профиль, создание группы и вход по коду без лишних блоков.</p>
+        <p class="hint">Профиль, создание группы и вход по коду без лишнего шума.</p>
       </div>
       <section class="card live-card group-overview-card" aria-labelledby="groupOverviewTitle">
         <div class="section-title">
@@ -370,28 +370,39 @@
           </div>
         </div>
         <div class="group-profile-card" id="groupProfileCard">
-          <div class="field group-profile-field">
-            <label for="liveName">Профиль на этом устройстве</label>
+          <label for="liveName" class="group-profile-label">Профиль на этом устройстве</label>
+          <div class="group-profile-row">
             <input id="liveName" placeholder="Например: Иван" />
+            <button id="groupProfileEditBtn" class="secondary btn-secondary small-btn group-profile-edit-btn" type="button" aria-label="Изменить имя профиля">✎ Изменить</button>
           </div>
           <div class="people-panel group-profile-tools">
             <p class="hint" id="peopleHint">Локальный человек будет запомнен на этом устройстве.</p>
             <div id="peopleProfiles" class="profile-chip-row"></div>
             <div class="row profile-actions">
-              <button id="savePersonProfileBtn" class="secondary btn-secondary" type="button">Переименовать профиль</button>
-              <button id="newPersonProfileBtn" class="secondary btn-secondary" type="button">Другой человек</button>
+              <button id="savePersonProfileBtn" class="secondary btn-secondary small-btn" type="button">Переименовать</button>
+              <button id="newPersonProfileBtn" class="secondary btn-secondary small-btn" type="button">Другой человек</button>
             </div>
           </div>
         </div>
         <div class="group-entry-grid" id="groupEntryPanels" aria-label="Действия с группой">
-          <div class="group-entry-box" id="groupCreatePanel">
-            <h3>Создать группу</h3>
-            <p class="hint">Создай группу и отправь приглашение друзьям. Код вводить не нужно.</p>
+          <div class="group-entry-box group-entry-create" id="groupCreatePanel">
+            <div class="group-entry-header">
+              <span class="group-entry-icon" aria-hidden="true">＋</span>
+              <div>
+                <h3>Создать группу</h3>
+                <p class="hint">Создай группу и отправь приглашение друзьям. Код вводить не нужно.</p>
+              </div>
+            </div>
             <button id="createGroupBtn" class="btn-primary" type="button">Создать группу</button>
           </div>
-          <div class="group-entry-box" id="groupJoinPanel">
-            <h3>Войти по коду</h3>
-            <p class="hint">Вставь код или ссылку от друга.</p>
+          <div class="group-entry-box group-entry-join" id="groupJoinPanel">
+            <div class="group-entry-header">
+              <span class="group-entry-icon" aria-hidden="true">🔑</span>
+              <div>
+                <h3>Войти по коду</h3>
+                <p class="hint">Вставь код или ссылку от друга.</p>
+              </div>
+            </div>
             <div class="field compact-field">
               <label for="groupId">Код или ссылка группы</label>
               <input id="groupId" placeholder="Вставь код или ссылку от друга" />
@@ -608,7 +619,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.44-hotfix.8 · Sprint 5.44.8</span>
+          <span class="pill">v0.7.45 · Sprint 5.45</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -624,9 +635,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.44-hotfix.8</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.44.8 — Group Entry Mobile Layout Polish</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.44-hotfix.8</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.45</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.45 — Group Entry Mobile UI Polish</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.45</strong></div>
         </div>
       </section>
 
@@ -983,10 +994,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.44-hotfix.8"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.45"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.44-hotfix.8"></script>
-  <script src="app.js?v=0.7.44-hotfix.8"></script>
+  <script src="config.js?v=0.7.45"></script>
+  <script src="app.js?v=0.7.45"></script>
 </body>
 </html>

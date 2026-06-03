@@ -3222,18 +3222,40 @@ body.online-map-expanded .bottom-nav {
   }
 }
 
-/* Sprint 5.44.8 group entry mobile layout polish. */
+/* Sprint 5.45 group entry mobile-first UI polish. */
+.group-overview-card {
+  overflow: hidden;
+}
 .group-profile-card {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin: 12px 0 14px;
   padding: 12px;
-  border: 1px dashed rgba(36, 75, 47, 0.18);
+  border: 1px dashed rgba(36, 75, 47, 0.22);
   border-radius: 18px;
-  background: rgba(244, 248, 241, 0.62);
+  background: rgba(244, 248, 241, 0.58);
 }
-.group-profile-card .field {
+.group-profile-label {
   margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.group-profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.group-profile-row input {
+  min-width: 0;
+}
+.group-profile-edit-btn {
+  min-height: 40px;
+  padding-inline: 12px;
+  white-space: nowrap;
+  background: #e8eadf;
+  color: var(--green);
+  border: 1px solid var(--border);
 }
 .group-profile-tools.people-panel {
   margin: 0;
@@ -3247,38 +3269,91 @@ body.online-map-expanded .bottom-nav {
 .group-profile-tools .profile-chip-row {
   margin: 6px 0 10px;
 }
+.group-profile-tools .profile-chip {
+  min-height: 38px;
+  padding: 8px 11px;
+}
 .group-profile-tools .profile-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
   margin-top: 0;
 }
 .group-profile-tools .profile-actions button {
-  min-height: 42px;
-  padding: 9px 10px;
-  font-size: 14px;
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(36, 75, 47, 0.16);
+  background: #edf3ea;
+  color: var(--green);
+  box-shadow: none;
+}
+.group-entry-grid {
+  align-items: stretch;
 }
 .group-entry-box {
   display: flex;
   flex-direction: column;
-  min-height: 210px;
+  min-height: 244px;
+  gap: 12px;
+}
+.group-entry-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.group-entry-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: rgba(36, 75, 47, 0.08);
+  color: var(--green);
+  border: 1px solid rgba(36, 75, 47, 0.14);
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+.group-entry-box h3 {
+  margin-top: 0;
+  margin-bottom: 6px;
 }
 .group-entry-box .hint {
-  margin-bottom: 10px;
+  margin-top: 0;
 }
 .group-entry-box .compact-field {
-  margin-top: auto;
+  margin: auto 0 0;
 }
 .group-entry-box > button {
   margin-top: auto;
+  min-height: 48px;
 }
 .group-entry-box .compact-field + button {
-  margin-top: 10px;
+  margin-top: 0;
 }
 .group-locked-preview[hidden] {
   display: none !important;
 }
+@media (min-width: 721px) {
+  .group-profile-card {
+    padding: 14px;
+  }
+  .group-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
 @media (max-width: 720px) {
+  .screen-heading .hint {
+    max-width: 34rem;
+  }
   .group-overview-card {
     padding-left: 14px;
     padding-right: 14px;
@@ -3289,16 +3364,6 @@ body.online-map-expanded .bottom-nav {
   .group-profile-card {
     padding: 10px;
   }
-  .group-profile-tools .profile-chip-row {
-    gap: 6px;
-  }
-  .group-profile-tools .profile-chip {
-    min-height: 40px;
-    padding: 8px 10px;
-  }
-  .group-profile-tools .profile-actions {
-    grid-template-columns: 1fr 1fr;
-  }
   .group-entry-grid {
     gap: 10px;
     margin-top: 12px;
@@ -3307,16 +3372,21 @@ body.online-map-expanded .bottom-nav {
     min-height: 0;
     padding: 14px;
   }
-  .group-entry-box .compact-field,
-  .group-entry-box > button {
-    margin-top: 10px;
+  .group-entry-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
   }
 }
-@media (max-width: 430px) {
-  .group-profile-tools .profile-actions {
+@media (max-width: 460px) {
+  .group-profile-row {
     grid-template-columns: 1fr;
   }
-  .group-profile-tools .profile-actions button {
-    justify-content: center;
+  .group-profile-edit-btn {
+    justify-self: start;
+  }
+  .group-entry-header {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }

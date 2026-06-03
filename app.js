@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.8';
+const APP_VERSION = '0.7.45';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -295,6 +295,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   sendSelectedSpotToChatBtn: 'Отправить сохранённую точку в чат',
   createGroupBtn: 'Создать группу',
   copyInviteBtn: 'Скопировать приглашение',
+  groupProfileEditBtn: 'Изменить профиль',
   savePersonProfileBtn: 'Переименовать профиль',
   newPersonProfileBtn: 'Другой человек',
   profileQuickLoginBtn: 'Войти как сохранённый человек',
@@ -10663,6 +10664,13 @@ function bindUi() {
   $('groupId').onblur = () => { updateActionButtonsUi(); };
   $('createGroupBtn').onclick = withButtonDiagnostics('createGroupBtn', createGroup);
   $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
+  if ($('groupProfileEditBtn')) $('groupProfileEditBtn').onclick = withButtonDiagnostics('groupProfileEditBtn', () => {
+    const input = $('liveName');
+    if (!input) return false;
+    input.focus();
+    if (typeof input.select === 'function') input.select();
+    return true;
+  });
   if ($('savePersonProfileBtn')) $('savePersonProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', saveCurrentPersonProfile);
   if ($('newPersonProfileBtn')) $('newPersonProfileBtn').onclick = withButtonDiagnostics('newPersonProfileBtn', createNewPersonProfile);
   {
@@ -10777,7 +10785,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.8`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.45`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
