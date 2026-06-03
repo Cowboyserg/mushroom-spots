@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.3';
+const APP_VERSION = '0.7.44-hotfix.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -139,6 +139,7 @@ let activeTrackLine = null;
 let trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null };
 let folderHandle = null;
 let groupJoined = false;
+let joinedGroupId = '';
 let liveEnabled = false;
 let liveTimer = null;
 let friendsTimer = null;
@@ -472,6 +473,7 @@ function clearGroupInviteFromUrl() {
 }
 
 function clearPersistedGroupSelection() {
+  joinedGroupId = '';
   if ($('groupId')) $('groupId').value = '';
   groupEntryDraft.groupId = '';
   localStorage.removeItem('mushroom_live_group_id');
@@ -488,6 +490,7 @@ function clearPersistedGroupSelection() {
 function resetRuntimeGroupSession() {
   liveEnabled = false;
   groupJoined = false;
+  joinedGroupId = '';
   clearInterval(liveTimer);
   clearInterval(friendsTimer);
   liveTimer = null;
@@ -9364,6 +9367,7 @@ async function joinGroup(silent = false) {
 
   saveLiveInputs();
   groupJoined = true;
+  joinedGroupId = group;
   mergeSelfIntoGroupCache(group);
   renderCachedFriends(group, 'Локальный вход выполнен; обновляю сеть…');
   updateLiveUi();
@@ -9398,6 +9402,7 @@ async function leaveGroup() {
   await stopLiveSharing(false);
   await deleteMyGroupMember().catch(err => console.warn('Could not delete own group member row', err));
   groupJoined = false;
+  joinedGroupId = '';
   setMemberSyncPending(false, 'left group');
   stopChatAutoRefresh(true);
   clearInterval(friendsTimer);
@@ -9561,6 +9566,7 @@ async function cleanCurrentGroupDbRows() {
     liveTimer = null;
   }
   groupJoined = false;
+  joinedGroupId = '';
   setMemberSyncPending(false, 'left group');
   stopChatAutoRefresh(true);
   clearInterval(friendsTimer);
@@ -10499,6 +10505,40 @@ async function stopLiveSharing(keepWatching = true) {
     : 'Показ моей позиции остановлен.';
 }
 
+function handleGroupIdInputCommitted() {
+  const nextGroup = syncNormalizedGroupInput();
+  saveLiveInputs();
+
+  // iPhone/WebKit can commit the input's late `change` event after the join
+  // button activation. A committed value that equals the already joined group is
+  // not a group switch and must not roll the just-rendered joined state back.
+  if (groupJoined && joinedGroupId && nextGroup === joinedGroupId) {
+    updateLiveUi();
+    updateDbCleanupUi();
+    updateChatUi();
+    return;
+  }
+
+  if (!groupJoined) {
+    updateLiveUi();
+    updateDbCleanupUi();
+    updateChatUi();
+    return;
+  }
+
+  groupJoined = false;
+  joinedGroupId = '';
+  setMemberSyncPending(false, 'group changed');
+  clearInterval(friendsTimer);
+  friendsTimer = null;
+  clearFriendMarkers();
+  renderFriends([]);
+  stopChatAutoRefresh(true);
+  updateLiveUi();
+  updateDbCleanupUi();
+  updateChatUi();
+}
+
 async function testSupabaseConnection() {
   try {
     const cfg = getSupabaseConfig();
@@ -10685,26 +10725,14 @@ function bindUi() {
   $('liveName').onchange = saveLiveInputs;
   $('liveName').onblur = () => { updateActionButtonsUi(); };
   $('groupId').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); };
-  $('groupId').onchange = () => {
-    saveLiveInputs();
-    groupJoined = false;
-    setMemberSyncPending(false, 'group changed');
-    clearInterval(friendsTimer);
-    friendsTimer = null;
-    clearFriendMarkers();
-    renderFriends([]);
-    stopChatAutoRefresh(true);
-    updateLiveUi();
-    updateDbCleanupUi();
-    updateChatUi();
-  };
+  $('groupId').onchange = handleGroupIdInputCommitted;
   $('installHelpBtn').onclick = withButtonDiagnostics('installHelpBtn', () => $('helpDialog').showModal());
   $('closeHelpBtn').onclick = withButtonDiagnostics('closeHelpBtn', () => $('helpDialog').close());
 }
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.4`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

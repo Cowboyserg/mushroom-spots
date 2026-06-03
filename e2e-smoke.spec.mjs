@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.3 · Sprint 5\.44\.3/;
+const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.4 · Sprint 5\.44\.4/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -224,6 +224,30 @@ async function bootApp(page, options = {}) {
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
+}
+
+async function expectJoinedGroupReady(page, expectedGroup) {
+  await expect.poll(async () => page.evaluate(() => {
+    const groupStateText = document.querySelector('#groupStateText');
+    const joinedActions = document.querySelector('#groupJoinedActions');
+    const joinButton = document.querySelector('#joinGroupBtn');
+    const groupInput = document.querySelector('#groupId');
+    return {
+      stateText: groupStateText?.textContent || '',
+      joinedActionsHidden: Boolean(joinedActions?.hidden),
+      joinButtonDisabled: Boolean(joinButton?.disabled),
+      groupValue: groupInput?.value || '',
+      persistedGroup: localStorage.getItem('mushroom_live_group_id') || ''
+    };
+  }), {
+    message: 'group join diagnostic oracle: state/localStorage/button flags must agree after join click'
+  }).toMatchObject({
+    stateText: expect.stringContaining('Ты в группе'),
+    joinedActionsHidden: false,
+    joinButtonDisabled: true,
+    groupValue: expectedGroup,
+    persistedGroup: expectedGroup
+  });
 }
 
 async function pickMapPoint(page) {
@@ -922,7 +946,11 @@ test('group screen separates entry actions from group features', async ({ page }
   await page.getByLabel('Код или ссылка группы').fill('e2e-entry-ux');
   await expect(page.locator('#joinGroupBtn')).toBeEnabled();
   await page.locator('#joinGroupBtn').click();
-  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+  await expectJoinedGroupReady(page, 'e2e-entry-ux');
+  await page.evaluate(() => {
+    document.querySelector('#groupId')?.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expectJoinedGroupReady(page, 'e2e-entry-ux');
   await expect(page.locator('#liveStatus')).toContainText('ваши координаты не передаются');
   await expect(page.locator('#myLiveStateBox')).toBeVisible();
   await expect(page.locator('#myLiveStateText')).toContainText('Ваши координаты не передаются');
@@ -974,7 +1002,7 @@ test('group chat disables duplicate send and clears composer after success', asy
   await expect(page.locator('#groupId')).toHaveValue('e2e-chat-guard');
   await page.locator('#liveName').fill('E2E пользователь');
   await page.locator('#joinGroupBtn').click();
-  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+  await expectJoinedGroupReady(page, 'e2e-chat-guard');
 
   const input = page.locator('#chatMessageInput');
   const sendButton = page.locator('#chatSendBtn');
@@ -1005,7 +1033,7 @@ test('leaving group clears persisted group after reload', async ({ page }) => {
 
   await page.locator('#liveName').fill('E2E пользователь');
   await page.locator('#joinGroupBtn').click();
-  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+  await expectJoinedGroupReady(page, 'e2e-leave-group');
 
   await page.locator('#leaveGroupBtn').click();
   await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
@@ -1204,7 +1232,7 @@ test('picked map point context sheet enables share action only when group chat i
   await page.locator('#liveName').fill('E2E пользователь');
   await expect(page.locator('#joinGroupBtn')).toBeEnabled();
   await page.locator('#joinGroupBtn').click();
-  await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
+  await expectJoinedGroupReady(page, 'e2e-context-sheet-group');
 
   await page.getByRole('button', { name: 'Карта' }).click();
   await pickMapPoint(page);
@@ -1635,7 +1663,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.44-hotfix.3');
+  expect(backup.appVersion).toBe('0.7.44-hotfix.4');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1766,7 +1794,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.44-hotfix.3',
+    appVersion: '0.7.44-hotfix.4',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
