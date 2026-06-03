@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.48';
+const APP_VERSION = '0.7.48-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -1880,12 +1880,13 @@ async function upsertRememberedPmtilesMapForPackage(pkg, persisted, verified = {
     persistent: true,
     importedAt: now,
     createdAt: existing?.createdAt || now,
-    lastSelectedAt: now,
+    lastSelectedAt: existing?.lastSelectedAt || null,
     notes: existing?.notes || `Installed from catalog package ${pkg.id || fileName}`
   };
+  const wasSelected = rememberedPmtilesMapsState.selectedId === mapRecord.id;
   const withoutRecord = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== mapRecord.id);
   rememberedPmtilesMapsState.maps = [mapRecord, ...withoutRecord];
-  rememberedPmtilesMapsState.selectedId = mapRecord.id;
+  if (wasSelected) rememberedPmtilesMapsState.selectedId = mapRecord.id;
   saveRememberedPmtilesMaps(existing ? 'catalog PMTiles region updated' : 'catalog PMTiles region installed');
   return mapRecord;
 }
@@ -1921,8 +1922,6 @@ async function installOfflineRegionPackage(packageId) {
     const record = await upsertRememberedPmtilesMapForPackage(pkg, { ...persisted, sizeBytes: verified.sizeBytes }, verified);
     const localPackage = makePersistedPmtilesPackage(record);
     offlineMapManifest.packages = [localPackage, ...(offlineMapManifest.packages || []).filter((item) => !(isLocalPmtilesPackage(item) && item.rememberedId === record.id))];
-    offlineMapManifest.selectedPackageId = localPackage.id;
-    selectOfflineMapPackage(localPackage.id, true);
     setOfflineRegionInstallState(pkg.id, { status: 'installed', receivedBytes: verified.sizeBytes, totalBytes: verified.sizeBytes, storageType: record.storageType, storageName: record.storageName, error: null, finishedAt: new Date().toISOString() }, 'offline region installed');
     setButtonApiStatus({ buttonId: 'offlineRegionInstallBtn', label: BUTTON_DIAGNOSTIC_LABELS.offlineRegionInstallBtn }, 'готово', `${pkg.name || pkg.id} · установлена в OPFS`);
     showAppToast('Регион установлен. Нажми “Открыть карту”.', 'success');
@@ -11112,7 +11111,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.48`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.48.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
