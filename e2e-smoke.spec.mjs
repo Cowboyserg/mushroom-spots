@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.46 · Sprint 5\.46/;
+const EXPECTED_APP_VERSION = /v0\.7\.46-hotfix\.1 · Sprint 5\.46\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -543,7 +543,8 @@ test('offline maps screen presents empty manager before a map is added', async (
   await expect(page.locator('#offlineMapListSection')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Предпросмотр офлайн-карты' })).toBeHidden();
   await expect(page.locator('#offlineSystemDetails > summary').getByText('Системная информация', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Подготовить регион на компьютере' })).toBeVisible();
+  await expect(page.locator('#startBboxExportBtn')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить выбранный файл карты' })).toBeHidden();
 });
 
@@ -1696,7 +1697,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.46');
+  expect(backup.appVersion).toBe('0.7.46-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1827,7 +1828,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.46',
+    appVersion: '0.7.46-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

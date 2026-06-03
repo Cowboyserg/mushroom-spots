@@ -3399,6 +3399,13 @@ body.online-map-expanded .bottom-nav {
 .secondary-offline-flow {
   background: rgba(244, 248, 241, 0.58);
 }
+
+.offline-region-builder {
+  margin: 0.9rem 0;
+}
+.offline-region-builder textarea {
+  margin-top: 0.65rem;
+}
 .offline-catalog-main-actions {
   margin: 0.65rem 0;
 }
