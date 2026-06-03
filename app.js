@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.46-hotfix.4';
+const APP_VERSION = '0.7.47';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -1922,7 +1922,9 @@ async function installOfflineRegionPackage(packageId) {
     selectOfflineMapPackage(localPackage.id, true);
     setOfflineRegionInstallState(pkg.id, { status: 'installed', receivedBytes: verified.sizeBytes, totalBytes: verified.sizeBytes, storageType: record.storageType, storageName: record.storageName, error: null, finishedAt: new Date().toISOString() }, 'offline region installed');
     setButtonApiStatus({ buttonId: 'offlineRegionInstallBtn', label: BUTTON_DIAGNOSTIC_LABELS.offlineRegionInstallBtn }, 'готово', `${pkg.name || pkg.id} · установлена в OPFS`);
-    showAppToast('Регион установлен', 'success');
+    showAppToast('Регион установлен. Нажми “Открыть карту”.', 'success');
+    const status = $('offlineRegionCatalogStatus');
+    if (status) status.textContent = `Регион “${pkg.name || pkg.id}” установлен. Нажми “Открыть карту”, чтобы показать его выше.`;
     renderOfflineMapPackageUi();
     return record;
   } catch (err) {
@@ -2856,6 +2858,30 @@ async function activatePersistedPmtilesMap(record, userAction = false) {
   }
 }
 
+function revealPmtilesPreviewPanel(reason = 'offline preview reveal') {
+  const panel = $('pmtilesPreviewPanel');
+  if (!panel || panel.hidden) return false;
+  try {
+    panel.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+  } catch (err) {
+    try { panel.scrollIntoView(true); } catch (fallbackErr) { /* no-op */ }
+  }
+  window.setTimeout(() => {
+    try { pmtilesPreviewMap?.resize?.(); } catch (err) { /* no-op */ }
+  }, 250);
+  recordMapDebug(reason, { previewVisible: !panel.hidden });
+  return true;
+}
+
+async function openRememberedPmtilesMapFromCatalog(recordId) {
+  const selected = await selectRememberedPmtilesMap(recordId, true);
+  if (selected) {
+    renderOfflineRegionCatalogUi();
+    revealPmtilesPreviewPanel('catalog installed offline map opened');
+  }
+  return selected;
+}
+
 async function selectRememberedPmtilesMap(recordId, userAction = false) {
   const found = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
   if (!found) return null;
@@ -3146,7 +3172,8 @@ async function confirmPendingOfflineRegionInstall() {
   return installOfflineRegionPackage(packageId);
 }
 
-function getOfflineRegionInstallUiState(pkg, installed) {
+function getOfflineRegionInstallUiState(pkg, installed, activeInstalled = false) {
+  if (installed && activeInstalled) return { status: 'active', label: 'открыта сейчас', mode: 'on', detail: 'Эта офлайн-карта сейчас выбрана. Можно показать её в предпросмотре выше.' };
   if (installed) return { status: 'installed', label: 'установлена', mode: 'on', detail: 'Файл уже сохранён в локальном хранилище приложения.' };
   const entry = getOfflineRegionInstallEntry(pkg?.id);
   if (!entry) return { status: 'not-installed', label: 'не установлена', mode: 'warn', detail: 'Перед установкой приложение покажет размер файла и доступное место.' };
@@ -3216,9 +3243,13 @@ function renderOfflineRegionCatalogUi() {
   for (const pkg of remotePackages) {
     const installed = findRememberedPmtilesMapForPackage(pkg);
     const installEntry = getOfflineRegionInstallEntry(pkg.id);
-    const uiState = getOfflineRegionInstallUiState(pkg, installed);
+    const activeInstalled = Boolean(installed
+      && rememberedPmtilesMapsState.selectedId === installed.id
+      && localPmtilesFileState.status === 'selected'
+      && localPmtilesFileState.rememberedId === installed.id);
+    const uiState = getOfflineRegionInstallUiState(pkg, installed, activeInstalled);
     const card = document.createElement('article');
-    card.className = `offline-region-card${installed ? ' installed' : ''}`;
+    card.className = `offline-region-card${installed ? ' installed' : ''}${activeInstalled ? ' active' : ''}`;
     card.setAttribute('role', 'listitem');
     card.dataset.packageId = pkg.id;
     card.dataset.installStatus = uiState.status;
@@ -3271,10 +3302,10 @@ function renderOfflineRegionCatalogUi() {
     if (installed) {
       const openBtn = document.createElement('button');
       openBtn.type = 'button';
-      openBtn.className = 'btn-primary small-btn';
-      openBtn.textContent = 'Открыть установленную';
+      openBtn.className = activeInstalled ? 'secondary btn-secondary small-btn offline-region-show-map-btn' : 'btn-primary small-btn offline-region-open-map-btn';
+      openBtn.textContent = activeInstalled ? 'Показать карту' : 'Открыть карту';
       openBtn.addEventListener('click', () => {
-        selectRememberedPmtilesMap(installed.id, true).catch(console.warn);
+        openRememberedPmtilesMapFromCatalog(installed.id).catch(console.warn);
       });
       actions.appendChild(openBtn);
     } else if (installEntry?.status === 'downloading') {
@@ -3301,7 +3332,9 @@ function renderOfflineRegionCatalogUi() {
 
     if (pkg.url) {
       const download = document.createElement('a');
-      download.className = 'secondary btn-secondary small-btn offline-region-download-link';
+      download.className = installed
+        ? 'offline-region-download-link offline-region-redownload-link'
+        : 'secondary btn-secondary small-btn offline-region-download-link';
       download.href = pkg.url;
       download.target = '_blank';
       download.rel = 'noopener noreferrer';
@@ -10961,7 +10994,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.46.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.47`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

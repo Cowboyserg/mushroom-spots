@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.46-hotfix\.4 · Sprint 5\.46\.4/;
+const EXPECTED_APP_VERSION = /v0\.7\.47 · Sprint 5\.47/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -502,6 +502,16 @@ async function importJsonFileViaSettings(page, content, expectedMessage) {
   await dialog.accept();
 }
 
+
+async function expectOfflinePreviewNearViewportTop(page) {
+  await expect.poll(async () => page.locator('#pmtilesPreviewPanel').evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return Math.round(rect.top);
+  }), {
+    message: 'opened offline map should scroll/reveal the preview panel near the top of the viewport'
+  }).toBeLessThan(160);
+}
+
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
@@ -613,14 +623,18 @@ test('offline region install streams a catalog package into OPFS when supported'
   }
 
   await expect(central).toContainText('установлена');
-  await expect(central.getByRole('button', { name: 'Открыть установленную' })).toBeVisible();
+  await expect(central.getByRole('button', { name: 'Открыть карту' })).toBeVisible();
   await expect(central.getByRole('link', { name: 'Скачать заново' })).toBeVisible();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
 
-  await central.getByRole('button', { name: 'Открыть установленную' }).click();
+  await central.scrollIntoViewIfNeeded();
+  await central.getByRole('button', { name: 'Открыть карту' }).click();
   await expect(page.locator('#offlinePackageManifestStatus')).toContainText('Локальная карта: Центральный федеральный округ');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  await expect(central).toContainText('открыта сейчас');
+  await expect(central.getByRole('button', { name: 'Показать карту' })).toBeVisible();
+  await expectOfflinePreviewNearViewportTop(page);
 });
 
 
@@ -656,17 +670,19 @@ test('offline region catalog opens the installed local map instead of remote pac
 
   await page.locator('#refreshOfflineRegionCatalogBtn').click();
   const kaliningrad = page.locator('.offline-region-card').filter({ hasText: 'Калининградская область' });
-  await expect(kaliningrad).toContainText('установлена');
-  await expect(kaliningrad.getByRole('button', { name: 'Открыть установленную' })).toBeVisible();
+  await expect(kaliningrad).toContainText('открыта сейчас');
+  await expect(kaliningrad.getByRole('button', { name: 'Показать карту' })).toBeVisible();
   await expect(kaliningrad.getByRole('link', { name: 'Скачать заново' })).toHaveAttribute('href', /kaliningrad\.pmtiles$/);
 
   await expect(page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' }).getByRole('button', { name: 'Установить' })).toBeVisible();
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
 
-  await kaliningrad.getByRole('button', { name: 'Открыть установленную' }).click();
+  await kaliningrad.scrollIntoViewIfNeeded();
+  await kaliningrad.getByRole('button', { name: 'Показать карту' }).click();
   await expect(page.locator('#offlinePackageManifestStatus')).toContainText('Локальная карта: Калининград');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  await expectOfflinePreviewNearViewportTop(page);
   const centerButtonStyle = await page.locator('#centerPmtilesOnMeBtn').evaluate((el) => {
     const style = window.getComputedStyle(el);
     return { left: style.left, top: style.top, position: style.position };
@@ -1719,7 +1735,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.46-hotfix.4');
+  expect(backup.appVersion).toBe('0.7.47');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1850,7 +1866,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.46-hotfix.4',
+    appVersion: '0.7.47',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

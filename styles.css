@@ -3494,3 +3494,40 @@ body.online-map-expanded .bottom-nav {
     flex: 1 1 auto;
   }
 }
+
+
+/* Sprint 5.47 — Offline map open flow polish. */
+.offline-region-card.active {
+  border-color: rgba(36, 75, 47, 0.52);
+  background: rgba(226, 238, 214, 0.94);
+  box-shadow: 0 10px 26px rgba(36, 75, 47, 0.08);
+}
+.offline-region-open-map-btn,
+.offline-region-show-map-btn {
+  white-space: nowrap;
+}
+.offline-region-redownload-link {
+  align-self: center;
+  color: var(--green);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0.35rem 0.25rem;
+}
+.offline-region-redownload-link:hover,
+.offline-region-redownload-link:focus-visible {
+  color: var(--green3);
+}
+@media (max-width: 560px) {
+  .offline-region-actions {
+    align-items: center;
+  }
+  .offline-region-open-map-btn,
+  .offline-region-show-map-btn {
+    flex: 1 1 auto;
+  }
+  .offline-region-redownload-link {
+    flex: 0 0 auto;
+  }
+}
