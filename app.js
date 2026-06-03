@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.43';
+const APP_VERSION = '0.7.43-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -995,6 +995,7 @@ function updateSaveSpotFlowUi() {
 function updateActionButtonsUi() {
   const hasSupabase = Boolean(getSupabaseConfig());
   const hasGroup = Boolean(currentGroupId());
+  const hasLiveName = Boolean($('liveName')?.value?.trim());
   const hasPosition = Boolean(currentPosition);
   const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
@@ -1037,7 +1038,7 @@ function updateActionButtonsUi() {
   setHidden('copyInviteBtn', !groupJoined);
   setHidden('leaveGroupBtn', !groupJoined);
   setDisabled('copyInviteBtn', !hasGroup || !groupJoined);
-  setDisabled('joinGroupBtn', !hasGroup || groupJoined);
+  setDisabled('joinGroupBtn', !hasGroup || !hasLiveName || groupJoined);
   setDisabled('leaveGroupBtn', !groupJoined);
   setDisabled('startLiveBtn', !hasSupabase || !hasGroup || !groupJoined || liveEnabled);
   setDisabled('stopLiveBtn', !liveEnabled);
@@ -10594,7 +10595,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
