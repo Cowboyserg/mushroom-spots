@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.41';
+const APP_VERSION = '0.7.41-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -958,9 +958,9 @@ function getSaveSpotTarget() {
     position: null,
     title: navigator.geolocation ? 'Выбери место или включи GPS' : 'GPS недоступен',
     description: navigator.geolocation
-      ? 'Сохранить можно выбранную точку без GPS: зажми место на карте примерно на секунду. GPS нужен только если хочешь сохранить своё текущее место.'
-      : 'GPS недоступен, но можно сохранить выбранную точку: зажми место на карте примерно на секунду.',
-    pill: navigator.geolocation ? 'ждём GPS' : 'GPS недоступен',
+      ? 'Выбери точку на карте или включи GPS, чтобы сохранить текущую позицию.'
+      : 'GPS недоступен. Можно сохранить выбранную точку на карте.',
+    pill: navigator.geolocation ? 'нет точки' : 'GPS недоступен',
     pillState: 'warn',
     button: navigator.geolocation ? 'Включить GPS' : 'Выбери место на карте'
   };
@@ -973,8 +973,8 @@ function updateSaveSpotFlowUi() {
   setText('saveTargetPill', target.pill);
   setText('saveSpotBtn', target.button);
   setText('saveSpotActionHint', target.kind === 'none'
-    ? 'Без выбранной точки и без GPS форма сохранения не открывается.'
-    : 'Нажми кнопку, чтобы открыть окно сохранения с папкой, названием, типом и заметкой.');
+    ? 'Сначала нужна выбранная точка или GPS-позиция.'
+    : 'Откроется окно сохранения с папкой и описанием.');
   setPillState('saveTargetPill', target.pillState);
 
   const coords = target.position
@@ -6184,7 +6184,7 @@ function describeSelectedMapObject() {
     if (!pickedMapPoint) return null;
     return {
       kind: 'picked',
-      title: 'Выбранное место',
+      title: 'Карточка выбранной точки',
       subtitle: 'Мини-инфо по точке. Нажми ☆, чтобы сохранить её в папку.',
       pill: 'выбрано',
       saveEditorVisible: false,
@@ -10430,7 +10430,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.41`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.41.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

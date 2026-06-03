@@ -3099,3 +3099,22 @@ body.online-map-expanded .bottom-nav {
     padding: 10px;
   }
 }
+
+/* Sprint 5.41.1 — Save section is the first page-level action after the map. */
+.save-flow-help {
+  margin: 8px 0 0;
+  border: 1px solid rgba(36,75,47,.12);
+  border-radius: 14px;
+  background: rgba(255,253,247,.86);
+}
+.save-flow-help summary {
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--green);
+  font-weight: 800;
+  cursor: pointer;
+}
+.save-flow-help .hint {
+  margin: 0;
+  padding: 0 12px 12px;
+}

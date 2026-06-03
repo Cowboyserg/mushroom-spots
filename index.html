@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.41" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.41" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.41-hotfix.1" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.41-hotfix.1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.41" />
+  <link rel="stylesheet" href="styles.css?v=0.7.41-hotfix.1" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.41 · Sprint 5.41</p>
+      <p id="appVersion">v0.7.41-hotfix.1 · Sprint 5.41.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -109,41 +109,20 @@
           </div>
         </section>
 
-        <section class="card map-action-sheet track-recorder-card" id="trackRecorderCard" aria-label="Запись маршрута">
-          <div class="section-title compact-title track-recorder-header">
-            <div>
-              <h2>Маршрут</h2>
-              <p class="hint">Мини-трекер для прогулки: запись работает только пока приложение открыто и экран не заблокирован. На iPhone/PWA это не полноценная фоновая запись как в native GPS tracker.</p>
-            </div>
-            <span id="trackRecorderPill" class="pill">0 сохранено</span>
-          </div>
-          <div class="track-stats-grid" aria-label="Статистика маршрута">
-            <div><span class="label">Длительность</span><strong id="trackDurationValue">0 мин 00 сек</strong></div>
-            <div><span class="label">Расстояние</span><strong id="trackDistanceValue">0 м</strong></div>
-            <div><span class="label">GPS-точки</span><strong id="trackPointCountValue">0</strong></div>
-          </div>
-          <p class="hint" id="trackStatusText">Маршрутов пока нет. Нажми “Начать маршрут”, когда приложение открыто и видит GPS.</p>
-          <div class="row track-recorder-actions">
-            <button id="startTrackBtn" class="btn-primary" type="button">Начать маршрут</button>
-            <button id="stopTrackBtn" class="secondary btn-secondary" type="button" disabled>Остановить</button>
-          </div>
-          <div id="trackList" class="track-list" aria-label="Сохранённые маршруты"></div>
-        </section>
-
         <section class="card map-action-sheet save-spot-flow-card" id="saveSpotFlowCard">
           <div class="section-title compact-title save-flow-header">
             <div>
               <h2>Сохранить место</h2>
-              <p class="hint save-flow-subtitle">Выбери место на карте или сохрани текущую GPS-позицию. Поля сохранения откроются отдельным окном, когда будет что сохранять.</p>
+              <p class="hint save-flow-subtitle">Выбери точку на карте или сохрани текущую GPS-позицию.</p>
             </div>
             <span id="saveTargetPill" class="pill warn">нет точки</span>
           </div>
 
-          <p class="hint" id="pickedMapPointHint">Чтобы сохранить место не там, где ты стоишь, зажми точку на карте примерно на секунду. На компьютере можно нажать правой кнопкой.</p>
+          <details class="save-flow-help"><summary>Как выбрать точку?</summary><p class="hint" id="pickedMapPointHint">Зажми место на карте примерно на секунду. На компьютере можно нажать правой кнопкой.</p></details>
 
           <div class="save-flow-empty-actions">
             <button id="saveSpotBtn" class="save-main-btn btn-primary" type="button">Включить GPS</button>
-            <p class="hint" id="saveSpotActionHint">Без выбранной точки и без GPS форма сохранения не открывается.</p>
+            <p class="hint" id="saveSpotActionHint">Сначала нужна выбранная точка или GPS-позиция.</p>
           </div>
 
           <details class="legacy-save-actions">
@@ -164,6 +143,27 @@
               <button id="saveResultCloseBtn" class="secondary btn-secondary">Закрыть</button>
             </div>
           </div>
+        </section>
+
+        <section class="card map-action-sheet track-recorder-card" id="trackRecorderCard" aria-label="Запись маршрута">
+          <div class="section-title compact-title track-recorder-header">
+            <div>
+              <h2>Маршрут</h2>
+              <p class="hint">Мини-трекер для прогулки: запись работает только пока приложение открыто и экран не заблокирован. На iPhone/PWA это не полноценная фоновая запись как в native GPS tracker.</p>
+            </div>
+            <span id="trackRecorderPill" class="pill">0 сохранено</span>
+          </div>
+          <div class="track-stats-grid" aria-label="Статистика маршрута">
+            <div><span class="label">Длительность</span><strong id="trackDurationValue">0 мин 00 сек</strong></div>
+            <div><span class="label">Расстояние</span><strong id="trackDistanceValue">0 м</strong></div>
+            <div><span class="label">GPS-точки</span><strong id="trackPointCountValue">0</strong></div>
+          </div>
+          <p class="hint" id="trackStatusText">Маршрутов пока нет. Нажми “Начать маршрут”, когда приложение открыто и видит GPS.</p>
+          <div class="row track-recorder-actions">
+            <button id="startTrackBtn" class="btn-primary" type="button">Начать маршрут</button>
+            <button id="stopTrackBtn" class="secondary btn-secondary" type="button" disabled>Остановить</button>
+          </div>
+          <div id="trackList" class="track-list" aria-label="Сохранённые маршруты"></div>
         </section>
 
         <section class="card selected-card spot-details-card" id="selectedCard" hidden>
@@ -587,7 +587,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.41 · Sprint 5.41</span>
+          <span class="pill">v0.7.41-hotfix.1 · Sprint 5.41.1</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -603,9 +603,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.41</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.41 — Save Place Dialog Flow</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.41</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.41-hotfix.1</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.41.1 — Save Place Screen Order Hotfix</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.41-hotfix.1</strong></div>
         </div>
       </section>
 
@@ -924,10 +924,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.41"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.41-hotfix.1"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.41"></script>
-  <script src="app.js?v=0.7.41"></script>
+  <script src="config.js?v=0.7.41-hotfix.1"></script>
+  <script src="app.js?v=0.7.41-hotfix.1"></script>
 </body>
 </html>
