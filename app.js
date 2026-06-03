@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.42-hotfix.1';
+const APP_VERSION = '0.7.43';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -292,7 +292,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   sendSelectedSpotToChatBtn: 'Отправить сохранённую точку в чат',
   createGroupBtn: 'Создать группу',
   copyInviteBtn: 'Скопировать приглашение',
-  savePersonProfileBtn: 'Запомнить локального человека',
+  savePersonProfileBtn: 'Переименовать профиль',
   newPersonProfileBtn: 'Другой человек',
   profileQuickLoginBtn: 'Войти как сохранённый человек',
   joinGroupBtn: 'Войти в группу',
@@ -435,7 +435,7 @@ function updateActiveProfileFromInputs() {
   const profile = getActiveProfile();
   if (!profile) return null;
   const name = $('liveName')?.value?.trim() || profile.displayName || '';
-  const group = $('groupId')?.value?.trim() || '';
+  const group = currentGroupId();
   if (name) profile.displayName = name;
   profile.lastGroupId = group;
   profile.updatedAt = new Date().toISOString();
@@ -452,7 +452,7 @@ function applyProfileToInputs(profile, keepCurrentGroup = false) {
   if ($('groupId') && !keepCurrentGroup) $('groupId').value = profile.lastGroupId || '';
   localStorage.setItem('mushroom_live_user_id', profile.id);
   localStorage.setItem('mushroom_live_name', profile.displayName || '');
-  localStorage.setItem('mushroom_live_group_id', $('groupId')?.value?.trim() || profile.lastGroupId || '');
+  localStorage.setItem('mushroom_live_group_id', currentGroupId() || profile.lastGroupId || '');
 }
 
 function clearGroupInviteFromUrl() {
@@ -528,9 +528,9 @@ function renderPeopleProfiles() {
   if (hint) {
     if (active) {
       const group = active.lastGroupId || currentGroupId() || '—';
-      hint.textContent = `Локально запомнен: ${active.displayName || 'Без имени'}. Последняя группа: ${group}. В лесу вход открывается локально сразу, а запись участника синхронизируется при связи.`;
+      hint.textContent = `Текущий профиль: ${active.displayName || 'Без имени'}. Последняя группа: ${group}.`;
     } else {
-      hint.textContent = 'Локальный человек ещё не создан.';
+      hint.textContent = 'Профиль на этом устройстве ещё не создан.';
     }
   }
   const saveBtn = $('savePersonProfileBtn');
@@ -559,7 +559,7 @@ function createNewPersonProfile() {
   applyProfileToInputs(profile, true);
   renderPeopleProfiles();
   updateLiveUi();
-  $('liveHint').textContent = `Создан локальный человек: ${name}. Нажми “Войти как ${name}”, чтобы записать его в группу.`;
+  $('liveHint').textContent = `Создан профиль на этом устройстве: ${name}. Введи код группы и нажми “Войти в группу”.`;
   return true;
 }
 
@@ -1033,11 +1033,13 @@ function updateActionButtonsUi() {
   updateSaveSpotFlowUi();
   renderMapObjectPanel();
 
-  if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : (currentChatName() !== 'Без имени' ? `Войти как ${currentChatName()}` : 'Войти в группу');
-  setDisabled('copyInviteBtn', !hasGroup);
-  setDisabled('joinGroupBtn', !hasSupabase || !hasGroup || groupJoined);
+  if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : 'Войти в группу';
+  setHidden('copyInviteBtn', !groupJoined);
+  setHidden('leaveGroupBtn', !groupJoined);
+  setDisabled('copyInviteBtn', !hasGroup || !groupJoined);
+  setDisabled('joinGroupBtn', !hasGroup || groupJoined);
   setDisabled('leaveGroupBtn', !groupJoined);
-  setDisabled('startLiveBtn', !hasSupabase || !hasGroup || liveEnabled);
+  setDisabled('startLiveBtn', !hasSupabase || !hasGroup || !groupJoined || liveEnabled);
   setDisabled('stopLiveBtn', !liveEnabled);
   setDisabled('refreshFriendsBtn', !hasSupabase || !hasGroup || !groupJoined);
   setDisabled('testSupabaseBtn', !hasSupabase);
@@ -9194,9 +9196,10 @@ function updateLiveUi() {
     }
   }
   if ($('liveStatus')) {
-    $('liveStatus').textContent = liveEnabled ? 'моя позиция видна' : 'моя позиция скрыта';
+    setHidden('liveStatus', !groupJoined);
+    $('liveStatus').textContent = liveEnabled ? 'ваши координаты передаются' : 'ваши координаты не передаются';
     $('liveStatus').className = liveEnabled ? 'pill on' : 'pill';
-    if (!getSupabaseConfig()) $('liveStatus').className = 'pill warn';
+    if (groupJoined && !getSupabaseConfig()) $('liveStatus').className = 'pill warn';
   }
   updateGroupScreenUi();
   updateDbCleanupUi();
@@ -9219,19 +9222,21 @@ async function createGroup() {
   const group = crypto.randomUUID ? crypto.randomUUID() : uid();
   $('groupId').value = group;
   localStorage.setItem('mushroom_live_group_id', group);
+  const joined = await joinGroup(true);
   updateLiveUi();
-  if (getSupabaseConfig()) {
-    await joinGroup(true);
+  if (!joined) {
+    $('liveHint').textContent = 'Группа создана. Укажи профиль на этом устройстве и нажми “Войти в группу”.';
+  } else if (getSupabaseConfig()) {
     $('liveHint').textContent = 'Группа создана. Ты уже вошёл в неё и видишь участников. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
   } else {
-    $('liveHint').textContent = 'Группа создана. Скопируй приглашение и отправь друзьям. Синхронизация участников, чат и live-локации сейчас недоступны.';
+    $('liveHint').textContent = 'Группа создана и открыта локально. Скопируй приглашение; синхронизация участников, чат и live-локации сейчас недоступны.';
     updateChatUi();
   }
 }
 
 async function copyInvite() {
-  const group = $('groupId').value.trim();
-  if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай или вставь ID группы.'); }
+  const group = syncNormalizedGroupInput();
+  if (!group) { markButtonBlocked('нет кода группы'); return alert('Сначала создай группу или вставь код/ссылку от друга.'); }
   const url = new URL(window.location.href);
   url.searchParams.set('group', group);
   const text = url.toString();
@@ -9274,10 +9279,10 @@ function clearFriendMarkers() {
 }
 
 async function joinGroup(silent = false) {
-  const group = $('groupId').value.trim();
+  const group = syncNormalizedGroupInput();
   const name = $('liveName').value.trim();
   if (!group) {
-    if (!silent) { markButtonBlocked('нет ID группы'); alert('Создай группу или открой приглашение от друга.'); }
+    if (!silent) { markButtonBlocked('нет кода группы'); alert('Создай группу или вставь код/ссылку от друга.'); }
     return false;
   }
   if (!name) {
@@ -9336,9 +9341,9 @@ async function leaveGroup() {
 
 async function publishMyLocation() {
   if (!liveEnabled) return;
-  const group = $('groupId').value.trim();
+  const group = syncNormalizedGroupInput();
   const name = $('liveName').value.trim();
-  if (!group || !name) throw new Error('Укажи имя и ID группы.');
+  if (!group || !name) throw new Error('Укажи имя и код группы.');
   if (!currentPosition) {
     startGps(false);
     $('liveHint').textContent = 'Жду GPS-координаты перед отправкой позиции. Пока GPS не готов, группа и чат могут работать, но твой маркер не отправится.';
@@ -9362,7 +9367,7 @@ async function publishMyLocation() {
 }
 
 async function deleteMyLiveLocation() {
-  const group = $('groupId').value.trim();
+  const group = currentGroupId();
   if (!group || !getSupabaseConfig()) return;
   const encodedGroup = encodeURIComponent(group);
   const encodedUser = encodeURIComponent(ensureUserId());
@@ -9383,7 +9388,7 @@ function setDbCleanupHint(text, isError = false) {
 function updateDbCleanupUi() {
   const idEl = $('myLiveUserId');
   if (idEl) idEl.textContent = ensureUserId();
-  const group = $('groupId')?.value?.trim() || '';
+  const group = currentGroupId();
   const groupEl = $('cleanupGroupMirror');
   if (groupEl) groupEl.textContent = group || '—';
   const hasSupabase = Boolean(getSupabaseConfig());
@@ -9397,20 +9402,20 @@ function updateDbCleanupUi() {
   if (!hasSupabase) {
     setDbCleanupHint('Чистка БД недоступна: нет подключения к БД. Локальные грибные точки не затрагиваются.');
   } else if (!hasGroup) {
-    setDbCleanupHint('Для чистки текущей группы вставь или создай ID группы. Можно удалить “меня из всех групп” по локальному user_id.');
+    setDbCleanupHint('Для чистки текущей группы вставь или создай код группы. Можно удалить “меня из всех групп” по локальному user_id.');
   } else {
     setDbCleanupHint('Готово к чистке live-локаций в БД. “Меня” = локальный user_id этого браузера; грибные точки IndexedDB не удаляются.');
   }
 }
 
 function getCurrentGroupForCleanup() {
-  const group = $('groupId')?.value?.trim() || '';
-  if (!group) throw new Error('Сначала создай или вставь ID группы.');
+  const group = currentGroupId();
+  if (!group) throw new Error('Сначала создай или вставь код/ссылку группы.');
   return group;
 }
 
 function requireGroupTypedConfirmation(group, actionText) {
-  const typed = prompt(`${actionText}\n\nЭто удалит live-записи из БД, но не тронет локальные грибные точки.\n\nДля подтверждения введи ID группы полностью:`, '');
+  const typed = prompt(`${actionText}\n\nЭто удалит live-записи из БД, но не тронет локальные грибные точки.\n\nДля подтверждения введи код группы полностью:`, '');
   return typed === group;
 }
 
@@ -9476,7 +9481,7 @@ async function cleanMyEverywhereDbRows() {
 
 async function cleanCurrentGroupDbRows() {
   const group = getCurrentGroupForCleanup();
-  if (!requireGroupTypedConfirmation(group, `Очистить ВСЮ текущую группу?\n\nГруппа: ${group}`)) { markButtonCancelled('ID группы не подтверждён'); return; }
+  if (!requireGroupTypedConfirmation(group, `Очистить ВСЮ текущую группу?\n\nГруппа: ${group}`)) { markButtonCancelled('код группы не подтверждён'); return; }
 
   if (liveEnabled) {
     liveEnabled = false;
@@ -9512,8 +9517,28 @@ async function cleanStaleGroupDbRows() {
 }
 
 
+function normalizeGroupInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return url.searchParams.get('group')?.trim() || raw;
+  } catch (_) {
+    return raw;
+  }
+}
+
 function currentGroupId() {
-  return $('groupId')?.value?.trim() || '';
+  return normalizeGroupInput($('groupId')?.value);
+}
+
+function syncNormalizedGroupInput() {
+  const input = $('groupId');
+  if (!input) return '';
+  const raw = input.value.trim();
+  const normalized = normalizeGroupInput(raw);
+  if (normalized && normalized !== raw) input.value = normalized;
+  return normalized;
 }
 
 function currentChatName() {
@@ -9527,43 +9552,40 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
   const name = currentChatName();
 
   if ($('groupStateText')) {
-    if (!group) {
+    if (!groupJoined) {
       $('groupStateText').textContent = 'Ты не в группе';
-    } else if (groupJoined && memberSyncPending) {
+    } else if (memberSyncPending) {
       $('groupStateText').textContent = 'Ты в группе локально';
-    } else if (groupJoined) {
-      $('groupStateText').textContent = `Ты в группе${name && name !== 'Без имени' ? ` как ${name}` : ''}`;
     } else {
-      $('groupStateText').textContent = 'Группа выбрана, вход не выполнен';
+      $('groupStateText').textContent = `Ты в группе${name && name !== 'Без имени' ? ` как ${name}` : ''}`;
     }
   }
   if ($('groupStateHint')) {
-    if (!hasSupabase) {
-      $('groupStateHint').textContent = 'Группа может открыться локально, но синхронизация участников и чат сейчас недоступны без подключения к БД.';
-    } else if (!group) {
-      $('groupStateHint').textContent = 'Создай группу или вставь ID от друга.';
-    } else if (groupJoined) {
-      $('groupStateHint').textContent = `ID группы: ${group}. Участники и чат привязаны к этому ID.`;
+    if (!groupJoined) {
+      $('groupStateHint').textContent = 'Создай группу или вставь код/ссылку от друга.';
+    } else if (!hasSupabase) {
+      $('groupStateHint').textContent = 'Группа открыта локально, но синхронизация участников и чат сейчас недоступны без подключения к БД.';
     } else {
-      $('groupStateHint').textContent = 'Нажми “Войти в группу”, чтобы видеть участников и чат.';
+      $('groupStateHint').textContent = `Код группы: ${group}. Участники и чат привязаны к этому коду.`;
     }
   }
+  setHidden('myLiveStateBox', !groupJoined);
   if ($('myLiveStateText')) {
-    $('myLiveStateText').textContent = liveEnabled ? 'Геопозиция передаётся' : 'Геопозиция не передаётся';
+    $('myLiveStateText').textContent = liveEnabled ? 'Ваши координаты передаются' : 'Ваши координаты не передаются';
   }
   if ($('myLiveStateHint')) {
     if (liveEnabled) {
-      $('myLiveStateHint').textContent = 'Друзья увидят твою live-точку, пока есть связь и GPS.';
+      $('myLiveStateHint').textContent = 'Друзья видят вашу live-точку, пока есть связь и GPS.';
     } else if (groupJoined) {
-      $('myLiveStateHint').textContent = 'Ты видишь группу, но твой маркер не появляется у друзей до запуска live-позиции.';
+      $('myLiveStateHint').textContent = 'Вы есть в группе, но ваш маркер не появляется на карте до запуска передачи координат.';
     } else {
-      $('myLiveStateHint').textContent = 'Сначала войди в группу. Маркер на карте появляется только из live-локаций, а не из списка участников.';
+      $('myLiveStateHint').textContent = '';
     }
   }
   if ($('groupHint')) {
     $('groupHint').textContent = groupJoined
-      ? 'Группа активна. Участники и live-локации разделены: участник без live-координат не создаёт маркер на карте.'
-      : 'Группа может открыться локально даже без сети; синхронизация догонит при связи.';
+      ? 'Группа активна. Участники и координаты разделены: участник без live-координат не создаёт маркер на карте.'
+      : 'Войдите в группу по коду/ссылке или создайте новую группу.';
   }
   if ($('groupMembersStatus')) {
     if (memberCount === null) {
@@ -9670,7 +9692,7 @@ function updateChatUi() {
   } else if (!groupJoined) {
     setChatHint('Чат заблокирован: сначала нажми “Войти в группу” или открой приглашение.');
   } else if (!chatMessages.length) {
-    setChatHint('Чат готов. Сообщения хранятся в БД и привязаны к текущему ID группы.');
+    setChatHint('Чат готов. Сообщения хранятся в БД и привязаны к текущему коду группы.');
   }
 }
 
@@ -9798,7 +9820,7 @@ function parseSpotChatBody(body) {
 
 function requireGroupChatReady(actionLabel = 'Отправка точки в чат') {
   if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); alert('Отправка точки в чат сейчас недоступна: нет подключения к БД.'); return false; }
-  if (!currentGroupId()) { markButtonBlocked('нет ID группы'); alert('Сначала создай группу или открой приглашение.'); return false; }
+  if (!currentGroupId()) { markButtonBlocked('нет кода группы'); alert('Сначала создай группу или вставь код/ссылку от друга.'); return false; }
   if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); alert('Сначала войди в группу.'); return false; }
   return true;
 }
@@ -9907,7 +9929,7 @@ function renderGroupChat(rows = chatMessages) {
     return;
   }
   if (!currentGroupId()) {
-    list.innerHTML = '<p class="hint">Сначала создай группу или открой приглашение.</p>';
+    list.innerHTML = '<p class="hint">Сначала создай группу или вставь код/ссылку от друга.</p>';
     return;
   }
   if (!groupJoined) {
@@ -9999,7 +10021,7 @@ async function sendOrUpdateChatMessage() {
   }
 
   const group = currentGroupId();
-  if (!group) { markButtonBlocked('нет ID группы'); return alert('Сначала создай группу или открой приглашение.'); }
+  if (!group) { markButtonBlocked('нет кода группы'); return alert('Сначала создай группу или вставь код/ссылку от друга.'); }
   if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала подключи БД и переопубликуй сайт.'); }
   if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); return alert('Сначала войди в группу.'); }
 
@@ -10347,9 +10369,9 @@ async function refreshFriends() {
 async function startLiveSharing() {
   if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); return alert('Сначала подключи БД и переопубликуй сайт.'); }
   const name = $('liveName').value.trim();
-  const group = $('groupId').value.trim();
+  const group = syncNormalizedGroupInput();
   if (!name) { markButtonBlocked('не указано имя'); return alert('Укажи своё имя.'); }
-  if (!group) { markButtonBlocked('нет ID группы'); return alert('Создай группу или вставь ID группы от друга.'); }
+  if (!group) { markButtonBlocked('нет кода группы'); return alert('Создай группу или вставь код/ссылку от друга.'); }
   saveLiveInputs();
   if (!groupJoined) {
     const joined = await joinGroup(true);
@@ -10572,7 +10594,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.42.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -10602,7 +10624,7 @@ async function init() {
   if (!getSupabaseConfig()) {
     updateLiveUi();
     $('liveHint').textContent = 'Для live-режима нужно подключение к БД.';
-  } else if ($('groupId').value.trim()) {
+  } else if (currentGroupId()) {
     await joinGroup(true);
     $('liveHint').textContent = groupFromUrl
       ? 'Приглашение открыто: вход выполнен локально, имя участника синхронизируется при связи. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.'
