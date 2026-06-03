@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.43-hotfix.1';
+const APP_VERSION = '0.7.43-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -10283,7 +10283,7 @@ function renderFriends(data) {
       memberItem.className = `friend-item group-member-item ${fromCache ? 'friend-cached' : ''}`;
       let memberMeta;
       if (member) {
-        memberMeta = `${isPresent ? 'в группе' : 'давно не обновлялся'} · позиция ${hasActiveLocation ? 'передаётся' : 'скрыта'}<br>Последний сигнал: ${fmtDate(member.last_seen_at || member.updated_at)}`;
+        memberMeta = `${isPresent ? 'в группе' : 'давно не обновлялся'} · координаты ${hasActiveLocation ? 'передаются' : 'не передаются'}<br>Последний сигнал: ${fmtDate(member.last_seen_at || member.updated_at)}`;
       } else if (loc) {
         memberMeta = `есть live-локация, но запись участника не получена<br>Обновлено: ${fmtDate(loc.updated_at)}`;
       } else {
@@ -10595,7 +10595,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
