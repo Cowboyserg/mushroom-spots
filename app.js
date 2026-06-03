@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.43-hotfix.4';
+const APP_VERSION = '0.7.44';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -1037,6 +1037,7 @@ function updateActionButtonsUi() {
   if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : 'Войти в группу';
   setHidden('copyInviteBtn', !groupJoined);
   setHidden('leaveGroupBtn', !groupJoined);
+  setDisabled('createGroupBtn', !hasLiveName || groupJoined);
   setDisabled('copyInviteBtn', !hasGroup || !groupJoined);
   setDisabled('joinGroupBtn', !hasGroup || !hasLiveName || groupJoined);
   setDisabled('leaveGroupBtn', !groupJoined);
@@ -9256,6 +9257,8 @@ function parseGroupFromUrl() {
 }
 
 async function createGroup() {
+  const name = $('liveName')?.value?.trim();
+  if (!name) { markButtonBlocked('не указан профиль'); return alert('Укажи профиль на этом устройстве.'); }
   const group = crypto.randomUUID ? crypto.randomUUID() : uid();
   $('groupId').value = group;
   localStorage.setItem('mushroom_live_group_id', group);
@@ -9619,10 +9622,19 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
       $('myLiveStateHint').textContent = '';
     }
   }
+  setHidden('groupEntryPanels', groupJoined);
+  setHidden('groupJoinedActions', !groupJoined);
+  setHidden('groupLockedPreview', groupJoined);
+  setHidden('groupMembersCard', !groupJoined);
+  setHidden('liveLocationsCard', !groupJoined);
+  setHidden('groupChatCard', !groupJoined);
+  setHidden('chatComposerField', !groupJoined);
+  setHidden('chatActions', !groupJoined);
+  if ($('currentGroupCode')) $('currentGroupCode').textContent = groupJoined ? (group || '—') : '—';
   if ($('groupHint')) {
     $('groupHint').textContent = groupJoined
-      ? 'Группа активна. Участники и координаты разделены: участник без live-координат не создаёт маркер на карте.'
-      : 'Войдите в группу по коду/ссылке или создайте новую группу.';
+      ? 'Группа активна. Участники, координаты и чат теперь доступны ниже.'
+      : 'Создание группы не требует кода. Вход в существующую группу требует код или ссылку.';
   }
   if ($('groupMembersStatus')) {
     if (memberCount === null) {
@@ -10632,7 +10644,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.43.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

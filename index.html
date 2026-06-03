@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.43-hotfix.4" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.43-hotfix.4" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.44" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.44" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.43-hotfix.4" />
+  <link rel="stylesheet" href="styles.css?v=0.7.44" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.43-hotfix.4 · Sprint 5.43.4</p>
+      <p id="appVersion">v0.7.44 · Sprint 5.44</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -361,7 +361,7 @@
           <div class="group-state-box">
             <span>Статус группы</span>
             <strong id="groupStateText">Ты не в группе</strong>
-            <p id="groupStateHint" class="hint">Создай группу или вставь ID от друга.</p>
+            <p id="groupStateHint" class="hint">Создай группу или вставь код/ссылку от друга.</p>
           </div>
           <div class="group-state-box" id="myLiveStateBox" hidden>
             <span>Моя геопозиция</span>
@@ -381,19 +381,42 @@
             <button id="newPersonProfileBtn" class="secondary btn-secondary">Другой человек</button>
           </div>
         </div>
-        <div class="field">
-          <label for="groupId">Код или ссылка группы</label>
-          <input id="groupId" placeholder="Вставь код или ссылку от друга" />
+        <div class="group-entry-grid" id="groupEntryPanels">
+          <div class="group-entry-box" id="groupCreatePanel">
+            <h3>Новая группа</h3>
+            <p class="hint">Создай группу и отправь приглашение друзьям. Код вводить не нужно.</p>
+            <button id="createGroupBtn" class="btn-primary">Создать группу</button>
+          </div>
+          <div class="group-entry-box" id="groupJoinPanel">
+            <h3>Войти в группу</h3>
+            <p class="hint">Вставь код или ссылку от друга.</p>
+            <div class="field compact-field">
+              <label for="groupId">Код или ссылка группы</label>
+              <input id="groupId" placeholder="Вставь код или ссылку от друга" />
+            </div>
+            <button id="joinGroupBtn" class="btn-primary">Войти в группу</button>
+          </div>
         </div>
-        <div class="row group-actions">
-          <button id="createGroupBtn" class="btn-primary">Создать группу</button>
-          <button id="copyInviteBtn" class="secondary btn-secondary" hidden>Скопировать приглашение</button>
-          <button id="joinGroupBtn" class="btn-primary">Войти в группу</button>
-          <button id="leaveGroupBtn" class="danger btn-danger" hidden>Выйти из группы</button>
+        <div class="group-joined-actions" id="groupJoinedActions" hidden>
+          <div>
+            <span class="label">Код группы</span>
+            <strong id="currentGroupCode">—</strong>
+          </div>
+          <div class="row group-actions">
+            <button id="copyInviteBtn" class="secondary btn-secondary">Скопировать приглашение</button>
+            <button id="leaveGroupBtn" class="danger btn-danger">Выйти из группы</button>
+          </div>
         </div>
-        <p class="hint" id="groupHint">Группа может открыться локально даже без сети; синхронизация догонит при связи.</p>
+        <p class="hint" id="groupHint">Войдите в группу по коду/ссылке или создайте новую группу.</p>
       </section>
-      <section class="card group-members-card" aria-labelledby="groupMembersTitle">
+      <section class="card group-locked-preview" id="groupLockedPreview" aria-labelledby="groupLockedPreviewTitle">
+        <div class="section-title">
+          <h2 id="groupLockedPreviewTitle">После входа в группу</h2>
+          <span class="pill">ожидает группу</span>
+        </div>
+        <p class="hint">Здесь появятся участники, live-локации на карте и чат группы.</p>
+      </section>
+      <section class="card group-members-card" id="groupMembersCard" aria-labelledby="groupMembersTitle" hidden>
         <div class="section-title">
           <h2 id="groupMembersTitle">Участники</h2>
           <span id="groupMembersStatus" class="pill">нет данных</span>
@@ -401,7 +424,7 @@
         <p class="hint" id="groupMembersHint">Участники показывают, кто есть в группе. Сама запись участника не создаёт маркер на карте.</p>
         <div id="friendsList" class="friends-list"></div>
       </section>
-      <section class="card live-locations-card" aria-labelledby="liveLocationsTitle">
+      <section class="card live-locations-card" id="liveLocationsCard" aria-labelledby="liveLocationsTitle" hidden>
         <div class="section-title">
           <h2 id="liveLocationsTitle">Live-локации</h2>
           <span id="liveLocationsStatus" class="pill">нет live-данных</span>
@@ -416,7 +439,7 @@
         <div id="liveLocationsList" class="friends-list live-locations-list"></div>
         <p class="hint" id="liveHint">Для live-режима нужно подключение к БД.</p>
       </section>
-      <section class="card chat-card" aria-labelledby="groupChatTitle">
+      <section class="card chat-card" id="groupChatCard" aria-labelledby="groupChatTitle" hidden>
         <div class="section-title">
           <h2 id="groupChatTitle">Чат</h2>
           <div class="pill-row">
@@ -424,11 +447,11 @@
             <span class="pill">последние 50</span>
           </div>
         </div>
-        <p class="hint">Сообщения видны всем, кто знает ID группы. Точки из чата показываются кликабельными карточками: нажми карточку, чтобы перейти к точке на карте.</p>
+        <p class="hint">Сообщения видны всем, кто знает код группы. Точки из чата показываются кликабельными карточками: нажми карточку, чтобы перейти к точке на карте.</p>
         <div id="groupChatList" class="chat-list">
           <p class="hint">Чат появится после входа в группу.</p>
         </div>
-        <div class="field">
+        <div class="field" id="chatComposerField">
           <label for="chatMessageInput">Сообщение</label>
           <textarea id="chatMessageInput" rows="3" maxlength="300" placeholder="Напиши сообщение группе…"></textarea>
           <div class="chat-meta">
@@ -436,12 +459,12 @@
             <span id="chatEditState" class="pill" hidden>режим правки</span>
           </div>
         </div>
-        <div class="row chat-actions">
+        <div class="row chat-actions" id="chatActions">
           <button id="chatSendBtn" class="btn-primary">Отправить</button>
           <button id="chatRefreshBtn" class="secondary btn-secondary">Обновить</button>
           <button id="chatCancelEditBtn" class="secondary btn-secondary" hidden>Отменить правку</button>
         </div>
-        <p class="hint" id="chatHint">Для чата нужна БД и текущий ID группы.</p>
+        <p class="hint" id="chatHint">Для чата нужна БД и текущий код группы.</p>
       </section>
     </section>
 
@@ -583,7 +606,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.43-hotfix.4 · Sprint 5.43.4</span>
+          <span class="pill">v0.7.44 · Sprint 5.44</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -599,9 +622,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.43-hotfix.4</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.43.4 — Save Dialog Draft Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.43-hotfix.4</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.44</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.44 — Group Screen State Cleanup</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.44</strong></div>
         </div>
       </section>
 
@@ -958,10 +981,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.43-hotfix.4"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.44"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.43-hotfix.4"></script>
-  <script src="app.js?v=0.7.43-hotfix.4"></script>
+  <script src="config.js?v=0.7.44"></script>
+  <script src="app.js?v=0.7.44"></script>
 </body>
 </html>

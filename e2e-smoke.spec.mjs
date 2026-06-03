@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.43-hotfix\.4 · Sprint 5\.43\.4/;
+const EXPECTED_APP_VERSION = /v0\.7\.44 · Sprint 5\.44/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -892,7 +892,7 @@ test('settings screen groups diagnostics and advanced actions', async ({ page })
   await expect(page.locator('.maintenance-card[data-advanced-only] summary').getByText('Чистка БД', { exact: true })).toBeVisible();
 });
 
-test('group screen separates overview members live locations and chat empty states', async ({ page }) => {
+test('group screen separates entry actions from group features', async ({ page }) => {
   await bootApp(page);
 
   await page.getByRole('button', { name: 'Группа' }).click();
@@ -903,35 +903,51 @@ test('group screen separates overview members live locations and chat empty stat
   await expect(page.locator('#groupStatus')).toContainText('не в группе');
   await expect(page.locator('#liveStatus')).toBeHidden();
   await expect(page.locator('#myLiveStateBox')).toBeHidden();
+  await expect(page.locator('#groupCreatePanel')).toBeVisible();
+  await expect(page.locator('#groupJoinPanel')).toBeVisible();
+  await expect(page.getByText('Код вводить не нужно')).toBeVisible();
   await expect(page.getByLabel('Профиль на этом устройстве')).toBeVisible();
   await expect(page.getByLabel('Код или ссылка группы')).toBeVisible();
   await expect(page.locator('#copyInviteBtn')).toBeHidden();
   await expect(page.locator('#leaveGroupBtn')).toBeHidden();
+  await expect(page.locator('#groupLockedPreview')).toBeVisible();
+  await expect(page.locator('#groupLockedPreview')).toContainText('участники, live-локации на карте и чат группы');
+  await expect(page.locator('#groupMembersCard')).toBeHidden();
+  await expect(page.locator('#liveLocationsCard')).toBeHidden();
+  await expect(page.locator('#groupChatCard')).toBeHidden();
 
-  await page.getByLabel('Код или ссылка группы').fill('e2e-entry-ux');
-  await expect(page.locator('#joinGroupBtn')).toBeDisabled();
   await page.getByLabel('Профиль на этом устройстве').fill('E2E пользователь');
+  await expect(page.locator('#createGroupBtn')).toBeEnabled();
+  await expect(page.locator('#joinGroupBtn')).toBeDisabled();
+  await page.getByLabel('Код или ссылка группы').fill('e2e-entry-ux');
   await expect(page.locator('#joinGroupBtn')).toBeEnabled();
   await page.locator('#joinGroupBtn').click();
   await expect(page.locator('#groupStateText')).toContainText('Ты в группе');
   await expect(page.locator('#liveStatus')).toContainText('ваши координаты не передаются');
   await expect(page.locator('#myLiveStateBox')).toBeVisible();
   await expect(page.locator('#myLiveStateText')).toContainText('Ваши координаты не передаются');
+  await expect(page.locator('#groupCreatePanel')).toBeHidden();
+  await expect(page.locator('#groupJoinPanel')).toBeHidden();
+  await expect(page.locator('#groupLockedPreview')).toBeHidden();
+  await expect(page.locator('#groupJoinedActions')).toBeVisible();
+  await expect(page.locator('#currentGroupCode')).toContainText('e2e-entry-ux');
   await expect(page.locator('#copyInviteBtn')).toBeVisible();
   await expect(page.locator('#leaveGroupBtn')).toBeVisible();
 
+  await expect(page.locator('#groupMembersCard')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Участники' })).toBeVisible();
   await expect(page.locator('#groupMembersHint')).toContainText('не создаёт маркер');
   await expect(page.locator('#friendsList')).toContainText('E2E пользователь');
   await expect(page.locator('#friendsList')).toContainText('в группе');
   await expect(page.locator('#friendsList')).toContainText('координаты не передаются');
 
+  await expect(page.locator('#liveLocationsCard')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Live-локации' })).toBeVisible();
   await expect(page.locator('#liveLocationsHint')).toContainText('только активные live-локации');
   await expect(page.locator('#liveLocationsList')).toContainText('Нет активных live-локаций');
 
+  await expect(page.locator('#groupChatCard')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Чат' })).toBeVisible();
-  await expect(page.locator('#groupChatList')).toContainText('Чат появится после входа в группу');
 });
 
 test('group chat disables duplicate send and clears composer after success', async ({ page }) => {
@@ -1619,7 +1635,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.43-hotfix.4');
+  expect(backup.appVersion).toBe('0.7.44');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1750,7 +1766,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.43-hotfix.4',
+    appVersion: '0.7.44',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
