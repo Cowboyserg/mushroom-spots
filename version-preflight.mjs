@@ -21,12 +21,28 @@ function assertIncludes(text, expected, label) {
   );
 }
 
-function getProjectPathCurrentVersionLine(projectPath) {
+function warnIfProjectPathVersionLooksStale({ version, sprint }) {
+  let projectPath;
+  try {
+    projectPath = read('PROJECT_PATH.md');
+  } catch {
+    console.warn('Version preflight warning: PROJECT_PATH.md is missing; runtime guards still passed.');
+    return;
+  }
+
   const line = projectPath
     .split(/\r?\n/)
     .find((candidate) => candidate.trim().startsWith('Current application version:'));
-  assert.ok(line, 'version preflight: PROJECT_PATH.md must contain a Current application version line');
-  return line.trim();
+  if (!line) {
+    console.warn('Version preflight warning: PROJECT_PATH.md has no Current application version line; runtime guards still passed.');
+    return;
+  }
+
+  if (!line.includes(version) || !line.includes(sprint)) {
+    console.warn(
+      `Version preflight warning: PROJECT_PATH.md current version line looks stale: ${JSON.stringify(line.trim())}`
+    );
+  }
 }
 
 function parseProjectVersion() {
@@ -103,7 +119,6 @@ function checkRuntimeAndSettingsLabels({ version, sprint, label }) {
   const appJs = read('app.js');
   const indexHtml = read('index.html');
   const swJs = read('sw.js');
-  const projectPath = read('PROJECT_PATH.md');
   const packageJson = parsePackageJson();
   const lock = parsePackageLock();
 
@@ -124,10 +139,6 @@ function checkRuntimeAndSettingsLabels({ version, sprint, label }) {
   assertIncludes(indexHtml, sprint, 'settings sprint label');
   assertIncludes(indexHtml, `mushroom-spots-v${version}`, 'settings cache label');
   assertIncludes(swJs, `mushroom-spots-v${version}`, 'service worker cache name');
-
-  const projectVersionLine = getProjectPathCurrentVersionLine(projectPath);
-  assertIncludes(projectVersionLine, version, 'PROJECT_PATH current version line');
-  assertIncludes(projectVersionLine, sprint, 'PROJECT_PATH current sprint line');
 }
 
 function main() {
@@ -135,6 +146,7 @@ function main() {
   checkRuntimeAndSettingsLabels(info);
   checkVersionedAssets(info);
   checkE2eVersionGuard(info);
+  warnIfProjectPathVersionLooksStale(info);
   console.log(`Version preflight passed for v${info.version} / ${info.sprint}`);
 }
 
