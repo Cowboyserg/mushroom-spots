@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.41-hotfix\.2 · Sprint 5\.41\.2/;
+const EXPECTED_APP_VERSION = /v0\.7\.41-hotfix\.3 · Sprint 5\.41\.3/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -844,7 +844,7 @@ test('offline map region rectangle creates a pmtiles bbox command', async ({ pag
   await overlay.click({ position: { x: Math.floor(box.width * 0.25), y: Math.floor(box.height * 0.35) } });
   await expect(page.locator('#bboxExportStatus')).toContainText('первый угол выбран');
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeHidden();
-  await expect(page.locator('#saveFlowTitle')).toContainText('Сначала выбери место');
+  await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
   await expect(overlay).toContainText('противоположный угол');
   await overlay.click({ position: { x: Math.floor(box.width * 0.72), y: Math.floor(box.height * 0.68) } });
   await expect(page.locator('#bboxSelectionOverlay')).toBeHidden();
@@ -1157,7 +1157,7 @@ test('picked map point context sheet exposes object actions without app-nav dupl
 
   await page.locator('#mapObjectCloseBtn').click();
   await expect(card).toBeHidden();
-  await expect(page.locator('#saveFlowTitle')).toContainText('Сначала выбери место');
+  await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
 });
 
 test('picked map point context sheet enables share action only when group chat is ready', async ({ page }) => {
@@ -1273,7 +1273,7 @@ test('saved spot map sheet opens spots section for edit and delete CRUD actions'
 
 test('selected map point can be saved without GPS through save dialog', async ({ page }) => {
   await bootApp(page);
-  await expect(page.locator('#saveFlowTitle')).toContainText('Сначала выбери место');
+  await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
   await expect(page.locator('#saveSpotBtn')).toHaveText('Включить GPS');
 
   await pickMapPoint(page);
@@ -1564,7 +1564,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.41-hotfix.2');
+  expect(backup.appVersion).toBe('0.7.41-hotfix.3');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1693,7 +1693,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.41-hotfix.2',
+    appVersion: '0.7.41-hotfix.3',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
@@ -1727,11 +1727,11 @@ test('saved spot and picked map point stay separate map objects', async ({ page 
   await expect(page.locator('#mapObjectDetails')).toContainText('Белые у ручья');
 
   await pickMapPoint(page);
-  await expect(page.locator('#mapObjectTitle')).toContainText('Выбранное место');
+  await expect(page.locator('#mapObjectTitle')).toContainText('Карточка выбранной точки');
   await expect(page.locator('#mapObjectSubtitle')).toContainText('Мини-инфо по точке');
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotFoldersView')).toBeVisible();
   await expect(page.locator('#spotCount')).toHaveText('5 папок');
-  await expect(page.locator('#spotsList')).not.toContainText('Выбранное место');
+  await expect(page.locator('#spotsList')).not.toContainText('Карточка выбранной точки');
 });
