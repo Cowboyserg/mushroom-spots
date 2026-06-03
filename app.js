@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.1';
+const APP_VERSION = '0.7.44-hotfix.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -256,6 +256,7 @@ let activeButtonDiagnostics = null;
 let peopleProfiles = [];
 let activeProfileId = null;
 let groupEntryDraft = { liveName: '', groupId: '' };
+let groupJoinActivationLastAt = 0;
 let memberSyncPending = false;
 let memberSyncTimer = null;
 
@@ -9328,6 +9329,15 @@ function clearFriendMarkers() {
   renderPmtilesPreviewUserLayers('live friends cleared from offline map preview');
 }
 
+
+function triggerJoinGroupFromUi(event = null) {
+  rememberGroupEntryInputs();
+  const now = Date.now();
+  if (now - groupJoinActivationLastAt < 700) return false;
+  groupJoinActivationLastAt = now;
+  return joinGroup(false);
+}
+
 async function joinGroup(silent = false) {
   rememberGroupEntryInputs();
   const group = syncNormalizedGroupInput();
@@ -10569,7 +10579,20 @@ function bindUi() {
   $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
   if ($('savePersonProfileBtn')) $('savePersonProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', saveCurrentPersonProfile);
   if ($('newPersonProfileBtn')) $('newPersonProfileBtn').onclick = withButtonDiagnostics('newPersonProfileBtn', createNewPersonProfile);
-  $('joinGroupBtn').onclick = withButtonDiagnostics('joinGroupBtn', () => joinGroup(false));
+  {
+    const joinGroupBtn = $('joinGroupBtn');
+    const joinGroupHandler = withButtonDiagnostics('joinGroupBtn', triggerJoinGroupFromUi);
+    joinGroupBtn.onclick = joinGroupHandler;
+    joinGroupBtn.addEventListener('touchend', (event) => {
+      event.preventDefault();
+      joinGroupHandler.call(joinGroupBtn, event);
+    }, { passive: false });
+    joinGroupBtn.addEventListener('pointerup', (event) => {
+      if (event.pointerType !== 'touch') return;
+      event.preventDefault();
+      joinGroupHandler.call(joinGroupBtn, event);
+    });
+  }
   $('leaveGroupBtn').onclick = withButtonDiagnostics('leaveGroupBtn', leaveGroup);
   $('startLiveBtn').onclick = withButtonDiagnostics('startLiveBtn', startLiveSharing);
   $('stopLiveBtn').onclick = withButtonDiagnostics('stopLiveBtn', () => stopLiveSharing(true));
@@ -10670,7 +10693,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.2`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
