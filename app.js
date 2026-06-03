@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.6';
+const APP_VERSION = '0.7.44-hotfix.7';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -10671,11 +10671,6 @@ function bindUi() {
     const runJoinGroupActivation = (event) => {
       joinGroupHandler.call(joinGroupBtn, event);
     };
-    const runJoinGroupFirstTouchActivation = (event) => {
-      if (!eventHitsJoinGroupButton(event, joinGroupBtn)) return;
-      if (typeof event?.preventDefault === 'function' && event.cancelable) event.preventDefault();
-      runJoinGroupActivation(event);
-    };
     const runJoinGroupRetargetGuard = (event) => {
       if (!eventHitsJoinGroupButton(event, joinGroupBtn)) return;
       runJoinGroupActivation(event);
@@ -10683,13 +10678,10 @@ function bindUi() {
     joinGroupBtn.onclick = runJoinGroupActivation;
     // iPhone/WebKit can suppress or retarget the final button click when the
     // previous text input blurs and the group-entry card re-renders. Keep the
-    // normal button handler, but also listen at document capture phase and accept
-    // activation events whose coordinates land inside the enabled join button.
+    // normal button handler, but also listen for completed activation events and
+    // accept events whose coordinates land inside the enabled join button.
     // This preserves the explicit user command without making typing a group ID
-    // auto-join.
-    joinGroupBtn.addEventListener('touchstart', runJoinGroupFirstTouchActivation, { passive: false, capture: true });
-    joinGroupBtn.addEventListener('pointerdown', runJoinGroupFirstTouchActivation, { capture: true });
-    joinGroupBtn.addEventListener('mousedown', runJoinGroupFirstTouchActivation, { capture: true });
+    // auto-join or starting the command on pointer-down/mouse-down.
     joinGroupBtn.addEventListener('touchend', runJoinGroupRetargetGuard, { passive: true });
     joinGroupBtn.addEventListener('pointerup', runJoinGroupRetargetGuard, { capture: true });
     document.addEventListener('touchend', runJoinGroupRetargetGuard, { passive: true, capture: true });
@@ -10785,7 +10777,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.6`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.7`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

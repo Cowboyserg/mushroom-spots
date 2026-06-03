@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.6 · Sprint 5\.44\.6/;
+const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.7 · Sprint 5\.44\.7/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -980,24 +980,6 @@ test('group screen separates entry actions from group features', async ({ page }
   await expect(page.getByRole('heading', { name: 'Чат' })).toBeVisible();
 });
 
-
-test('group join accepts first touch activation when WebKit suppresses click', async ({ page }) => {
-  await bootApp(page);
-
-  await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
-  await page.locator('#groupId').fill('e2e-first-touch-join');
-  await expect(page.locator('#joinGroupBtn')).toBeEnabled();
-
-  await page.evaluate(() => {
-    const btn = document.querySelector('#joinGroupBtn');
-    if (!btn) throw new Error('joinGroupBtn missing');
-    btn.dispatchEvent(new Event('touchstart', { bubbles: true, cancelable: true }));
-  });
-
-  await expectJoinedGroupReady(page, 'e2e-first-touch-join');
-});
-
 test('group join accepts retargeted WebKit click by button geometry', async ({ page }) => {
   await bootApp(page);
 
@@ -1706,7 +1688,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.44-hotfix.6');
+  expect(backup.appVersion).toBe('0.7.44-hotfix.7');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1837,7 +1819,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.44-hotfix.6',
+    appVersion: '0.7.44-hotfix.7',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
