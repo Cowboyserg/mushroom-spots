@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.2';
+const APP_VERSION = '0.7.44-hotfix.3';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -256,7 +256,7 @@ let activeButtonDiagnostics = null;
 let peopleProfiles = [];
 let activeProfileId = null;
 let groupEntryDraft = { liveName: '', groupId: '' };
-let groupJoinActivationLastAt = 0;
+let groupJoinActivationInFlight = false;
 let memberSyncPending = false;
 let memberSyncTimer = null;
 
@@ -9299,8 +9299,18 @@ async function copyInvite() {
   }
 }
 
+function syncGroupEntryDraftFromResolvedValues() {
+  const name = currentLiveName();
+  const group = currentGroupId();
+  groupEntryDraft.liveName = name;
+  groupEntryDraft.groupId = group;
+  if ($('liveName') && name && !$('liveName').value.trim()) $('liveName').value = name;
+  if ($('groupId') && group && !normalizeGroupInput($('groupId').value)) $('groupId').value = group;
+  return { name, group };
+}
+
 function saveLiveInputs() {
-  rememberGroupEntryInputs();
+  syncGroupEntryDraftFromResolvedValues();
   updateActiveProfileFromInputs();
   renderPeopleProfiles();
 }
@@ -9330,18 +9340,19 @@ function clearFriendMarkers() {
 }
 
 
-function triggerJoinGroupFromUi(event = null) {
-  rememberGroupEntryInputs();
-  const now = Date.now();
-  if (now - groupJoinActivationLastAt < 700) return false;
-  groupJoinActivationLastAt = now;
-  return joinGroup(false);
+async function triggerJoinGroupFromUi(event = null) {
+  if (groupJoinActivationInFlight) return false;
+  groupJoinActivationInFlight = true;
+  try {
+    return await joinGroup(false);
+  } finally {
+    setTimeout(() => { groupJoinActivationInFlight = false; }, 250);
+  }
 }
 
 async function joinGroup(silent = false) {
-  rememberGroupEntryInputs();
+  const { name } = syncGroupEntryDraftFromResolvedValues();
   const group = syncNormalizedGroupInput();
-  const name = currentLiveName();
   if (!group) {
     if (!silent) { markButtonBlocked('нет кода группы'); alert('Создай группу или вставь код/ссылку от друга.'); }
     return false;
@@ -10574,7 +10585,7 @@ function bindUi() {
   $('chooseFolderBtn').onclick = withButtonDiagnostics('chooseFolderBtn', chooseBackupFolder);
   $('saveFolderBackupBtn').onclick = withButtonDiagnostics('saveFolderBackupBtn', () => saveBackupToFolder(true).catch(err => alert(`Ошибка backup: ${err.message}`)));
   $('requestPersistentBtn').onclick = withButtonDiagnostics('requestPersistentBtn', requestPersistentStorage);
-  $('groupId').onblur = () => { rememberGroupEntryInputs(); updateActionButtonsUi(); };
+  $('groupId').onblur = () => { updateActionButtonsUi(); };
   $('createGroupBtn').onclick = withButtonDiagnostics('createGroupBtn', createGroup);
   $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
   if ($('savePersonProfileBtn')) $('savePersonProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', saveCurrentPersonProfile);
@@ -10672,7 +10683,7 @@ function bindUi() {
 
   $('liveName').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); };
   $('liveName').onchange = saveLiveInputs;
-  $('liveName').onblur = () => { rememberGroupEntryInputs(); updateActionButtonsUi(); };
+  $('liveName').onblur = () => { updateActionButtonsUi(); };
   $('groupId').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); };
   $('groupId').onchange = () => {
     saveLiveInputs();
@@ -10693,7 +10704,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.2`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.3`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
