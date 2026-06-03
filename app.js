@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.7';
+const APP_VERSION = '0.7.44-hotfix.8';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -9675,7 +9675,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
   }
   setHidden('groupEntryPanels', groupJoined);
   setHidden('groupJoinedActions', !groupJoined);
-  setHidden('groupLockedPreview', groupJoined);
+  setHidden('groupLockedPreview', true);
   setHidden('groupMembersCard', !groupJoined);
   setHidden('liveLocationsCard', !groupJoined);
   setHidden('groupChatCard', !groupJoined);
@@ -10777,7 +10777,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.7`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.8`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

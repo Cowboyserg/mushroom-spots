@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.7 · Sprint 5\.44\.7/;
+const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.8 · Sprint 5\.44\.8/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -936,8 +936,7 @@ test('group screen separates entry actions from group features', async ({ page }
   await expect(page.getByLabel('Код или ссылка группы')).toBeVisible();
   await expect(page.locator('#copyInviteBtn')).toBeHidden();
   await expect(page.locator('#leaveGroupBtn')).toBeHidden();
-  await expect(page.locator('#groupLockedPreview')).toBeVisible();
-  await expect(page.locator('#groupLockedPreview')).toContainText('участники, live-локации на карте и чат группы');
+  await expect(page.locator('#groupLockedPreview')).toBeHidden();
   await expect(page.locator('#groupMembersCard')).toBeHidden();
   await expect(page.locator('#liveLocationsCard')).toBeHidden();
   await expect(page.locator('#groupChatCard')).toBeHidden();
@@ -1688,7 +1687,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.44-hotfix.7');
+  expect(backup.appVersion).toBe('0.7.44-hotfix.8');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1819,7 +1818,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.44-hotfix.7',
+    appVersion: '0.7.44-hotfix.8',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

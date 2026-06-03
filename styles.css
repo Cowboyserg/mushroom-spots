@@ -3221,3 +3221,102 @@ body.online-map-expanded .bottom-nav {
     grid-template-columns: 1fr;
   }
 }
+
+/* Sprint 5.44.8 group entry mobile layout polish. */
+.group-profile-card {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 14px;
+  padding: 12px;
+  border: 1px dashed rgba(36, 75, 47, 0.18);
+  border-radius: 18px;
+  background: rgba(244, 248, 241, 0.62);
+}
+.group-profile-card .field {
+  margin: 0;
+}
+.group-profile-tools.people-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.group-profile-tools #peopleHint {
+  margin: 0 0 8px;
+}
+.group-profile-tools .profile-chip-row {
+  margin: 6px 0 10px;
+}
+.group-profile-tools .profile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 0;
+}
+.group-profile-tools .profile-actions button {
+  min-height: 42px;
+  padding: 9px 10px;
+  font-size: 14px;
+}
+.group-entry-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 210px;
+}
+.group-entry-box .hint {
+  margin-bottom: 10px;
+}
+.group-entry-box .compact-field {
+  margin-top: auto;
+}
+.group-entry-box > button {
+  margin-top: auto;
+}
+.group-entry-box .compact-field + button {
+  margin-top: 10px;
+}
+.group-locked-preview[hidden] {
+  display: none !important;
+}
+@media (max-width: 720px) {
+  .group-overview-card {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .group-state-grid {
+    margin-bottom: 10px;
+  }
+  .group-profile-card {
+    padding: 10px;
+  }
+  .group-profile-tools .profile-chip-row {
+    gap: 6px;
+  }
+  .group-profile-tools .profile-chip {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+  .group-profile-tools .profile-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .group-entry-grid {
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .group-entry-box {
+    min-height: 0;
+    padding: 14px;
+  }
+  .group-entry-box .compact-field,
+  .group-entry-box > button {
+    margin-top: 10px;
+  }
+}
+@media (max-width: 430px) {
+  .group-profile-tools .profile-actions {
+    grid-template-columns: 1fr;
+  }
+  .group-profile-tools .profile-actions button {
+    justify-content: center;
+  }
+}
