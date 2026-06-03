@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.40 · Sprint 5\.40/;
+const EXPECTED_APP_VERSION = /v0\.7\.41 · Sprint 5\.41/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -236,7 +236,8 @@ async function pickMapPoint(page) {
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
   await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
   await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('☆ Сохранить');
-  await expect(page.locator('#saveSpotDetails #saveSpotBtn')).toHaveText('Сохранить выбранное место');
+  await expect(page.locator('#saveSpotDetails')).toHaveCount(0);
+  await expect(page.locator('#savePlaceDialog')).toBeHidden();
 }
 
 async function seedSpots(page) {
@@ -1164,9 +1165,10 @@ test('picked map point context sheet enables share action only when group chat i
   await expect(page.locator('#mapObjectSecondaryBtn')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
   await page.locator('#mapObjectSecondaryBtn').click();
-  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранить место');
-  await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('Сохранить и поделиться');
-  await expect(page.locator('#mapObjectSaveEditor')).toBeVisible();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
+  await expect(page.locator('#savePlaceDialogTitle')).toHaveText('Сохранить выбранную точку');
+  await expect(page.locator('#savePlaceDialogSaveBtn')).toHaveText('Сохранить и поделиться');
 });
 
 test('picked map point bookmark opens save form and creates result actions and spots handoff', async ({ page }) => {
@@ -1174,13 +1176,14 @@ test('picked map point bookmark opens save form and creates result actions and s
   await pickMapPoint(page);
 
   await page.locator('#mapObjectPrimaryBtn').click();
-  await expect(page.locator('#mapObjectTitle')).toHaveText('Сохранить место');
-  await expect(page.locator('#mapObjectSaveEditor')).toBeVisible();
-  await page.locator('#mapObjectCollection').selectOption({ label: 'Грибные места' });
-  await page.locator('#mapObjectName').fill('Context sheet тестовая точка');
-  await page.locator('#mapObjectType').fill('Белые');
-  await page.locator('#mapObjectNote').fill('Сохранено через закладку выбранного места');
-  await page.locator('#mapObjectPrimaryBtn').click();
+  await expect(page.locator('#mapObjectTitle')).toHaveText('Выбранное место');
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
+  await expect(page.locator('#savePlaceDialogTitle')).toHaveText('Сохранить выбранную точку');
+  await page.locator('#spotCollection').selectOption({ label: 'Грибные места' });
+  await page.locator('#spotName').fill('Context sheet тестовая точка');
+  await page.locator('#mushroomType').fill('Белые');
+  await page.locator('#spotNote').fill('Сохранено через закладку выбранного места');
+  await page.locator('#savePlaceDialogSaveBtn').click();
 
   await expect(page.locator('#saveResultCard')).toBeVisible();
   await expect(page.locator('#saveResultText')).toContainText('Context sheet тестовая точка');
@@ -1257,16 +1260,19 @@ test('saved spot map sheet opens spots section for edit and delete CRUD actions'
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья — обновлено');
 });
 
-test('selected map point can be saved without GPS and save action stays inside spot form', async ({ page }) => {
+test('selected map point can be saved without GPS through save dialog', async ({ page }) => {
   await bootApp(page);
   await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
   await expect(page.locator('#saveSpotBtn')).toHaveText('Включить GPS');
 
   await pickMapPoint(page);
+  await expect(page.locator('#savePlaceDialog')).toBeHidden();
+  await page.locator('#mapObjectPrimaryBtn').click();
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
   await page.locator('#spotName').fill('Тестовая точка без GPS');
   await page.locator('#mushroomType').fill('Белые');
   await page.locator('#spotNote').fill('Сохранено Playwright без активного GPS');
-  await page.locator('#saveSpotDetails #saveSpotBtn').click();
+  await page.locator('#savePlaceDialogSaveBtn').click();
 
   await expect(page.locator('#saveResultCard')).toBeVisible();
   await expect(page.locator('#saveResultText')).toContainText('Тестовая точка без GPS');
@@ -1285,11 +1291,13 @@ test('GPS point can be saved with mocked geolocation', async ({ page, context })
   await page.locator('#startGpsBtn').click();
   await expect(page.locator('#gpsStatus')).toHaveText('активен');
   await expect(page.locator('#saveSpotBtn')).toHaveText('Сохранить моё место');
+  await page.locator('#saveSpotBtn').click();
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
 
   await page.locator('#spotName').fill('GPS smoke точка');
   await page.locator('#mushroomType').fill('Лисички');
   await page.locator('#spotNote').fill('Сохранено с mocked GPS');
-  await page.locator('#saveSpotDetails #saveSpotBtn').click();
+  await page.locator('#savePlaceDialogSaveBtn').click();
 
   await expect(page.locator('#saveResultCard')).toBeVisible();
   await page.getByRole('button', { name: 'Точки' }).click();
@@ -1545,7 +1553,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.40');
+  expect(backup.appVersion).toBe('0.7.41');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1674,7 +1682,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.40',
+    appVersion: '0.7.41',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

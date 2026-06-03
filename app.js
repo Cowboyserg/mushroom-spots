@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.40';
+const APP_VERSION = '0.7.41';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -103,6 +103,7 @@ const SPOTS_HISTORY_STATE_KEY = 'mushroomSpotsUiState';
 let spotMarkers = new Map();
 let selectedSpotId = null;
 let lastSavedSpotId = null;
+let savePlaceDialogState = null;
 let selectedMapObject = null;
 let mapObjectSheetCollapsed = false;
 let pickedSaveEditorOpen = false;
@@ -971,6 +972,9 @@ function updateSaveSpotFlowUi() {
   setText('saveFlowDescription', target.description);
   setText('saveTargetPill', target.pill);
   setText('saveSpotBtn', target.button);
+  setText('saveSpotActionHint', target.kind === 'none'
+    ? 'Без выбранной точки и без GPS форма сохранения не открывается.'
+    : 'Нажми кнопку, чтобы открыть окно сохранения с папкой, названием, типом и заметкой.');
   setPillState('saveTargetPill', target.pillState);
 
   const coords = target.position
@@ -1001,6 +1005,7 @@ function updateActionButtonsUi() {
   setDisabled('saveSpotBtn', !hasPickedMapPoint && !hasPosition && !canRequestGps);
   setDisabled('saveCurrentGpsOnlyBtn', !hasPosition);
   setDisabled('savePickedMapPointBtn', !hasPickedMapPoint);
+  setDisabled('savePlaceDialogSaveBtn', !savePlaceDialogState?.position);
   setDisabled('sharePickedMapPointToChatBtn', !hasPickedMapPoint || !canUseChat);
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
@@ -5947,8 +5952,6 @@ function setPickedMapPoint(latlng, source = 'map') {
     pickedMapPointMarker.setLatLng([pickedMapPoint.lat, pickedMapPoint.lon]);
   }
   pickedMapPointMarker.openPopup();
-  const details = $('saveSpotDetails');
-  if (details) details.open = true;
   pickedSaveEditorOpen = false;
   pickedSaveShareAfterSave = false;
   recordMapDebug('picked map point', pickedMapPoint);
@@ -6179,29 +6182,6 @@ function describeSelectedMapObject() {
 
   if (selectedMapObject.kind === 'picked') {
     if (!pickedMapPoint) return null;
-    if (pickedSaveEditorOpen) {
-      return {
-        kind: 'picked',
-        title: 'Сохранить место',
-        subtitle: pickedSaveShareAfterSave
-          ? 'Выбери папку и заполни поля. После сохранения точка отправится группе.'
-          : 'Выбери папку и заполни поля. Это место станет сохранённой точкой.',
-        pill: 'закладка',
-        saveEditorVisible: true,
-        secondaryVisible: canSendSpotToChat() && !pickedSaveShareAfterSave,
-        editVisible: false,
-        dangerVisible: false,
-        primary: pickedSaveShareAfterSave ? 'Сохранить и поделиться' : 'Сохранить',
-        secondary: 'Сохранить и поделиться',
-        clearVisible: true,
-        clear: 'Назад',
-        rows: [
-          ['Состояние', 'открыта форма сохранения'],
-          ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
-          ['Расстояние', distanceFromCurrentPositionLine(pickedMapPoint)]
-        ]
-      };
-    }
     return {
       kind: 'picked',
       title: 'Выбранное место',
@@ -6218,7 +6198,7 @@ function describeSelectedMapObject() {
         ['Состояние', 'выбрано на карте, ещё не сохранено'],
         ['Координаты', `${fmtCoord(pickedMapPoint.lat)}, ${fmtCoord(pickedMapPoint.lon)}`],
         ['Расстояние', distanceFromCurrentPositionLine(pickedMapPoint)],
-        ['Закладка', 'откроет выбор папки и поля сохранения']
+        ['Закладка', 'откроет окно сохранения с выбором папки и полями описания']
       ]
     };
   }
@@ -6348,6 +6328,102 @@ function readLegacySpotFormData() {
     collection: $('spotCollection')?.value?.trim() || SPOT_DEFAULT_COLLECTION,
     photoFile: $('spotPhoto')?.files?.[0] || null
   };
+}
+
+
+function resetSavePlaceDialogForm({ preserveCollection = true } = {}) {
+  for (const id of ['spotName', 'mushroomType', 'spotNote']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  const photo = $('spotPhoto');
+  if (photo) photo.value = '';
+  const collection = $('spotCollection');
+  if (collection && !preserveCollection) collection.value = SPOT_DEFAULT_COLLECTION;
+}
+
+function makeSavePlaceDialogTarget(source) {
+  if (source === 'map-picked') {
+    if (!pickedMapPoint) return null;
+    return {
+      source: 'map-picked',
+      position: pickedMapPoint,
+      title: 'Сохранить выбранную точку',
+      subtitle: 'Место выбрано на карте. Выбери папку, добавь описание и сохрани точку.',
+      button: 'Сохранить',
+      status: 'выбрано на карте'
+    };
+  }
+  if (source === 'current-gps') {
+    if (!currentPosition) return null;
+    return {
+      source: 'current-gps',
+      position: currentPosition,
+      title: 'Сохранить мою позицию',
+      subtitle: 'GPS-позиция готова. Выбери папку, добавь описание и сохрани точку.',
+      button: 'Сохранить',
+      status: 'GPS готов'
+    };
+  }
+  return null;
+}
+
+function openSavePlaceDialog(source, { shareAfterSave = false } = {}) {
+  const target = makeSavePlaceDialogTarget(source);
+  if (!target?.position) {
+    markButtonBlocked(source === 'current-gps' ? 'нет GPS-координат' : 'точка на карте не выбрана');
+    if (source === 'current-gps') alert('Сначала включи GPS и дождись координат.');
+    else alert('Сначала зажми место на карте пальцем примерно на секунду.');
+    return false;
+  }
+  savePlaceDialogState = {
+    source: target.source,
+    position: { ...target.position },
+    shareAfterSave: Boolean(shareAfterSave),
+    openedAt: new Date().toISOString()
+  };
+  updateSpotCollectionChoiceOptions();
+  resetSavePlaceDialogForm({ preserveCollection: true });
+  setText('savePlaceDialogTitle', target.title);
+  setText('savePlaceDialogSubtitle', shareAfterSave
+    ? `${target.subtitle} После сохранения точка будет отправлена в чат группы.`
+    : target.subtitle);
+  const coords = `Координаты: ${fmtCoord(target.position.lat)}, ${fmtCoord(target.position.lon)}${target.position.accuracy != null ? ` · точность ${meters(target.position.accuracy)}` : ''}`;
+  setText('savePlaceDialogCoords', `${target.status} · ${coords}`);
+  setText('savePlaceDialogSaveBtn', shareAfterSave ? 'Сохранить и поделиться' : target.button);
+  setDisabled('savePlaceDialogSaveBtn', false);
+  showDialogSafely('savePlaceDialog');
+  window.requestAnimationFrame(() => {
+    const first = $('spotCollection') || $('spotName');
+    try { first?.focus({ preventScroll: true }); } catch {}
+  });
+  return true;
+}
+
+function closeSavePlaceDialog({ reset = false } = {}) {
+  closeDialogSafely('savePlaceDialog');
+  savePlaceDialogState = null;
+  setDisabled('savePlaceDialogSaveBtn', true);
+  if (reset) resetSavePlaceDialogForm({ preserveCollection: true });
+  return true;
+}
+
+async function submitSavePlaceDialog() {
+  if (!savePlaceDialogState?.position || !savePlaceDialogState?.source) {
+    markButtonBlocked('нет координат для сохранения');
+    closeSavePlaceDialog();
+    return false;
+  }
+  if (savePlaceDialogState.shareAfterSave && !requireGroupChatReady()) return false;
+  const state = { ...savePlaceDialogState, position: { ...savePlaceDialogState.position } };
+  const spot = await saveSpotFromPosition(state.position, state.source, readLegacySpotFormData());
+  if (!spot) return false;
+  closeSavePlaceDialog({ reset: true });
+  if (state.shareAfterSave) {
+    selectedSpotId = spot.id;
+    return sendSelectedSpotToChat();
+  }
+  return true;
 }
 
 function readMapObjectSpotFormData() {
@@ -6480,8 +6556,7 @@ function runSelectedMapObjectPrimaryAction() {
     return true;
   }
   if (selectedMapObject.kind === 'picked') {
-    if (pickedSaveEditorOpen) return savePickedMapPointFromMapSheet(false);
-    return openPickedSaveEditor(false);
+    return openSavePlaceDialog('map-picked', { shareAfterSave: false });
   }
   if (selectedMapObject.kind === 'chat' && chatPreviewPoint) {
     if (canUseMapRuntime()) map.setView([chatPreviewPoint.lat, chatPreviewPoint.lon], Math.max(map.getZoom(), 16));
@@ -6498,8 +6573,7 @@ function runSelectedMapObjectSecondaryAction() {
   if (!selectedMapObject) return false;
   if (selectedMapObject.kind === 'saved') return sendSelectedSpotToChat();
   if (selectedMapObject.kind === 'picked') {
-    if (pickedSaveEditorOpen) return savePickedMapPointFromMapSheet(true);
-    return openPickedSaveEditor(true);
+    return openSavePlaceDialog('map-picked', { shareAfterSave: true });
   }
   return false;
 }
@@ -7448,38 +7522,20 @@ async function saveSmartSpot() {
     startGps(true);
     return false;
   }
-  return saveSpotFromPosition(target.position, target.source);
+  return openSavePlaceDialog(target.source, { shareAfterSave: false });
 }
 
 async function saveCurrentSpot() {
-  if (!currentPosition) {
-    markButtonBlocked('нет GPS-координат');
-    alert('Сначала включи GPS и дождись координат.');
-    return;
-  }
-  return saveSpotFromPosition(currentPosition, 'current-gps');
+  return openSavePlaceDialog('current-gps', { shareAfterSave: false });
 }
 
 async function savePickedMapPoint() {
-  if (!pickedMapPoint) {
-    markButtonBlocked('точка на карте не выбрана');
-    alert('Сначала зажми место на карте пальцем примерно на секунду.');
-    return;
-  }
-  return saveSpotFromPosition(pickedMapPoint, 'map-picked');
+  return openSavePlaceDialog('map-picked', { shareAfterSave: false });
 }
 
 async function savePickedMapPointAndShare() {
-  if (!pickedMapPoint) {
-    markButtonBlocked('точка на карте не выбрана');
-    alert('Сначала зажми место на карте пальцем примерно на секунду.');
-    return false;
-  }
   if (!requireGroupChatReady()) return false;
-  const spot = await saveSpotFromPosition(pickedMapPoint, 'map-picked');
-  if (!spot) return false;
-  selectedSpotId = spot.id;
-  return sendSelectedSpotToChat();
+  return openSavePlaceDialog('map-picked', { shareAfterSave: true });
 }
 
 async function averageAndSave() {
@@ -10216,6 +10272,10 @@ function bindUi() {
   if ($('saveCurrentGpsOnlyBtn')) $('saveCurrentGpsOnlyBtn').onclick = withButtonDiagnostics('saveCurrentGpsOnlyBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
   if ($('sharePickedMapPointToChatBtn')) $('sharePickedMapPointToChatBtn').onclick = withButtonDiagnostics('sharePickedMapPointToChatBtn', sendPickedMapPointToChat);
+  if ($('savePlaceDialogSaveBtn')) $('savePlaceDialogSaveBtn').onclick = withButtonDiagnostics('savePlaceDialogSaveBtn', submitSavePlaceDialog);
+  if ($('savePlaceDialogCancelBtn')) $('savePlaceDialogCancelBtn').onclick = withButtonDiagnostics('savePlaceDialogCancelBtn', () => closeSavePlaceDialog());
+  const savePlaceDialog = $('savePlaceDialog');
+  if (savePlaceDialog) savePlaceDialog.addEventListener('close', () => { savePlaceDialogState = null; setDisabled('savePlaceDialogSaveBtn', true); });
   if ($('saveResultShareBtn')) $('saveResultShareBtn').onclick = withButtonDiagnostics('saveResultShareBtn', shareLastSavedSpotToChat);
   if ($('saveResultListBtn')) $('saveResultListBtn').onclick = withButtonDiagnostics('saveResultListBtn', showLastSavedSpotInList);
   if ($('saveResultCloseBtn')) $('saveResultCloseBtn').onclick = withButtonDiagnostics('saveResultCloseBtn', closeSaveResult);
@@ -10370,7 +10430,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.40`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.41`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

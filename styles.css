@@ -3059,3 +3059,43 @@ body.online-map-expanded .bottom-nav {
     font-size: 26px !important;
   }
 }
+
+/* Sprint 5.41 — Save Place Dialog Flow.
+   The place form is no longer a permanent page block; it opens only when a
+   GPS or picked-map coordinate exists. */
+.save-flow-empty-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.save-place-dialog {
+  width: min(560px, calc(100vw - 24px));
+}
+.save-place-dialog-coords {
+  padding: 10px 12px;
+  border: 1px solid rgba(36, 75, 47, 0.14);
+  border-radius: 14px;
+  background: rgba(244, 248, 241, 0.82);
+  overflow-wrap: anywhere;
+}
+.save-place-dialog-editor {
+  margin-top: 12px;
+  padding: 12px;
+}
+.save-place-dialog-editor .field {
+  margin: 0 0 10px;
+}
+.save-place-dialog-editor .field:last-child {
+  margin-bottom: 0;
+}
+.save-place-dialog .dialog-actions button {
+  min-height: 44px;
+}
+@media (max-width: 560px) {
+  .save-place-dialog {
+    width: calc(100vw - 18px);
+  }
+  .save-place-dialog-editor {
+    padding: 10px;
+  }
+}
