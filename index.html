@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.47" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.47" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.48" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.48" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.47" />
+  <link rel="stylesheet" href="styles.css?v=0.7.48" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.47 · Sprint 5.47</p>
+      <p id="appVersion">v0.7.48 · Sprint 5.48</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -593,6 +593,31 @@
           <div id="rememberedPmtilesMapsList" class="remembered-map-list" role="list" aria-label="Мои офлайн-карты"></div>
         </div>
 
+        <details id="offlineStorageInfoDetails" class="offline-package-panel offline-storage-info-details">
+          <summary>
+            <span>Что хранится на устройстве</span>
+            <span class="pill">память</span>
+          </summary>
+          <div class="offline-storage-info-grid" aria-label="Что хранится на устройстве">
+            <div>
+              <strong>Офлайн-карты</strong>
+              <p class="hint">Файлы регионов сохраняются внутри приложения и могут открываться без интернета.</p>
+            </div>
+            <div>
+              <strong>Точки и маршруты</strong>
+              <p class="hint">Хранятся отдельно. Удаление карты не удаляет грибные места и записанные маршруты.</p>
+            </div>
+            <div>
+              <strong>Группы и чат</strong>
+              <p class="hint">Не входят в файл карты. Для синхронизации группы и чата нужна связь с БД.</p>
+            </div>
+            <div>
+              <strong>Backup JSON</strong>
+              <p class="hint">Скачивается вручную и хранится вне браузера. На iPhone лучше сохранять его в Файлы/iCloud.</p>
+            </div>
+          </div>
+        </details>
+
         <details id="offlineSystemDetails" class="offline-package-panel offline-system-details">
           <summary>
             <span>Системная информация</span>
@@ -638,7 +663,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.47 · Sprint 5.47</span>
+          <span class="pill">v0.7.48 · Sprint 5.48</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -654,9 +679,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.47</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.47 — Offline Map Open Flow Polish</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.47</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.48</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.48 — Offline Maps Release Candidate Polish</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.48</strong></div>
         </div>
       </section>
 
@@ -1046,10 +1071,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.47"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.48"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.47"></script>
-  <script src="app.js?v=0.7.47"></script>
+  <script src="config.js?v=0.7.48"></script>
+  <script src="app.js?v=0.7.48"></script>
 </body>
 </html>

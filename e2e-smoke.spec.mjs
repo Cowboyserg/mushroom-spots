@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.47 · Sprint 5\.47/;
+const EXPECTED_APP_VERSION = /v0\.7\.48 · Sprint 5\.48/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -559,6 +559,53 @@ test('offline maps screen presents empty manager before a map is added', async (
 });
 
 
+test('offline catalog auto-refreshes on first offline screen open', async ({ page }) => {
+  await bootApp(page, { fakeOfflineManifest: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 регионов');
+  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText('загружено 2');
+  await expect(page.locator('#offlineRegionCatalogList')).toContainText('Центральный федеральный округ');
+  await expect(page.locator('#offlineRegionCatalogList')).toContainText('Калининградская область');
+});
+
+
+test('offline catalog failure keeps offline map user flows available', async ({ page }) => {
+  await bootApp(page);
+
+  await page.context().setOffline(true);
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText(/Каталог регионов недоступен|нет соединения|не загрузился/);
+  await expect(page.locator('#chooseLocalPmtilesBtn')).toBeVisible();
+  await expect(page.locator('#startBboxExportBtn')).toBeVisible();
+  await expect(page.locator('#offlineSystemDetails > summary').getByText('Системная информация', { exact: true })).toBeVisible();
+  await page.context().setOffline(false);
+});
+
+
+test('offline storage explanation stays collapsed above system details', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await expect(page.locator('#offlineStorageInfoDetails')).toBeVisible();
+  await expect(page.locator('#offlineStorageInfoDetails')).not.toHaveAttribute('open', '');
+  await expect(page.locator('#offlineStorageInfoDetails > summary').getByText('Что хранится на устройстве', { exact: true })).toBeVisible();
+  await expect(page.locator('#offlineStorageInfoDetails')).toContainText('память');
+  await expect(page.locator('#offlineSystemDetails')).not.toHaveAttribute('open', '');
+
+  const order = await page.evaluate(() => {
+    const storage = document.querySelector('#offlineStorageInfoDetails')?.getBoundingClientRect();
+    const system = document.querySelector('#offlineSystemDetails')?.getBoundingClientRect();
+    return storage && system ? storage.top < system.top : false;
+  });
+  expect(order, 'human storage explanation should appear above System information').toBe(true);
+
+  await page.locator('#offlineStorageInfoDetails > summary').click();
+  await expect(page.locator('#offlineStorageInfoDetails')).toContainText('Офлайн-карты');
+  await expect(page.locator('#offlineStorageInfoDetails')).toContainText('Удаление карты не удаляет грибные места');
+  await expect(page.locator('#offlineStorageInfoDetails')).toContainText('Backup JSON');
+});
+
 test('offline maps keep region preparation visible while system details stay collapsed', async ({ page }) => {
   await bootApp(page);
 
@@ -634,6 +681,19 @@ test('offline region install streams a catalog package into OPFS when supported'
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
   await expect(central).toContainText('открыта сейчас');
   await expect(central.getByRole('button', { name: 'Показать карту' })).toBeVisible();
+  await expectOfflinePreviewNearViewportTop(page);
+
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  await expect(page.locator('#screen-offline')).toBeVisible();
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  const centralAfterReload = page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' });
+  await expect(centralAfterReload).toContainText('открыта сейчас');
+  await expect(centralAfterReload.getByRole('button', { name: 'Показать карту' })).toBeVisible();
+  await centralAfterReload.scrollIntoViewIfNeeded();
+  await centralAfterReload.getByRole('button', { name: 'Показать карту' }).click();
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expectOfflinePreviewNearViewportTop(page);
 });
 
@@ -1735,7 +1795,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.47');
+  expect(backup.appVersion).toBe('0.7.48');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1866,7 +1926,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.47',
+    appVersion: '0.7.48',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

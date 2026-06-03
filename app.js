@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.47';
+const APP_VERSION = '0.7.48';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -44,6 +44,7 @@ const PMTILES_SAMPLE_URL = './offline-test.pmtiles';
 const PMTILES_DEFAULT_URL = PMTILES_SAMPLE_URL;
 const OFFLINE_MAP_MANIFEST_URL = './offline-map-packages.json';
 const OFFLINE_MAP_MANIFEST_URL_STORAGE_KEY = 'mushroom_offline_map_manifest_url_v1';
+const OFFLINE_MAP_MANIFEST_CACHE_STORAGE_KEY = 'mushroom_offline_map_manifest_cache_v1';
 const OFFLINE_MAP_DEFAULT_RELEASE_TAG = 'maps-2026-06-02';
 const MAPLIBRE_GL_VERSION = '5.24.0';
 const PMTILES_JS_VERSION = '4.4.1';
@@ -169,7 +170,9 @@ let offlineMapManifest = {
   packages: [],
   selectedPackageId: null,
   error: null,
-  loadedAt: null
+  loadedAt: null,
+  fromCache: false,
+  autoLoadAttempted: false
 };
 let offlineRegionInstallState = {
   byPackageId: {},
@@ -2321,6 +2324,68 @@ async function fetchOfflineMapManifestJson(manifestUrl) {
   }
 }
 
+function normalizeOfflineMapManifestPackages(packages) {
+  return ensureSamplePackage(Array.isArray(packages) ? packages : []);
+}
+
+function readCachedOfflineMapManifest(manifestUrl = getConfiguredOfflineMapManifestUrl()) {
+  try {
+    const cached = safeJsonParse(localStorage.getItem(OFFLINE_MAP_MANIFEST_CACHE_STORAGE_KEY), null);
+    if (!cached || !Array.isArray(cached.packages) || !cached.packages.length) return null;
+    if (cached.url && manifestUrl && cached.url !== manifestUrl) return null;
+    return {
+      url: cached.url || manifestUrl,
+      schemaVersion: cached.schemaVersion || null,
+      packages: normalizeOfflineMapManifestPackages(cached.packages),
+      loadedAt: cached.loadedAt || null
+    };
+  } catch (err) {
+    recordMapDebug('offline map manifest cache read failed', err?.message || String(err));
+    return null;
+  }
+}
+
+function writeCachedOfflineMapManifest(manifestUrl, json, packages) {
+  try {
+    const remotePackages = (packages || []).filter((pkg) => !isLocalPmtilesPackage(pkg) && pkg.id !== defaultOfflineMapPackage().id);
+    if (!remotePackages.length) return;
+    localStorage.setItem(OFFLINE_MAP_MANIFEST_CACHE_STORAGE_KEY, JSON.stringify({
+      url: manifestUrl,
+      schemaVersion: json?.schemaVersion || null,
+      packages: remotePackages,
+      loadedAt: new Date().toISOString()
+    }));
+  } catch (err) {
+    recordMapDebug('offline map manifest cache write failed', err?.message || String(err));
+  }
+}
+
+function restoreCachedOfflineMapManifest(manifestUrl = getConfiguredOfflineMapManifestUrl()) {
+  const cached = readCachedOfflineMapManifest(manifestUrl);
+  if (!cached) return false;
+  const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
+  const packages = localPackage && localPmtilesFileState.status === 'selected'
+    ? [localPackage, ...cached.packages.filter((pkg) => !isLocalPmtilesPackage(pkg))]
+    : cached.packages;
+  const savedSelectedId = localPackage ? localPackage.id : localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+  const selectedPackage = packages.find((pkg) => pkg.id === savedSelectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled) || defaultOfflineMapPackage();
+  offlineMapManifest = {
+    ...offlineMapManifest,
+    url: cached.url || manifestUrl,
+    status: 'stale-cache',
+    schemaVersion: cached.schemaVersion || null,
+    packages,
+    selectedPackageId: selectedPackage.id,
+    error: null,
+    loadedAt: cached.loadedAt || null,
+    fromCache: true
+  };
+  if (!isLocalPmtilesPackage(selectedPackage)) localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, selectedPackage.id);
+  pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: selectedPackage.url, packageId: selectedPackage.id, packageName: selectedPackage.name };
+  pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
+  return true;
+}
+
 function getOfflineMapManifestSnapshot() {
   const selected = getSelectedOfflineMapPackage(false);
   return {
@@ -3205,6 +3270,12 @@ function renderOfflineRegionCatalogUi() {
     } else if (offlineMapManifest.status === 'loading') {
       pill.textContent = 'загрузка';
       pill.className = 'pill warn';
+    } else if (offlineMapManifest.status === 'stale-cache') {
+      pill.textContent = remotePackages.length ? 'последний каталог' : 'нет сети';
+      pill.className = `pill ${remotePackages.length ? 'warn' : 'warn'}`.trim();
+    } else if (offlineMapManifest.status === 'offline-empty') {
+      pill.textContent = 'нет сети';
+      pill.className = 'pill warn';
     } else if (offlineMapManifest.status === 'error') {
       pill.textContent = 'ошибка';
       pill.className = 'pill warn';
@@ -3221,10 +3292,16 @@ function renderOfflineRegionCatalogUi() {
         : 'Каталог регионов: загружен, но региональных .pmtiles в manifest нет.';
     } else if (offlineMapManifest.status === 'loading') {
       status.textContent = 'Каталог регионов: загружается…';
+    } else if (offlineMapManifest.status === 'stale-cache') {
+      status.textContent = remotePackages.length
+        ? `Каталог регионов: показан последний загруженный каталог (${remotePackages.length}). Обновить сейчас не удалось${offlineMapManifest.error ? ` — ${offlineMapManifest.error}` : ''}. Уже установленные карты доступны без интернета.`
+        : 'Каталог регионов: нет соединения. Уже установленные карты и ручной импорт остаются доступны.';
+    } else if (offlineMapManifest.status === 'offline-empty') {
+      status.textContent = 'Каталог регионов недоступен: нет соединения или список регионов не загрузился. Уже установленные карты, ручной импорт и выбор прямоугольника остаются доступны.';
     } else if (offlineMapManifest.status === 'error') {
-      status.textContent = `Каталог регионов: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Проверь URL manifest или доступность GitHub Release.`;
+      status.textContent = `Каталог регионов: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Уже установленные карты не затронуты; можно повторить обновление или импортировать файл вручную.`;
     } else {
-      status.textContent = 'Каталог регионов: не загружен. Нажми “Обновить каталог”. Источник каталога можно изменить в системной информации.';
+      status.textContent = 'Каталог регионов: не загружен. Открой экран офлайн-карт — приложение попробует обновить каталог автоматически.';
     }
   }
 
@@ -3233,9 +3310,15 @@ function renderOfflineRegionCatalogUi() {
   if (!remotePackages.length) {
     const empty = document.createElement('p');
     empty.className = 'hint offline-region-empty';
-    empty.textContent = offlineMapManifest.status === 'loaded'
-      ? 'В manifest нет доступных региональных карт.'
-      : 'После загрузки manifest здесь появятся регионы для установки или ручного скачивания.';
+    if (offlineMapManifest.status === 'loaded') {
+      empty.textContent = 'В manifest нет доступных региональных карт.';
+    } else if (offlineMapManifest.status === 'offline-empty' || offlineMapManifest.status === 'error') {
+      empty.textContent = 'Каталог регионов сейчас недоступен. Повтори обновление, импортируй готовый файл карты или подготовь прямоугольник региона на компьютере.';
+    } else if (offlineMapManifest.status === 'stale-cache') {
+      empty.textContent = 'Сохранённый каталог пустой. Повтори обновление, когда будет интернет.';
+    } else {
+      empty.textContent = 'Каталог загрузится автоматически при открытии экрана офлайн-карт. Кнопка “Обновить каталог” нужна для ручного повтора.';
+    }
     list.appendChild(empty);
     return;
   }
@@ -3430,10 +3513,14 @@ function renderOfflineMapPackageUi() {
       status.textContent = `Manifest: загружен. Выбран пакет: ${active.name} (${active.sourceType}). ${active.url ? active.url : 'URL не задан.'}`;
     } else if (offlineMapManifest.status === 'loading') {
       status.textContent = 'Manifest: загружается…';
+    } else if (offlineMapManifest.status === 'stale-cache') {
+      status.textContent = `Manifest: показан последний загруженный каталог. Обновление не удалось${offlineMapManifest.error ? ` — ${offlineMapManifest.error}` : ''}.`;
+    } else if (offlineMapManifest.status === 'offline-empty') {
+      status.textContent = 'Manifest: каталог недоступен без интернета. Доступны установленные карты и встроенный mini sample.';
     } else if (offlineMapManifest.status === 'error') {
       status.textContent = `Manifest: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Доступен встроенный mini sample.`;
     } else {
-      status.textContent = 'Manifest: не загружен. Доступен встроенный mini sample.';
+      status.textContent = 'Manifest: не загружен. Каталог будет загружен при открытии экрана Офлайн.';
     }
   }
   renderLocalPmtilesFileUi();
@@ -3583,10 +3670,13 @@ async function selectLocalPmtilesFile(file, options = {}) {
 }
 
 async function loadOfflineMapManifest(userAction = false) {
+  const manifestUrl = offlineMapManifest.url || getConfiguredOfflineMapManifestUrl();
   offlineMapManifest = {
     ...offlineMapManifest,
+    url: manifestUrl,
     status: 'loading',
-    error: null
+    error: null,
+    autoLoadAttempted: offlineMapManifest.autoLoadAttempted || !userAction
   };
   renderOfflineMapPackageUi();
   if (userAction && ['loadOfflineManifestBtn', 'refreshOfflineRegionCatalogBtn'].includes(activeButtonDiagnostics?.buttonId)) {
@@ -3594,13 +3684,13 @@ async function loadOfflineMapManifest(userAction = false) {
   }
 
   try {
-    const manifestUrl = offlineMapManifest.url || getConfiguredOfflineMapManifestUrl();
     const json = await fetchOfflineMapManifestJson(manifestUrl);
     const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
-    const packages = ensureSamplePackage(Array.isArray(json.packages) ? json.packages : []);
+    const packages = normalizeOfflineMapManifestPackages(Array.isArray(json.packages) ? json.packages : []);
     if (localPackage && localPmtilesFileState.status === 'selected') packages.unshift(localPackage);
     const savedSelectedId = localPackage ? localPackage.id : localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
     const selectedPackage = packages.find((pkg) => pkg.id === savedSelectedId && pkg.enabled) || packages.find((pkg) => pkg.enabled) || defaultOfflineMapPackage();
+    const loadedAt = new Date().toISOString();
     offlineMapManifest = {
       url: manifestUrl,
       status: 'loaded',
@@ -3608,8 +3698,11 @@ async function loadOfflineMapManifest(userAction = false) {
       packages,
       selectedPackageId: selectedPackage.id,
       error: null,
-      loadedAt: new Date().toISOString()
+      loadedAt,
+      fromCache: false,
+      autoLoadAttempted: true
     };
+    writeCachedOfflineMapManifest(manifestUrl, json, packages);
     if (isLocalPmtilesPackage(selectedPackage)) localStorage.removeItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
     else localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, selectedPackage.id);
     pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: selectedPackage.url, packageId: selectedPackage.id, packageName: selectedPackage.name };
@@ -3622,23 +3715,36 @@ async function loadOfflineMapManifest(userAction = false) {
     return offlineMapManifest;
   } catch (err) {
     const localPackage = (offlineMapManifest.packages || []).find((pkg) => isLocalPmtilesPackage(pkg) && pkg.id === localPmtilesFileState.packageId);
+    const cached = readCachedOfflineMapManifest(manifestUrl);
+    const fallbackPackages = cached?.packages?.length ? cached.packages : [];
     const sample = defaultOfflineMapPackage();
-    const packages = localPackage && localPmtilesFileState.status === 'selected' ? [localPackage, sample] : [sample];
-    const selectedPackage = localPackage && localPmtilesFileState.status === 'selected' ? localPackage : sample;
+    let packages = fallbackPackages.length ? [...fallbackPackages] : [sample];
+    if (localPackage && localPmtilesFileState.status === 'selected') {
+      packages = [localPackage, ...packages.filter((pkg) => !(isLocalPmtilesPackage(pkg) && pkg.id === localPackage.id))];
+    }
+    const selectedPackage = (localPackage && localPmtilesFileState.status === 'selected')
+      ? localPackage
+      : packages.find((pkg) => pkg.id === localStorage.getItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY) && pkg.enabled) || packages.find((pkg) => pkg.enabled) || sample;
+    const networkOffline = navigator.onLine === false;
     offlineMapManifest = {
-      url: offlineMapManifest.url || getConfiguredOfflineMapManifestUrl(),
-      status: 'error',
+      url: manifestUrl,
+      status: fallbackPackages.length ? 'stale-cache' : (networkOffline ? 'offline-empty' : 'error'),
+      schemaVersion: cached?.schemaVersion || null,
       packages,
       selectedPackageId: selectedPackage.id,
       error: err?.message || String(err),
-      loadedAt: null
+      loadedAt: cached?.loadedAt || null,
+      fromCache: Boolean(fallbackPackages.length),
+      autoLoadAttempted: true
     };
+    if (isLocalPmtilesPackage(selectedPackage)) localStorage.removeItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+    else if (selectedPackage?.id && selectedPackage.id !== sample.id) localStorage.setItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY, selectedPackage.id);
     pmtilesRuntimeProbe = { ...pmtilesRuntimeProbe, url: selectedPackage.url, packageId: selectedPackage.id, packageName: selectedPackage.name };
     pmtilesPreviewState = { ...pmtilesPreviewState, sourceUrl: selectedPackage.url };
     renderOfflineMapPackageUi();
-    recordMapDebug('offline map manifest load failed; sample fallback active', offlineMapManifest.error);
+    recordMapDebug(fallbackPackages.length ? 'offline map manifest load failed; cached catalog active' : 'offline map manifest load failed; sample fallback active', offlineMapManifest.error);
     if (userAction && ['loadOfflineManifestBtn', 'refreshOfflineRegionCatalogBtn'].includes(activeButtonDiagnostics?.buttonId)) {
-      setButtonApiStatus(activeButtonDiagnostics, 'ошибка', offlineMapManifest.error);
+      setButtonApiStatus(activeButtonDiagnostics, 'ошибка', fallbackPackages.length ? `показан сохранённый каталог: ${offlineMapManifest.error}` : offlineMapManifest.error);
     }
     return offlineMapManifest;
   }
@@ -5363,6 +5469,17 @@ function resizeActiveScreenMaps(reason = 'screen change') {
   }
 }
 
+function maybeAutoLoadOfflineCatalogOnOpen() {
+  if (offlineMapManifest.status === 'loading' || offlineMapManifest.status === 'loaded' || offlineMapManifest.autoLoadAttempted) return;
+  const hasRemoteCatalog = getRemoteOfflineMapPackages().length > 0;
+  if (hasRemoteCatalog && offlineMapManifest.status !== 'stale-cache') return;
+  offlineMapManifest.autoLoadAttempted = true;
+  window.setTimeout(() => {
+    if (activeAppScreen !== 'offline') return;
+    loadOfflineMapManifest(false).catch((err) => recordMapDebug('offline map manifest auto-load on offline screen failed', err?.message || String(err)));
+  }, 0);
+}
+
 function switchAppScreen(screen, options = {}) {
   const next = normalizeAppScreen(screen);
   const { persist = true, scrollTop = true } = options;
@@ -5392,6 +5509,7 @@ function switchAppScreen(screen, options = {}) {
   }
 
   resizeActiveScreenMaps(`active screen: ${next}`);
+  if (next === 'offline') maybeAutoLoadOfflineCatalogOnOpen();
   renderSettingsDiagnostics();
   return next;
 }
@@ -10994,7 +11112,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.47`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.48`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -11006,6 +11124,7 @@ async function init() {
   renderOnlineMapExpandButton();
   updateOnlineMapExpandInsets();
   offlineMapManifest.url = getConfiguredOfflineMapManifestUrl();
+  restoreCachedOfflineMapManifest(offlineMapManifest.url);
   renderOfflineMapPackageUi();
   restoreMapAdvancedControlsPreference();
   restoreAppScreen();
@@ -11014,7 +11133,6 @@ async function init() {
   if ($('screen-offline') && !$('screen-offline').hidden && localPmtilesFileState.status === 'selected') {
     showPmtilesPreviewMap().catch((err) => recordMapDebug('persistent PMTiles preview startup failed', err?.message || String(err)));
   }
-  loadOfflineMapManifest(false).catch((err) => recordMapDebug('offline map manifest startup load failed', err?.message || String(err)));
   recordMapDebug('app initialized');
   const groupFromUrl = loadLiveInputs();
   renderPeopleProfiles();
