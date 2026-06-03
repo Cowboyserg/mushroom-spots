@@ -1036,7 +1036,10 @@ test('online map expand button fills app workspace while keeping bottom navigati
   expect(expandedButtonBox, 'expand button must stay visible after toggle').not.toBeNull();
   expect(expandedMapBox, 'expanded map must have visible bounds').not.toBeNull();
   expect(expandedNavBox, 'bottom navigation must stay visible after expand').not.toBeNull();
-  expect(Math.abs(expandedButtonBox.x - beforeButtonBox.x), 'expand button must not shift horizontally').toBeLessThanOrEqual(2);
+  expect(expandedButtonBox.x, 'expand button must remain inside the expanded map').toBeGreaterThanOrEqual(expandedMapBox.x - 1);
+  expect(expandedButtonBox.x - expandedMapBox.x, 'expand button must stay near the expanded map left edge').toBeLessThanOrEqual(24);
+  expect(expandedButtonBox.y, 'expand button must remain inside the expanded map vertically').toBeGreaterThanOrEqual(expandedMapBox.y - 1);
+  expect(expandedButtonBox.y - expandedMapBox.y, 'expand button must stay near the expanded map top edge').toBeLessThanOrEqual(24);
   expect(expandedMapBox.height, 'expanded map must become taller').toBeGreaterThan(beforeMapBox.height + 40);
   expect(expandedMapBox.y + expandedMapBox.height, 'expanded map must not cover bottom navigation').toBeLessThanOrEqual(expandedNavBox.y + 2);
 
@@ -1493,7 +1496,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.39-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.39-hotfix.2');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1622,7 +1625,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.39-hotfix.1',
+    appVersion: '0.7.39-hotfix.2',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
