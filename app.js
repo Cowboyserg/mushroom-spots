@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.4';
+const APP_VERSION = '0.7.44-hotfix.5';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -10633,15 +10633,33 @@ function bindUi() {
   {
     const joinGroupBtn = $('joinGroupBtn');
     const joinGroupHandler = withButtonDiagnostics('joinGroupBtn', triggerJoinGroupFromUi);
-    joinGroupBtn.onclick = joinGroupHandler;
+    const runJoinGroupActivation = (event) => {
+      joinGroupHandler.call(joinGroupBtn, event);
+    };
+    const runJoinGroupFirstTouchActivation = (event) => {
+      if (event?.type === 'pointerdown') {
+        const isTouchPointer = event.pointerType === 'touch' || Number(navigator.maxTouchPoints || 0) > 0;
+        if (!isTouchPointer) return;
+      }
+      if (event?.type === 'mousedown' && Number(navigator.maxTouchPoints || 0) <= 0) return;
+      if (typeof event?.preventDefault === 'function') event.preventDefault();
+      runJoinGroupActivation(event);
+    };
+    joinGroupBtn.onclick = runJoinGroupActivation;
+    // iPhone/WebKit can suppress the final click when the previous text input
+    // still owns focus. Run the command on the first touch-like contact so the
+    // explicit button action is not lost during keyboard/blur retargeting.
+    joinGroupBtn.addEventListener('touchstart', runJoinGroupFirstTouchActivation, { passive: false, capture: true });
+    joinGroupBtn.addEventListener('pointerdown', runJoinGroupFirstTouchActivation, { capture: true });
+    joinGroupBtn.addEventListener('mousedown', runJoinGroupFirstTouchActivation, { capture: true });
     joinGroupBtn.addEventListener('touchend', (event) => {
       event.preventDefault();
-      joinGroupHandler.call(joinGroupBtn, event);
+      runJoinGroupActivation(event);
     }, { passive: false });
     joinGroupBtn.addEventListener('pointerup', (event) => {
-      if (event.pointerType !== 'touch') return;
+      if (event.pointerType !== 'touch' && Number(navigator.maxTouchPoints || 0) <= 0) return;
       event.preventDefault();
-      joinGroupHandler.call(joinGroupBtn, event);
+      runJoinGroupActivation(event);
     });
   }
   $('leaveGroupBtn').onclick = withButtonDiagnostics('leaveGroupBtn', leaveGroup);
@@ -10732,7 +10750,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.5`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
