@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.44-hotfix.5';
+const APP_VERSION = '0.7.44-hotfix.6';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -10539,6 +10539,41 @@ function handleGroupIdInputCommitted() {
   updateChatUi();
 }
 
+
+function isJoinGroupButtonUsable(btn = $('joinGroupBtn')) {
+  return Boolean(btn && !btn.disabled && !btn.hidden && !btn.closest('[hidden], [inert]'));
+}
+
+function eventPointList(event) {
+  const points = [];
+  const touchList = event?.changedTouches || event?.touches;
+  if (touchList && typeof touchList.length === 'number') {
+    for (const touch of touchList) {
+      points.push({ x: Number(touch.clientX), y: Number(touch.clientY) });
+    }
+  }
+  if (Number.isFinite(Number(event?.clientX)) && Number.isFinite(Number(event?.clientY))) {
+    points.push({ x: Number(event.clientX), y: Number(event.clientY) });
+  }
+  return points.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function eventHitsJoinGroupButton(event, btn = $('joinGroupBtn')) {
+  if (!isJoinGroupButtonUsable(btn)) return false;
+  const direct = typeof event?.target?.closest === 'function' && event.target.closest('#joinGroupBtn') === btn;
+  if (direct) return true;
+
+  // iPhone/WebKit may retarget the final activation event while the preceding
+  // text input blurs. In that case the button handler never sees the event even
+  // though the user's tap coordinates are inside the enabled button.
+  const rect = btn.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+  return eventPointList(event).some(point => (
+    point.x >= rect.left && point.x <= rect.right &&
+    point.y >= rect.top && point.y <= rect.bottom
+  ));
+}
+
 async function testSupabaseConnection() {
   try {
     const cfg = getSupabaseConfig();
@@ -10637,30 +10672,30 @@ function bindUi() {
       joinGroupHandler.call(joinGroupBtn, event);
     };
     const runJoinGroupFirstTouchActivation = (event) => {
-      if (event?.type === 'pointerdown') {
-        const isTouchPointer = event.pointerType === 'touch' || Number(navigator.maxTouchPoints || 0) > 0;
-        if (!isTouchPointer) return;
-      }
-      if (event?.type === 'mousedown' && Number(navigator.maxTouchPoints || 0) <= 0) return;
-      if (typeof event?.preventDefault === 'function') event.preventDefault();
+      if (!eventHitsJoinGroupButton(event, joinGroupBtn)) return;
+      if (typeof event?.preventDefault === 'function' && event.cancelable) event.preventDefault();
+      runJoinGroupActivation(event);
+    };
+    const runJoinGroupRetargetGuard = (event) => {
+      if (!eventHitsJoinGroupButton(event, joinGroupBtn)) return;
       runJoinGroupActivation(event);
     };
     joinGroupBtn.onclick = runJoinGroupActivation;
-    // iPhone/WebKit can suppress the final click when the previous text input
-    // still owns focus. Run the command on the first touch-like contact so the
-    // explicit button action is not lost during keyboard/blur retargeting.
+    // iPhone/WebKit can suppress or retarget the final button click when the
+    // previous text input blurs and the group-entry card re-renders. Keep the
+    // normal button handler, but also listen at document capture phase and accept
+    // activation events whose coordinates land inside the enabled join button.
+    // This preserves the explicit user command without making typing a group ID
+    // auto-join.
     joinGroupBtn.addEventListener('touchstart', runJoinGroupFirstTouchActivation, { passive: false, capture: true });
     joinGroupBtn.addEventListener('pointerdown', runJoinGroupFirstTouchActivation, { capture: true });
     joinGroupBtn.addEventListener('mousedown', runJoinGroupFirstTouchActivation, { capture: true });
-    joinGroupBtn.addEventListener('touchend', (event) => {
-      event.preventDefault();
-      runJoinGroupActivation(event);
-    }, { passive: false });
-    joinGroupBtn.addEventListener('pointerup', (event) => {
-      if (event.pointerType !== 'touch' && Number(navigator.maxTouchPoints || 0) <= 0) return;
-      event.preventDefault();
-      runJoinGroupActivation(event);
-    });
+    joinGroupBtn.addEventListener('touchend', runJoinGroupRetargetGuard, { passive: true });
+    joinGroupBtn.addEventListener('pointerup', runJoinGroupRetargetGuard, { capture: true });
+    document.addEventListener('touchend', runJoinGroupRetargetGuard, { passive: true, capture: true });
+    document.addEventListener('pointerup', runJoinGroupRetargetGuard, { capture: true });
+    document.addEventListener('mouseup', runJoinGroupRetargetGuard, { capture: true });
+    document.addEventListener('click', runJoinGroupRetargetGuard, { capture: true });
   }
   $('leaveGroupBtn').onclick = withButtonDiagnostics('leaveGroupBtn', leaveGroup);
   $('startLiveBtn').onclick = withButtonDiagnostics('startLiveBtn', startLiveSharing);
@@ -10750,7 +10785,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.5`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.44.6`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

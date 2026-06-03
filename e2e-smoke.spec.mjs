@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.5 · Sprint 5\.44\.5/;
+const EXPECTED_APP_VERSION = /v0\.7\.44-hotfix\.6 · Sprint 5\.44\.6/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -236,8 +236,10 @@ async function expectJoinedGroupReady(page, expectedGroup) {
       stateText: groupStateText?.textContent || '',
       joinedActionsHidden: Boolean(joinedActions?.hidden),
       joinButtonDisabled: Boolean(joinButton?.disabled),
+      liveValue: document.querySelector('#liveName')?.value || '',
       groupValue: groupInput?.value || '',
-      persistedGroup: localStorage.getItem('mushroom_live_group_id') || ''
+      persistedGroup: localStorage.getItem('mushroom_live_group_id') || '',
+      buttonStatus: document.querySelector('#buttonApiStatus')?.textContent || ''
     };
   }), {
     message: 'group join diagnostic oracle: state/localStorage/button flags must agree after join click'
@@ -996,6 +998,29 @@ test('group join accepts first touch activation when WebKit suppresses click', a
   await expectJoinedGroupReady(page, 'e2e-first-touch-join');
 });
 
+test('group join accepts retargeted WebKit click by button geometry', async ({ page }) => {
+  await bootApp(page);
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#groupId').fill('e2e-retargeted-join');
+  await expect(page.locator('#joinGroupBtn')).toBeEnabled();
+
+  await page.evaluate(() => {
+    const btn = document.querySelector('#joinGroupBtn');
+    if (!btn) throw new Error('joinGroupBtn missing');
+    const rect = btn.getBoundingClientRect();
+    document.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2
+    }));
+  });
+
+  await expectJoinedGroupReady(page, 'e2e-retargeted-join');
+});
+
 test('group chat disables duplicate send and clears composer after success', async ({ page }) => {
   let chatPostCount = 0;
   await bootApp(page, {
@@ -1681,7 +1706,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.44-hotfix.5');
+  expect(backup.appVersion).toBe('0.7.44-hotfix.6');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1812,7 +1837,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.44-hotfix.5',
+    appVersion: '0.7.44-hotfix.6',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
