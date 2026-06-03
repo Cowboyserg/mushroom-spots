@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.45';
+const APP_VERSION = '0.7.46';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -196,6 +196,9 @@ let localPmtilesFileState = {
 let pendingLocalPmtilesImportMode = 'add';
 let pendingDuplicatePmtilesImport = null;
 let pendingOfflineImportNameMapId = null;
+let offlineActiveMapRenameEditing = false;
+let pendingOfflineRegionInstallPackageId = null;
+let pendingOfflineMapDeleteRecordId = null;
 let appToastTimer = null;
 const OFFLINE_IMPORT_TOAST_STEP_MS = 1200;
 const OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS = 1600;
@@ -320,6 +323,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   refreshOfflineRegionCatalogBtn: 'Обновить каталог регионов',
   saveOfflineManifestUrlBtn: 'Сохранить URL каталога регионов',
   offlineRegionInstallBtn: 'Установить карту региона',
+  offlineRegionInstallConfirmBtn: 'Подтвердить установку региона',
   offlineRegionCancelInstallBtn: 'Отменить установку региона',
   offlineRegionCatalogDownload: 'Скачать карту региона вручную',
   chooseLocalPmtilesBtn: 'Выбрать файл карты',
@@ -329,6 +333,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   centerPmtilesOnMeBtn: 'Показать меня на офлайн-карте',
   renameRememberedPmtilesMapBtn: 'Сохранить название карты',
   forgetRememberedPmtilesMapBtn: 'Забыть карту',
+  offlineDeleteMapConfirmBtn: 'Удалить карту',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -2496,11 +2501,11 @@ function renderOfflineMapsManagerShell() {
   if (details) details.hidden = !hasMaps;
   if (listSection) listSection.hidden = !hasMaps;
   if (addPanel) addPanel.classList.toggle('empty-mode', !hasMaps);
-  if (addTitle) addTitle.textContent = hasMaps ? 'Добавить карту' : 'Офлайн-карт пока нет';
+  if (addTitle) addTitle.textContent = 'Импортировать свой .pmtiles';
   if (addHint) {
     addHint.textContent = hasMaps
-      ? 'Можно добавить ещё один .pmtiles-файл. Новая карта появится в списке и станет активной.'
-      : 'Добавь файл .pmtiles, чтобы использовать карту без интернета. После добавления здесь появится предпросмотр карты.';
+      ? 'Можно добавить ещё один файл карты. Новая карта появится в списке и станет активной.'
+      : 'Используй этот путь, если файл карты уже скачан вручную или подготовлен на компьютере.';
   }
   if (activePill) {
     const state = getRememberedPmtilesMapUiStatus(selected);
@@ -2668,13 +2673,24 @@ function getUserFacingOfflineMapState() {
 function renderCurrentOfflineMapSummary() {
   const status = $('currentOfflineMapStatus');
   const empty = $('offlineMapEmptyState');
+  const meta = $('offlineActiveMapMeta');
+  const nameField = document.querySelector('.offline-map-name-field');
+  const renameBtn = $('renameRememberedPmtilesMapBtn');
   const state = getUserFacingOfflineMapState();
+  const selected = getSelectedRememberedPmtilesMap();
   if (status) status.textContent = state.summary;
   if (empty) {
     empty.textContent = state.detail;
     empty.classList.toggle('warn-state', state.mode !== 'ready');
     empty.classList.toggle('ok-state', state.mode === 'ready');
   }
+  if (meta) {
+    meta.textContent = selected
+      ? `${selected.fileName || 'файл карты'} · ${formatBytes(selected.sizeBytes)} · сохранена внутри приложения.`
+      : 'Файл карты не выбран.';
+  }
+  if (nameField) nameField.hidden = !offlineActiveMapRenameEditing || !selected;
+  if (renameBtn) renameBtn.textContent = offlineActiveMapRenameEditing ? 'Сохранить название' : 'Переименовать';
   renderOfflineMapsManagerShell();
 }
 
@@ -2723,12 +2739,14 @@ function renderRememberedPmtilesMapsList() {
     renameAction.className = 'secondary btn-secondary small-btn';
     renameAction.textContent = 'Переименовать';
     renameAction.onclick = () => {
-      selectRememberedPmtilesMap(item.id, true).catch(console.warn);
-      const input = $('rememberedPmtilesMapNameInput');
-      if (input) {
-        input.focus();
-        input.select();
-      }
+      offlineActiveMapRenameEditing = true;
+      selectRememberedPmtilesMap(item.id, true).then(() => {
+        const input = $('rememberedPmtilesMapNameInput');
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      }).catch(console.warn);
     };
 
     const deleteAction = document.createElement('button');
@@ -2893,6 +2911,30 @@ function renameSelectedRememberedPmtilesMap() {
   return renameRememberedPmtilesMapById(selected?.id, input?.value || '', activeButtonDiagnostics);
 }
 
+function handleSelectedRememberedPmtilesRenameAction() {
+  const selected = getSelectedRememberedPmtilesMap();
+  const input = $('rememberedPmtilesMapNameInput');
+  if (!selected) {
+    markButtonBlocked('нет выбранной запомненной карты');
+    return null;
+  }
+  if (!offlineActiveMapRenameEditing) {
+    offlineActiveMapRenameEditing = true;
+    renderRememberedPmtilesMapsUi();
+    if (input) {
+      input.value = selected.title || '';
+      input.focus();
+      input.select();
+    }
+    setButtonApiStatus(activeButtonDiagnostics, 'готово', 'режим переименования открыт');
+    return selected;
+  }
+  const updated = renameSelectedRememberedPmtilesMap();
+  if (updated) offlineActiveMapRenameEditing = false;
+  renderRememberedPmtilesMapsUi();
+  return updated;
+}
+
 function saveOfflineImportNameFromDialog() {
   const recordId = pendingOfflineImportNameMapId || rememberedPmtilesMapsState.selectedId;
   const input = $('offlineImportNameInput');
@@ -2934,14 +2976,41 @@ function cancelDuplicateOfflineMap() {
   pendingDuplicatePmtilesImport = null;
 }
 
+function openOfflineDeleteMapDialog(recordId) {
+  const target = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
+  if (!target) {
+    markButtonBlocked('нет выбранной запомненной карты');
+    return false;
+  }
+  pendingOfflineMapDeleteRecordId = target.id;
+  setText('offlineDeleteMapTitle', `Удалить карту “${target.title || 'без названия'}”?`);
+  setText('offlineDeleteMapText', `Будет удалён файл ${target.fileName || 'карты'} из хранилища приложения. Точки, маршруты, группы и backup не изменятся.`);
+  showDialogSafely('offlineDeleteMapDialog');
+  return true;
+}
+
+function closeOfflineDeleteMapDialog() {
+  pendingOfflineMapDeleteRecordId = null;
+  closeDialogSafely('offlineDeleteMapDialog');
+}
+
+async function confirmOfflineDeleteMapDialog() {
+  const recordId = pendingOfflineMapDeleteRecordId;
+  if (!recordId) return false;
+  pendingOfflineMapDeleteRecordId = null;
+  closeDialogSafely('offlineDeleteMapDialog');
+  return forgetRememberedPmtilesMapById(recordId, false);
+}
+
 async function forgetRememberedPmtilesMapById(recordId, ask = true) {
   const target = (rememberedPmtilesMapsState.maps || []).find((item) => item.id === recordId);
   if (!target) {
     markButtonBlocked('нет выбранной запомненной карты');
     return false;
   }
-  if (ask && !confirm(`Удалить офлайн-карту “${target.title}” из списка?`)) return false;
+  if (ask) return openOfflineDeleteMapDialog(target.id);
   await deletePersistedPmtilesFile(target).catch((err) => recordMapDebug('persistent PMTiles file delete failed', err?.message || String(err)));
+  offlineActiveMapRenameEditing = false;
   rememberedPmtilesMapsState.maps = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== target.id);
   rememberedPmtilesMapsState.selectedId = rememberedPmtilesMapsState.selectedId === target.id
     ? (rememberedPmtilesMapsState.maps[0]?.id || null)
@@ -3000,15 +3069,92 @@ function formatBytes(bytes) {
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
+function getOfflineRegionPackageById(packageId) {
+  const id = String(packageId || '');
+  return (offlineMapManifest.packages || []).find((item) => item.id === id && item.enabled && !isLocalPmtilesPackage(item)) || null;
+}
+
+async function estimateOfflineStorageForBytes(requiredBytes = 0) {
+  const required = Number(requiredBytes || 0);
+  if (!navigator.storage || typeof navigator.storage.estimate !== 'function') {
+    return {
+      availableBytes: null,
+      quotaBytes: null,
+      usageBytes: null,
+      text: 'Браузер не сообщает свободное место. Убедись, что на устройстве достаточно памяти.'
+    };
+  }
+  try {
+    const estimate = await navigator.storage.estimate();
+    const quota = Number(estimate?.quota || 0) || null;
+    const usage = Number(estimate?.usage || 0) || 0;
+    const available = quota ? Math.max(0, quota - usage) : null;
+    if (required > 0 && available !== null) {
+      return {
+        availableBytes: available,
+        quotaBytes: quota,
+        usageBytes: usage,
+        text: available >= required
+          ? `Доступно примерно ${formatBytes(available)}.`
+          : `Может не хватить места: доступно примерно ${formatBytes(available)}, нужно ${formatBytes(required)}.`
+      };
+    }
+    return {
+      availableBytes: available,
+      quotaBytes: quota,
+      usageBytes: usage,
+      text: available !== null ? `Доступно примерно ${formatBytes(available)}.` : 'Браузер не сообщает свободное место.'
+    };
+  } catch (err) {
+    recordMapDebug('offline region storage estimate failed', err?.message || String(err));
+    return {
+      availableBytes: null,
+      quotaBytes: null,
+      usageBytes: null,
+      text: 'Не удалось проверить свободное место. Перед установкой проверь память устройства.'
+    };
+  }
+}
+
+async function openOfflineRegionInstallConfirmDialog(packageId) {
+  const pkg = getOfflineRegionPackageById(packageId);
+  if (!pkg) return false;
+  pendingOfflineRegionInstallPackageId = pkg.id;
+  setText('offlineRegionInstallConfirmTitle', `Установить ${pkg.name || 'регион'}?`);
+  setText('offlineRegionInstallConfirmText', `Файл ${pkg.fileName || pkg.url?.split('/').pop() || 'карты'} будет сохранён внутри приложения.`);
+  setText('offlineRegionInstallConfirmSize', formatBytes(pkg.sizeBytes));
+  setText('offlineRegionInstallConfirmStorage', 'проверяю…');
+  const dialog = $('offlineRegionInstallConfirmDialog');
+  if (dialog) showDialogSafely('offlineRegionInstallConfirmDialog');
+  const storage = await estimateOfflineStorageForBytes(pkg.sizeBytes);
+  if (pendingOfflineRegionInstallPackageId === pkg.id) {
+    setText('offlineRegionInstallConfirmStorage', storage.text);
+  }
+  return true;
+}
+
+function closeOfflineRegionInstallConfirmDialog() {
+  pendingOfflineRegionInstallPackageId = null;
+  closeDialogSafely('offlineRegionInstallConfirmDialog');
+}
+
+async function confirmPendingOfflineRegionInstall() {
+  const packageId = pendingOfflineRegionInstallPackageId;
+  if (!packageId) return null;
+  pendingOfflineRegionInstallPackageId = null;
+  closeDialogSafely('offlineRegionInstallConfirmDialog');
+  return installOfflineRegionPackage(packageId);
+}
+
 function getOfflineRegionInstallUiState(pkg, installed) {
   if (installed) return { status: 'installed', label: 'установлена', mode: 'on', detail: 'Файл уже сохранён в локальном хранилище приложения.' };
   const entry = getOfflineRegionInstallEntry(pkg?.id);
-  if (!entry) return { status: 'not-installed', label: 'не установлена', mode: 'warn', detail: 'Можно установить автоматически в OPFS или скачать файл вручную.' };
+  if (!entry) return { status: 'not-installed', label: 'не установлена', mode: 'warn', detail: 'Перед установкой приложение покажет размер файла и доступное место.' };
   const progress = formatOfflineRegionInstallProgress(entry);
   if (entry.status === 'downloading') return { status: entry.status, label: 'скачивается', mode: 'warn', detail: progress ? `Скачано ${progress}.` : 'Скачивание началось.' };
   if (entry.status === 'verifying') return { status: entry.status, label: 'проверяется', mode: 'warn', detail: 'Файл скачан, проверяю PMTiles header.' };
-  if (entry.status === 'installed') return { status: entry.status, label: 'установлена', mode: 'on', detail: 'Файл сохранён в OPFS.' };
-  if (entry.status === 'blocked-manual-required') return { status: entry.status, label: 'нужна ручная загрузка', mode: 'warn', detail: entry.error || 'Браузер заблокировал автоустановку. Используй “Скачать вручную”.' };
+  if (entry.status === 'installed') return { status: entry.status, label: 'установлена', mode: 'on', detail: 'Файл сохранён внутри приложения.' };
+  if (entry.status === 'blocked-manual-required') return { status: entry.status, label: 'нужна ручная загрузка', mode: 'warn', detail: entry.error || 'Автоустановка недоступна. Используй “Скачать вручную”.' };
   if (entry.status === 'canceled') return { status: entry.status, label: 'отменена', mode: 'warn', detail: entry.error || 'Установка отменена.' };
   if (entry.status === 'failed') return { status: entry.status, label: 'ошибка', mode: 'warn', detail: entry.error || 'Регион не установлен.' };
   return { status: entry.status || 'not-installed', label: entry.status || 'не установлена', mode: 'warn', detail: entry.error || '' };
@@ -3044,14 +3190,14 @@ function renderOfflineRegionCatalogUi() {
   if (status) {
     if (offlineMapManifest.status === 'loaded') {
       status.textContent = remotePackages.length
-        ? `Каталог регионов: загружено ${remotePackages.length}. “Установить” скачивает файл потоково в OPFS; “Скачать вручную” остаётся резервным способом.${lastInstallText}`
+        ? `Каталог регионов: загружено ${remotePackages.length}. Выбери регион и нажми “Установить”.${lastInstallText}`
         : 'Каталог регионов: загружен, но региональных .pmtiles в manifest нет.';
     } else if (offlineMapManifest.status === 'loading') {
       status.textContent = 'Каталог регионов: загружается…';
     } else if (offlineMapManifest.status === 'error') {
       status.textContent = `Каталог регионов: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Проверь URL manifest или доступность GitHub Release.`;
     } else {
-      status.textContent = 'Каталог регионов: не загружен. Вставь URL offline-map-packages.json из GitHub Release и нажми “Обновить каталог”.';
+      status.textContent = 'Каталог регионов: не загружен. Нажми “Обновить каталог”. Источник каталога можно изменить в системной информации.';
     }
   }
 
@@ -3099,6 +3245,26 @@ function renderOfflineRegionCatalogUi() {
     installDetail.className = 'hint offline-region-install-detail';
     installDetail.textContent = uiState.detail;
 
+    const progressWrap = document.createElement('div');
+    progressWrap.className = 'offline-region-progress';
+    const progressReceived = Number(installEntry?.receivedBytes || installed?.sizeBytes || 0);
+    const progressTotal = Number(installEntry?.totalBytes || pkg.sizeBytes || installed?.sizeBytes || 0);
+    const shouldShowProgress = progressReceived > 0 || ['downloading', 'verifying'].includes(String(installEntry?.status || ''));
+    if (shouldShowProgress) {
+      const progress = document.createElement('div');
+      progress.className = 'offline-region-progress-bar';
+      progress.setAttribute('role', 'progressbar');
+      const percent = progressTotal > 0 ? Math.max(0, Math.min(100, Math.floor((progressReceived / progressTotal) * 100))) : 0;
+      progress.setAttribute('aria-valuemin', '0');
+      progress.setAttribute('aria-valuemax', '100');
+      progress.setAttribute('aria-valuenow', String(percent));
+      progress.style.setProperty('--offline-region-progress', `${percent}%`);
+      const progressText = document.createElement('span');
+      progressText.className = 'hint offline-region-progress-text';
+      progressText.textContent = formatOfflineRegionInstallProgress(installEntry || { receivedBytes: progressReceived, totalBytes: progressTotal }) || 'Подготовка загрузки…';
+      progressWrap.append(progress, progressText);
+    }
+
     const actions = document.createElement('div');
     actions.className = 'row offline-region-actions';
 
@@ -3126,8 +3292,8 @@ function renderOfflineRegionCatalogUi() {
         ? 'Повторить установку'
         : 'Установить';
       installBtn.addEventListener('click', () => {
-        installOfflineRegionPackage(pkg.id).catch((err) => {
-          recordMapDebug('offline region install click failed', err?.message || String(err));
+        openOfflineRegionInstallConfirmDialog(pkg.id).catch((err) => {
+          recordMapDebug('offline region confirm open failed', err?.message || String(err));
         });
       });
       actions.appendChild(installBtn);
@@ -3144,7 +3310,9 @@ function renderOfflineRegionCatalogUi() {
       actions.appendChild(download);
     }
 
-    card.append(top, desc, installDetail, actions);
+    card.append(top, desc, installDetail);
+    if (progressWrap.childNodes.length) card.appendChild(progressWrap);
+    card.appendChild(actions);
     list.appendChild(card);
   }
 }
@@ -10737,13 +10905,21 @@ function bindUi() {
   };
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('rememberedPmtilesMapSelect')) $('rememberedPmtilesMapSelect').onchange = (event) => selectRememberedPmtilesMap(event.target.value, true).catch(console.warn);
-  if ($('renameRememberedPmtilesMapBtn')) $('renameRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('renameRememberedPmtilesMapBtn', renameSelectedRememberedPmtilesMap);
+  if ($('renameRememberedPmtilesMapBtn')) $('renameRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('renameRememberedPmtilesMapBtn', handleSelectedRememberedPmtilesRenameAction);
   if ($('offlineImportNameForm')) $('offlineImportNameForm').onsubmit = (event) => { event.preventDefault(); saveOfflineImportNameFromDialog(); };
   if ($('offlineImportNameSaveBtn')) $('offlineImportNameSaveBtn').onclick = (event) => { event.preventDefault(); saveOfflineImportNameFromDialog(); };
   if ($('offlineImportNameKeepBtn')) $('offlineImportNameKeepBtn').onclick = keepOfflineImportNameFromDialog;
   if ($('openDuplicateOfflineMapBtn')) $('openDuplicateOfflineMapBtn').onclick = () => openExistingDuplicateOfflineMap().catch(console.warn);
   if ($('replaceDuplicateOfflineMapBtn')) $('replaceDuplicateOfflineMapBtn').onclick = () => replaceDuplicateOfflineMap().catch(console.warn);
   if ($('cancelDuplicateOfflineMapBtn')) $('cancelDuplicateOfflineMapBtn').onclick = cancelDuplicateOfflineMap;
+  if ($('offlineDeleteMapCancelBtn')) $('offlineDeleteMapCancelBtn').onclick = closeOfflineDeleteMapDialog;
+  if ($('offlineDeleteMapConfirmBtn')) $('offlineDeleteMapConfirmBtn').onclick = withButtonDiagnostics('offlineDeleteMapConfirmBtn', confirmOfflineDeleteMapDialog);
+  const offlineDeleteMapDialog = $('offlineDeleteMapDialog');
+  if (offlineDeleteMapDialog) offlineDeleteMapDialog.addEventListener('close', () => { pendingOfflineMapDeleteRecordId = null; });
+  if ($('offlineRegionInstallConfirmCancelBtn')) $('offlineRegionInstallConfirmCancelBtn').onclick = closeOfflineRegionInstallConfirmDialog;
+  if ($('offlineRegionInstallConfirmBtn')) $('offlineRegionInstallConfirmBtn').onclick = withButtonDiagnostics('offlineRegionInstallConfirmBtn', confirmPendingOfflineRegionInstall);
+  const offlineRegionInstallConfirmDialog = $('offlineRegionInstallConfirmDialog');
+  if (offlineRegionInstallConfirmDialog) offlineRegionInstallConfirmDialog.addEventListener('close', () => { pendingOfflineRegionInstallPackageId = null; });
   if ($('forgetRememberedPmtilesMapBtn')) $('forgetRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('forgetRememberedPmtilesMapBtn', forgetSelectedRememberedPmtilesMap);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
@@ -10785,7 +10961,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.45`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.46`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.45" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.45" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.46" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.46" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.45" />
+  <link rel="stylesheet" href="styles.css?v=0.7.46" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.45 · Sprint 5.45</p>
+      <p id="appVersion">v0.7.46 · Sprint 5.46</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -484,13 +484,13 @@
     <section class="app-screen" id="screen-offline" data-app-screen="offline" aria-labelledby="screenTitleOffline" hidden>
       <div class="screen-heading">
         <h2 id="screenTitleOffline">Офлайн-карты</h2>
-        <p class="hint">Менеджер локальных карт для леса: выбери файл карты, дай ему понятное имя и используй точки/GPS даже при слабом интернете.</p>
+        <p class="hint">Установи готовый регион или импортируй свой .pmtiles-файл, чтобы карта, GPS и точки работали даже при слабом интернете.</p>
       </div>
       <section class="card offline-maps-card">
         <div class="section-title offline-manager-title">
           <div>
             <h2>Мои карты</h2>
-            <p class="hint">Локальные PMTiles-карты для леса. Статусы живут рядом с карточками, а сама карта остаётся чистой.</p>
+            <p class="hint">Главный путь — установить готовый регион. Свой файл .pmtiles можно добавить вручную.</p>
           </div>
           <span id="offlineMapsCountPill" class="pill warn">Офлайн-карт нет</span>
         </div>
@@ -519,11 +519,12 @@
             <span id="offlineActiveMapPill" class="pill warn">нет карты</span>
           </div>
           <p class="hint" id="offlineMapEmptyState">Офлайн-карта не выбрана. Можно пользоваться GPS и сохранёнными точками, но подложка карты может не загрузиться без интернета.</p>
-          <div class="field offline-map-name-field">
-            <label for="rememberedPmtilesMapNameInput">Название выбранной карты</label>
+          <p class="hint" id="offlineActiveMapMeta">Файл карты не выбран.</p>
+          <div class="field offline-map-name-field" hidden>
+            <label for="rememberedPmtilesMapNameInput">Новое название карты</label>
             <input id="rememberedPmtilesMapNameInput" placeholder="Например: Лес у станции" />
           </div>
-          <div class="row offline-active-actions">
+          <div class="row offline-active-actions compact-secondary-actions">
             <button id="renameRememberedPmtilesMapBtn" class="secondary btn-secondary small-btn">Переименовать</button>
             <button id="replaceLocalPmtilesBtn" class="secondary btn-secondary small-btn">Заменить файл</button>
             <button id="forgetRememberedPmtilesMapBtn" class="secondary btn-secondary small-btn">Удалить</button>
@@ -531,80 +532,96 @@
           <p class="hint" id="rememberedPmtilesMapStatus">Мои карты: пока нет.</p>
         </div>
 
-        <div id="offlineAddMapPanel" class="offline-package-panel offline-add-panel">
+        <section id="offlineRegionCatalogSection" class="offline-package-panel offline-region-catalog primary-offline-flow" aria-labelledby="offlineRegionCatalogTitle">
           <div class="section-title compact-title">
-            <h3 id="offlineAddMapTitle">Офлайн-карт пока нет</h3>
+            <div>
+              <h3 id="offlineRegionCatalogTitle">Каталог регионов</h3>
+              <p class="hint">Выбери регион из каталога. Перед большой загрузкой приложение покажет размер и доступное место.</p>
+            </div>
+            <span id="offlineRegionCatalogPill" class="pill warn">не загружен</span>
           </div>
-          <p class="hint" id="offlineAddMapHint">Добавь файл .pmtiles, чтобы использовать карту без интернета. После добавления здесь появится предпросмотр карты.</p>
+          <div class="row offline-catalog-main-actions">
+            <button id="refreshOfflineRegionCatalogBtn" class="btn-primary small-btn" type="button">Обновить каталог</button>
+          </div>
+          <details class="offline-technical-details offline-catalog-source-details">
+            <summary>
+              <span>Источник каталога</span>
+              <span class="pill warn">настройка</span>
+            </summary>
+            <div class="field">
+              <label for="offlineManifestUrlInput">URL каталога offline-map-packages.json</label>
+              <input id="offlineManifestUrlInput" type="url" inputmode="url" autocomplete="off" placeholder="https://github.com/.../releases/download/maps-.../offline-map-packages.json" />
+            </div>
+            <div class="row">
+              <button id="saveOfflineManifestUrlBtn" class="secondary btn-secondary small-btn" type="button">Сохранить URL</button>
+            </div>
+          </details>
+          <p class="hint" id="offlineRegionCatalogStatus">Каталог регионов: не загружен.</p>
+          <div id="offlineRegionCatalogList" class="offline-region-catalog-list" role="list" aria-label="Каталог офлайн-регионов"></div>
+        </section>
+
+        <div id="offlineAddMapPanel" class="offline-package-panel offline-add-panel secondary-offline-flow">
+          <div class="section-title compact-title">
+            <h3 id="offlineAddMapTitle">Импортировать свой .pmtiles</h3>
+          </div>
+          <p class="hint" id="offlineAddMapHint">Используй этот путь, если файл карты уже скачан вручную или подготовлен на компьютере.</p>
           <div class="row">
-            <button id="chooseLocalPmtilesBtn" class="btn-primary small-btn">Выбрать файл карты</button>
+            <button id="chooseLocalPmtilesBtn" class="secondary btn-secondary small-btn">Выбрать файл карты</button>
           </div>
         </div>
         <input id="localPmtilesFileInput" type="file" accept=".pmtiles,application/octet-stream" hidden />
         <button id="previewPmtilesBtn" class="secondary btn-secondary small-btn" type="button" hidden>Предпросмотр офлайн-карты</button>
-
-        <section id="offlineRegionCatalogSection" class="offline-package-panel offline-region-catalog" aria-labelledby="offlineRegionCatalogTitle">
-          <div class="section-title compact-title">
-            <div>
-              <h3 id="offlineRegionCatalogTitle">Каталог регионов</h3>
-              <p class="hint">Список больших карт из GitHub Release. “Установить” сохраняет файл потоково в OPFS; ручное скачивание остаётся резервным способом.</p>
-            </div>
-            <span id="offlineRegionCatalogPill" class="pill warn">не загружен</span>
-          </div>
-          <div class="field">
-            <label for="offlineManifestUrlInput">URL каталога offline-map-packages.json</label>
-            <input id="offlineManifestUrlInput" type="url" inputmode="url" autocomplete="off" placeholder="https://github.com/.../releases/download/maps-.../offline-map-packages.json" />
-          </div>
-          <div class="row">
-            <button id="saveOfflineManifestUrlBtn" class="secondary btn-secondary small-btn" type="button">Сохранить URL</button>
-            <button id="refreshOfflineRegionCatalogBtn" class="btn-primary small-btn" type="button">Обновить каталог</button>
-          </div>
-          <p class="hint" id="offlineRegionCatalogStatus">Каталог регионов: не загружен.</p>
-          <div id="offlineRegionCatalogList" class="offline-region-catalog-list" role="list" aria-label="Каталог офлайн-регионов"></div>
-        </section>
 
         <div id="offlineMapListSection" class="offline-map-list-section" hidden>
           <h3>Список карт</h3>
           <div id="rememberedPmtilesMapsList" class="remembered-map-list" role="list" aria-label="Мои офлайн-карты"></div>
         </div>
 
-        <div class="offline-package-panel bbox-export-panel">
-          <div class="section-title compact-title">
-            <h3>Подготовить регион на компьютере</h3>
-            <span class="pill warn">регион</span>
-          </div>
-          <p class="hint" id="bboxExportStatus">Регион не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.</p>
-          <div class="row">
-            <button id="startBboxExportBtn" class="secondary btn-secondary small-btn">Выбрать прямоугольник</button>
-            <button id="useVisibleBboxBtn" class="secondary btn-secondary small-btn">Взять видимую область</button>
-            <button id="copyBboxCommandBtn" class="secondary btn-secondary small-btn">Скопировать команду</button>
-            <button id="clearBboxExportBtn" class="secondary btn-secondary small-btn">Сбросить регион</button>
-          </div>
-          <textarea id="bboxCommandOutput" rows="3" readonly spellcheck="false" placeholder="Команда появится после выбора региона"></textarea>
-          <p class="hint">Это подготовка отдельного регионального файла на компьютере. В приложение потом выбирается уже готовый файл карты.</p>
-        </div>
-
-        <details class="offline-package-panel offline-diagnostics-panel">
+        <details id="offlineSystemDetails" class="offline-package-panel offline-system-details">
           <summary>
-            <span>Диагностика карты</span>
-            <span class="pill warn">техническое</span>
+            <span>Системная информация</span>
+            <span class="pill warn">необязательно</span>
           </summary>
-          <p class="hint">Этот блок нужен для проверки файла офлайн-карты, списка карт, Range/CORS и модуль предпросмотра. Обычный пользователь может пользоваться офлайн-картами без этих терминов.</p>
-          <div class="row">
-            <button id="loadOfflineManifestBtn" class="secondary btn-secondary small-btn">Обновить список карт</button>
-            <button id="probePmtilesBtn" class="secondary btn-secondary small-btn">Проверить выбранный файл карты</button>
+          <p class="hint">Ручная подготовка региона, диагностика PMTiles и технические списки спрятаны здесь, чтобы основной экран оставался простым.</p>
+
+          <div class="offline-system-panel bbox-export-panel">
+            <div class="section-title compact-title">
+              <h3>Подготовить регион на компьютере</h3>
+              <span class="pill warn">регион</span>
+            </div>
+            <p class="hint" id="bboxExportStatus">Регион не выбран. Нажми “Выбрать прямоугольник”, затем укажи на карте два противоположных угла.</p>
+            <div class="row">
+              <button id="startBboxExportBtn" class="secondary btn-secondary small-btn">Выбрать прямоугольник</button>
+              <button id="useVisibleBboxBtn" class="secondary btn-secondary small-btn">Взять видимую область</button>
+              <button id="copyBboxCommandBtn" class="secondary btn-secondary small-btn">Скопировать команду</button>
+              <button id="clearBboxExportBtn" class="secondary btn-secondary small-btn">Сбросить регион</button>
+            </div>
+            <textarea id="bboxCommandOutput" rows="3" readonly spellcheck="false" placeholder="Команда появится после выбора региона"></textarea>
+            <p class="hint">Это подготовка отдельного регионального файла на компьютере. В приложение потом выбирается уже готовый файл карты.</p>
           </div>
-          <div class="field">
-            <label for="offlinePackageSelect">Технический пакет карты</label>
-            <select id="offlinePackageSelect" aria-label="Технический выбор пакета карты"></select>
+
+          <div class="offline-system-panel offline-diagnostics-panel">
+            <div class="section-title compact-title">
+              <h3>Диагностика карты</h3>
+              <span class="pill warn">техническое</span>
+            </div>
+            <p class="hint">Проверка файла офлайн-карты, списка карт, Range/CORS и модуля предпросмотра.</p>
+            <div class="row">
+              <button id="loadOfflineManifestBtn" class="secondary btn-secondary small-btn">Обновить список карт</button>
+              <button id="probePmtilesBtn" class="secondary btn-secondary small-btn">Проверить выбранный файл карты</button>
+            </div>
+            <div class="field">
+              <label for="offlinePackageSelect">Технический пакет карты</label>
+              <select id="offlinePackageSelect" aria-label="Технический выбор пакета карты"></select>
+            </div>
+            <div class="field compact-hidden-select">
+              <label for="rememberedPmtilesMapSelect">Технический список запомненных карт</label>
+              <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные карты"></select>
+            </div>
+            <p class="hint" id="offlinePackageManifestStatus">Список карт: не загружен.</p>
+            <p class="hint" id="localPmtilesFileStatus">Файл карты: не выбран.</p>
+            <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
           </div>
-          <div class="field compact-hidden-select">
-            <label for="rememberedPmtilesMapSelect">Технический список запомненных карт</label>
-            <select id="rememberedPmtilesMapSelect" aria-label="Запомненные локальные карты"></select>
-          </div>
-          <p class="hint" id="offlinePackageManifestStatus">Список карт: не загружен.</p>
-          <p class="hint" id="localPmtilesFileStatus">Файл карты: не выбран.</p>
-          <p class="hint" id="pmtilesProbeDetails">Проверка: не запускалась.</p>
         </details>
 
       </section>
@@ -619,7 +636,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.45 · Sprint 5.45</span>
+          <span class="pill">v0.7.46 · Sprint 5.46</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -635,9 +652,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.45</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.45 — Group Entry Mobile UI Polish</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.45</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.46</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.46 — Offline Maps UX Cleanup</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.46</strong></div>
         </div>
       </section>
 
@@ -841,6 +858,39 @@
     </form>
   </dialog>
 
+  <dialog id="offlineDeleteMapDialog" class="offline-import-dialog offline-delete-map-dialog">
+    <form method="dialog">
+      <div class="section-title compact-title">
+        <h2 id="offlineDeleteMapTitle">Удалить карту?</h2>
+        <span class="pill warn">только карта</span>
+      </div>
+      <p class="hint" id="offlineDeleteMapText">Будет удалён файл карты из хранилища приложения. Точки, маршруты, группы и backup не изменятся.</p>
+      <menu class="dialog-actions">
+        <button id="offlineDeleteMapCancelBtn" class="secondary btn-secondary" value="cancel" type="button">Отмена</button>
+        <button id="offlineDeleteMapConfirmBtn" class="danger btn-danger" value="delete" type="button">Удалить карту</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="offlineRegionInstallConfirmDialog" class="offline-import-dialog offline-region-install-dialog">
+    <form method="dialog" id="offlineRegionInstallConfirmForm">
+      <div class="section-title compact-title">
+        <h2 id="offlineRegionInstallConfirmTitle">Установить регион?</h2>
+        <span class="pill warn">большой файл</span>
+      </div>
+      <p class="hint" id="offlineRegionInstallConfirmText">Перед установкой проверь размер файла и подключение.</p>
+      <div class="offline-install-summary" id="offlineRegionInstallConfirmSummary">
+        <div><span class="label">Размер</span><strong id="offlineRegionInstallConfirmSize">размер неизвестен</strong></div>
+        <div><span class="label">Хранилище</span><strong id="offlineRegionInstallConfirmStorage">проверяю…</strong></div>
+      </div>
+      <p class="hint">Лучше использовать Wi-Fi. Карта сохранится внутри приложения; точки и группы не изменяются.</p>
+      <menu class="dialog-actions">
+        <button id="offlineRegionInstallConfirmCancelBtn" class="secondary btn-secondary" value="cancel" type="button">Отмена</button>
+        <button id="offlineRegionInstallConfirmBtn" class="btn-primary" value="install" type="button">Установить</button>
+      </menu>
+    </form>
+  </dialog>
+
   <dialog id="offlineImportErrorDialog" class="offline-import-dialog">
     <form method="dialog">
       <div class="section-title compact-title">
@@ -994,10 +1044,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.45"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.46"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.45"></script>
-  <script src="app.js?v=0.7.45"></script>
+  <script src="config.js?v=0.7.46"></script>
+  <script src="app.js?v=0.7.46"></script>
 </body>
 </html>
