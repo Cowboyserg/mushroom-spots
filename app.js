@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.38';
+const APP_VERSION = '0.7.39';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -91,6 +91,7 @@ let accuracyCircle;
 let currentPosition = null;
 let activeAppScreen = 'map';
 let showMapAdvancedControls = false;
+let onlineMapExpanded = false;
 let watchId = null;
 let spots = [];
 let customSpotCollections = [];
@@ -258,6 +259,7 @@ let memberSyncTimer = null;
 const BUTTON_DIAGNOSTIC_LABELS = {
   startGpsBtn: 'Включить GPS',
   centerMeBtn: 'Ко мне',
+  mapExpandBtn: 'Развернуть карту',
   repairMapBtn: 'Починить карту',
   startBboxExportBtn: 'Выбрать прямоугольник региона',
   useVisibleBboxBtn: 'Взять видимую область как регион карты',
@@ -5145,6 +5147,7 @@ function switchAppScreen(screen, options = {}) {
   const next = normalizeAppScreen(screen);
   const { persist = true, scrollTop = true } = options;
   activeAppScreen = next;
+  if (next !== 'map' && onlineMapExpanded) setOnlineMapExpanded(false);
 
   document.querySelectorAll('[data-app-screen]').forEach((section) => {
     const isActive = section.dataset.appScreen === next;
@@ -5302,6 +5305,42 @@ function safeInvalidateMap(delay = 0, reason = 'manual') {
       setMapStatus('Карта: ошибка размера', 'bad');
     }
   }, delay);
+}
+
+function updateOnlineMapExpandInsets() {
+  const topbar = document.querySelector('.topbar');
+  const bottomNav = document.querySelector('.bottom-nav');
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const topInset = topbar ? Math.max(0, Math.round(topbar.getBoundingClientRect().bottom)) : 0;
+  const bottomInset = bottomNav
+    ? Math.max(0, Math.ceil(viewportHeight - bottomNav.getBoundingClientRect().top))
+    : 0;
+  document.documentElement.style.setProperty('--online-map-expand-top', `${topInset}px`);
+  document.documentElement.style.setProperty('--online-map-expand-bottom', `${bottomInset}px`);
+}
+
+function renderOnlineMapExpandButton() {
+  const button = $('mapExpandBtn');
+  if (!button) return;
+  button.textContent = onlineMapExpanded ? '↙' : '⛶';
+  button.setAttribute('aria-pressed', onlineMapExpanded ? 'true' : 'false');
+  button.setAttribute('aria-label', onlineMapExpanded ? 'Свернуть карту' : 'Развернуть карту');
+}
+
+function setOnlineMapExpanded(expanded) {
+  onlineMapExpanded = Boolean(expanded);
+  updateOnlineMapExpandInsets();
+  document.body.classList.toggle('online-map-expanded', onlineMapExpanded);
+  renderOnlineMapExpandButton();
+  safeInvalidateMap(0, onlineMapExpanded ? 'online map expanded' : 'online map collapsed');
+  safeInvalidateMap(250, onlineMapExpanded ? 'online map expanded delayed' : 'online map collapsed delayed');
+  window.setTimeout(updateOnlineMapExpandInsets, 50);
+  window.setTimeout(updateOnlineMapExpandInsets, 250);
+  return onlineMapExpanded;
+}
+
+function toggleOnlineMapExpanded() {
+  return setOnlineMapExpanded(!onlineMapExpanded);
 }
 
 function getMapDebugSnapshot() {
@@ -10170,6 +10209,7 @@ function bindUi() {
   bindAppNavigationShell();
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
+  if ($('mapExpandBtn')) $('mapExpandBtn').onclick = withButtonDiagnostics('mapExpandBtn', toggleOnlineMapExpanded);
   if ($('startTrackBtn')) $('startTrackBtn').onclick = withButtonDiagnostics('startTrackBtn', startTrackRecording);
   if ($('stopTrackBtn')) $('stopTrackBtn').onclick = withButtonDiagnostics('stopTrackBtn', stopTrackRecording);
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveSmartSpot);
@@ -10301,8 +10341,8 @@ function bindUi() {
   window.addEventListener('popstate', handleSpotHistoryPopState);
   window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
   window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateMapDebugUi(true); });
-  window.addEventListener('resize', () => safeInvalidateMap(150, 'resize'));
-  window.addEventListener('orientationchange', () => safeInvalidateMap(500, 'orientationchange'));
+  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(150, 'resize'); });
+  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) safeInvalidateMap(250, 'visibilitychange');
   });
@@ -10330,7 +10370,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.38`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.39`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -10339,6 +10379,8 @@ async function init() {
   ensureUserId();
   initMap();
   bindUi();
+  renderOnlineMapExpandButton();
+  updateOnlineMapExpandInsets();
   offlineMapManifest.url = getConfiguredOfflineMapManifestUrl();
   renderOfflineMapPackageUi();
   restoreMapAdvancedControlsPreference();

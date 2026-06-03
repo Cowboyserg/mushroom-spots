@@ -1011,6 +1011,40 @@ test('expanded map workspace keeps map as the primary viewport above bottom navi
   expect(mapBox.y + mapBox.height, 'map must not overlap the bottom navigation').toBeLessThanOrEqual(navBox.y + 2);
 });
 
+test('online map expand button fills app workspace while keeping bottom navigation usable', async ({ page }) => {
+  await bootApp(page);
+
+  const expandBtn = page.locator('#mapExpandBtn');
+  await expect(expandBtn).toBeVisible();
+  await expect(expandBtn).toHaveText('⛶');
+
+  const beforeButtonBox = await expandBtn.boundingBox();
+  const beforeMapBox = await page.locator('.map-wrap-home').boundingBox();
+  const beforeNavBox = await page.locator('.bottom-nav').boundingBox();
+  expect(beforeButtonBox, 'expand button must have visible bounds before toggle').not.toBeNull();
+  expect(beforeMapBox, 'map must have visible bounds before toggle').not.toBeNull();
+  expect(beforeNavBox, 'bottom navigation must have visible bounds before toggle').not.toBeNull();
+
+  await expandBtn.click();
+  await expect(page.locator('body')).toHaveClass(/online-map-expanded/);
+  await expect(expandBtn).toHaveText('↙');
+  await expect(expandBtn).toHaveAttribute('aria-pressed', 'true');
+
+  const expandedButtonBox = await expandBtn.boundingBox();
+  const expandedMapBox = await page.locator('.map-wrap-home').boundingBox();
+  const expandedNavBox = await page.locator('.bottom-nav').boundingBox();
+  expect(expandedButtonBox, 'expand button must stay visible after toggle').not.toBeNull();
+  expect(expandedMapBox, 'expanded map must have visible bounds').not.toBeNull();
+  expect(expandedNavBox, 'bottom navigation must stay visible after expand').not.toBeNull();
+  expect(Math.abs(expandedButtonBox.x - beforeButtonBox.x), 'expand button must not shift horizontally').toBeLessThanOrEqual(2);
+  expect(expandedMapBox.height, 'expanded map must become taller').toBeGreaterThan(beforeMapBox.height + 40);
+  expect(expandedMapBox.y + expandedMapBox.height, 'expanded map must not cover bottom navigation').toBeLessThanOrEqual(expandedNavBox.y + 2);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#screen-spots')).toBeVisible();
+  await expect(page.locator('body')).not.toHaveClass(/online-map-expanded/);
+});
+
 test('picked map point context sheet exposes object actions without app-nav duplicates', async ({ page }) => {
   await bootApp(page);
   await pickMapPoint(page);
@@ -1459,7 +1493,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.38');
+  expect(backup.appVersion).toBe('0.7.39');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1588,7 +1622,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.38',
+    appVersion: '0.7.39',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
