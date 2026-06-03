@@ -2204,7 +2204,31 @@ select {
   display: grid;
   gap: 10px;
 }
+.spot-folder-create-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.spot-folder-create-row .btn-primary {
+  width: auto;
+}
+.spot-folder-list {
+  display: grid;
+  gap: 10px;
+}
 .spot-folder-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  overflow: visible;
+}
+.spot-folder-card.folder-card-menu-open {
+  z-index: 70;
+}
+.spot-folder-open {
   width: 100%;
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -2217,8 +2241,10 @@ select {
   color: var(--text);
   text-align: left;
   box-shadow: 0 4px 16px rgba(36, 75, 47, 0.05);
+  cursor: pointer;
 }
-.spot-folder-card:hover {
+.spot-folder-card:hover .spot-folder-open,
+.spot-folder-open:hover {
   border-color: rgba(36, 75, 47, 0.22);
   background: #fffdf7;
 }
@@ -2233,6 +2259,7 @@ select {
   font-size: 20px;
 }
 .spot-folder-copy {
+  min-width: 0;
   display: grid;
   gap: 3px;
 }
@@ -2249,6 +2276,15 @@ select {
   color: var(--muted);
   font-size: 28px;
   line-height: 1;
+}
+.folder-card-kebab-menu {
+  align-self: center;
+}
+.folder-card-kebab-menu .kebab-menu-panel {
+  min-width: 190px;
+}
+.spot-collection-create-dialog .field {
+  margin-top: 12px;
 }
 .spot-folder-head {
   display: grid;

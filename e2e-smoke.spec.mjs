@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.41-hotfix\.3 · Sprint 5\.41\.3/;
+const EXPECTED_APP_VERSION = /v0\.7\.42 · Sprint 5\.42/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1422,7 +1422,22 @@ test('spots screen opens as folder list and filters marks inside folder', async 
   await page.locator('#searchInput').fill('');
   await page.locator('#spotFolderBackBtn').click();
   await expect(page.locator('#spotFoldersView')).toBeVisible();
-  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await expect(page.locator('#spotCollectionCreateOpenBtn')).toBeVisible();
+  await expect(page.locator('#spotCollectionNameInput')).toBeHidden();
+  await expect(page.locator('#spotCollectionManagerHint')).toContainText('Выбери папку, чтобы открыть метки.');
+  const folderCard = page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' });
+  const folderMenuSummary = folderCard.locator('.folder-card-kebab-menu summary');
+  await expect(folderMenuSummary).toBeVisible();
+  const folderSummaryBefore = await folderMenuSummary.boundingBox();
+  await folderMenuSummary.click();
+  const folderSummaryAfter = await folderMenuSummary.boundingBox();
+  expect(Math.abs((folderSummaryAfter?.x ?? 0) - (folderSummaryBefore?.x ?? 0))).toBeLessThan(2);
+  expect(Math.abs((folderSummaryAfter?.y ?? 0) - (folderSummaryBefore?.y ?? 0))).toBeLessThan(2);
+  await expect(folderCard.getByRole('button', { name: 'Переименовать' })).toBeVisible();
+  await expect(folderCard.getByRole('button', { name: 'Удалить' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(folderCard.locator('.kebab-menu-panel')).toBeHidden();
+  await folderCard.click();
   await expect(page.locator('#spotFolderMenu')).toBeVisible();
   await page.locator('#spotFolderMenu summary').click();
   await expect(page.locator('#spotCollectionRenameMenuBtn')).toBeEnabled();
@@ -1444,16 +1459,22 @@ test('custom spot collections can be created renamed and deleted from folder men
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotFoldersView')).toBeVisible();
 
+  await page.locator('#spotCollectionCreateOpenBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeVisible();
   await page.locator('#spotCollectionNameInput').fill('Секретные места');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
   await expect(page.locator('#spotFoldersList')).toContainText('Секретные места');
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Секретные места' })).toHaveCount(1);
 
+  await page.locator('#spotCollectionCreateOpenBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeVisible();
   await page.locator('#spotCollectionNameInput').fill('  секретные   места  ');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Секретные места' })).toHaveCount(1);
+  await page.locator('#spotCollectionCreateCancelBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeHidden();
 
   await page.locator('.spot-folder-card').filter({ hasText: 'Разведка' }).click();
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
@@ -1481,10 +1502,14 @@ test('custom spot collections can be created renamed and deleted from folder men
   await expect(page.locator('#spotsList')).toContainText('Лисички у тропы');
 
   await page.locator('#spotFolderBackBtn').click();
+  await page.locator('#spotCollectionCreateOpenBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeVisible();
   await page.locator('#spotCollectionNameInput').fill('семейные места');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('уже есть');
   await expect(page.locator('#spotCollectionManageSelect option').filter({ hasText: 'Семейные места' })).toHaveCount(1);
+  await page.locator('#spotCollectionCreateCancelBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeHidden();
 
   await page.locator('.spot-folder-card').filter({ hasText: 'Семейные места' }).click();
   await page.locator('#spotFolderMenu summary').click();
@@ -1557,6 +1582,8 @@ test('local JSON backup export creates validated spots and custom folders withou
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('#spotCollectionCreateOpenBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeVisible();
   await page.locator('#spotCollectionNameInput').fill('Пустая папка для backup');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
@@ -1564,7 +1591,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.41-hotfix.3');
+  expect(backup.appVersion).toBe('0.7.42');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1616,6 +1643,8 @@ test('local JSON backup import restores spots and empty custom folders on every 
 
   await page.getByRole('button', { name: 'Точки' }).click();
   await expect(page.locator('#spotFoldersView')).toBeVisible();
+  await page.locator('#spotCollectionCreateOpenBtn').click();
+  await expect(page.locator('#spotCollectionCreateDialog')).toBeVisible();
   await page.locator('#spotCollectionNameInput').fill('Пустая папка для восстановления');
   await page.locator('#spotCollectionCreateBtn').click();
   await expect(page.locator('#spotCollectionManagerHint')).toContainText('создана');
@@ -1693,7 +1722,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.41-hotfix.3',
+    appVersion: '0.7.42',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

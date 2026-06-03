@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.41-hotfix.3';
+const APP_VERSION = '0.7.42';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -7903,7 +7903,7 @@ function renderSpotCollectionManager(selectedOverride = null) {
   if (deleteMenuBtn) deleteMenuBtn.title = deleteBlockedTitle;
 
   if (hint) {
-    if (!activeSpotCollection) hint.textContent = 'Выбери папку, чтобы открыть метки внутри. Любую существующую папку можно переименовать или удалить через меню ⋯.';
+    if (!activeSpotCollection) hint.textContent = 'Выбери папку, чтобы открыть метки.';
     else hint.textContent = `Папка «${selected}»: меток ${selectedCount}. Действия папки находятся в меню ⋯ рядом с заголовком.`;
   }
 }
@@ -7932,6 +7932,8 @@ function syncKebabMenuOpenClass(menu) {
   if (spotItem) spotItem.classList.toggle('spot-menu-open', Boolean(menu.open));
   const folderHead = menu.closest?.('.spot-folder-head');
   if (folderHead) folderHead.classList.toggle('folder-menu-open', Boolean(menu.open));
+  const folderCard = menu.closest?.('.spot-folder-card');
+  if (folderCard) folderCard.classList.toggle('folder-card-menu-open', Boolean(menu.open));
 }
 
 function closeKebabMenus(except = null) {
@@ -8119,6 +8121,22 @@ async function deleteSpotCollectionAndAllSpots() {
   return finishDeleteSpotCollection({ deleteSpots: true });
 }
 
+
+function openSpotCollectionCreateDialog() {
+  const input = $('spotCollectionNameInput');
+  if (input) input.value = '';
+  showDialogSafely('spotCollectionCreateDialog');
+  window.requestAnimationFrame(() => {
+    try { input?.focus({ preventScroll: true }); } catch {}
+  });
+  return true;
+}
+
+function closeSpotCollectionCreateDialog() {
+  closeDialogSafely('spotCollectionCreateDialog');
+  return true;
+}
+
 async function createSpotCollection() {
   const input = $('spotCollectionNameInput');
   const name = normalizeSpotCollectionName(input?.value);
@@ -8135,6 +8153,7 @@ async function createSpotCollection() {
   customSpotCollections = dedupeSpotCollections([...customSpotCollections, name]);
   await saveSpotCollections();
   if (input) input.value = '';
+  closeSpotCollectionCreateDialog();
   updateSpotCollectionFilterOptions();
   updateSpotCollectionUi(name);
   renderList();
@@ -8376,13 +8395,20 @@ function handleSpotHistoryPopState(event) {
 }
 
 function renderSpotFolderCard(collection, count) {
-  const card = document.createElement('button');
-  card.type = 'button';
+  const card = document.createElement('article');
   card.className = 'spot-folder-card';
   card.dataset.collection = collection;
   card.onclick = () => openSpotCollection(collection);
+
   const label = count === 1 ? '1 метка' : `${count} меток`;
-  card.innerHTML = `
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'spot-folder-open';
+  openButton.onclick = (event) => {
+    event.stopPropagation();
+    openSpotCollection(collection);
+  };
+  openButton.innerHTML = `
     <span class="spot-folder-icon" aria-hidden="true">🗂️</span>
     <span class="spot-folder-copy">
       <strong>${escapeHtml(collection)}</strong>
@@ -8390,6 +8416,46 @@ function renderSpotFolderCard(collection, count) {
     </span>
     <span class="spot-folder-chevron" aria-hidden="true">›</span>
   `;
+  card.appendChild(openButton);
+
+  const menu = document.createElement('details');
+  menu.className = 'kebab-menu folder-card-kebab-menu';
+  menu.onclick = (event) => event.stopPropagation();
+  menu.innerHTML = `
+    <summary aria-label="Действия папки ${escapeHtml(collection)}">⋯</summary>
+    <div class="kebab-menu-panel" role="menu"></div>
+  `;
+  const panel = menu.querySelector('.kebab-menu-panel');
+
+  const renameBtn = document.createElement('button');
+  renameBtn.type = 'button';
+  renameBtn.className = 'secondary btn-secondary';
+  renameBtn.textContent = 'Переименовать';
+  renameBtn.onclick = withButtonDiagnostics('spotFolderCardRenameBtn', () => {
+    menu.open = false;
+    activeSpotCollection = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
+    openSpotCollection(activeSpotCollection);
+    window.requestAnimationFrame(() => openSpotFolderRenamePanel());
+    return true;
+  });
+  panel.appendChild(renameBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'danger btn-danger';
+  deleteBtn.textContent = 'Удалить';
+  deleteBtn.onclick = withButtonDiagnostics('spotFolderCardDeleteBtn', () => {
+    menu.open = false;
+    activeSpotCollection = normalizeSpotCollectionName(collection) || SPOT_DEFAULT_COLLECTION;
+    spotFolderDeleteDialogState = { collection: activeSpotCollection };
+    renderSpotCollectionManager(activeSpotCollection);
+    renderSpotFolderDeleteDialog();
+    showDialogSafely('spotFolderDeleteDialog');
+    return true;
+  });
+  panel.appendChild(deleteBtn);
+
+  card.appendChild(menu);
   return card;
 }
 
@@ -10308,7 +10374,10 @@ function bindUi() {
   $('averageBtn').onclick = withButtonDiagnostics('averageBtn', averageAndSave);
   $('searchInput').oninput = renderList;
   if ($('spotCollectionFilter')) $('spotCollectionFilter').onchange = renderList;
+  if ($('spotCollectionCreateOpenBtn')) $('spotCollectionCreateOpenBtn').onclick = withButtonDiagnostics('spotCollectionCreateOpenBtn', openSpotCollectionCreateDialog);
   if ($('spotCollectionCreateBtn')) $('spotCollectionCreateBtn').onclick = withButtonDiagnostics('spotCollectionCreateBtn', createSpotCollection);
+  if ($('spotCollectionCreateCancelBtn')) $('spotCollectionCreateCancelBtn').onclick = withButtonDiagnostics('spotCollectionCreateCancelBtn', closeSpotCollectionCreateDialog);
+  if ($('spotCollectionCreateDialogCloseBtn')) $('spotCollectionCreateDialogCloseBtn').onclick = withButtonDiagnostics('spotCollectionCreateDialogCloseBtn', closeSpotCollectionCreateDialog);
   if ($('spotCollectionManageSelect')) $('spotCollectionManageSelect').onchange = () => renderSpotCollectionManager();
   if ($('spotCollectionRenameBtn')) $('spotCollectionRenameBtn').onclick = withButtonDiagnostics('spotCollectionRenameBtn', renameSelectedSpotCollection);
   if ($('spotCollectionDeleteBtn')) $('spotCollectionDeleteBtn').onclick = withButtonDiagnostics('spotCollectionDeleteBtn', openSpotFolderDeleteDialog);
@@ -10455,7 +10524,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.41.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.42`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
