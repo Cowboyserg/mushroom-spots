@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.49-hotfix.3';
+const APP_VERSION = '0.7.49-hotfix.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -10311,17 +10311,19 @@ async function sendSpotPayloadToChat(payload, sourceLabel) {
     $('liveName').value = name;
     saveLiveInputs();
   }
+  let sent = false;
   chatSendPending = true;
   updateChatUi();
   try {
     await createChatMessage(body, name);
-    setChatHint(`${sourceLabel} отправлена в чат как кликабельная карточка.`);
+    sent = true;
     await refreshGroupChat(false);
     startChatAutoRefresh();
     return true;
   } finally {
     chatSendPending = false;
     updateChatUi();
+    if (sent) setChatHint(`${sourceLabel} отправлена в чат как кликабельная карточка.`);
   }
 }
 
@@ -11165,7 +11167,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.49.3`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.49.4`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
