@@ -46,6 +46,7 @@ const REQUIRED_PACKAGE_FILES = [
   'serve-static.mjs',
   'playwright.config.mjs',
   'e2e-smoke.spec.mjs',
+  'OFFLINE_MAP_RELEASE_WORKFLOW_RU.md',
 ];
 
 function walk(dir, result = []) {
@@ -107,6 +108,19 @@ function checkRequiredPackageEntries(entries) {
   assert.deepEqual(missing, [], `Flat ZIP is missing required files: ${missing.join(', ')}`);
 }
 
+function rootMarkdownFiles(dir) {
+  return readdirSync(dir)
+    .filter((entry) => entry.endsWith('.md'))
+    .filter((entry) => statSync(join(dir, entry)).isFile())
+    .sort();
+}
+
+function checkAllRootMarkdownEntries(entries) {
+  const entrySet = new Set(entries);
+  const missing = rootMarkdownFiles(ROOT).filter((file) => !entrySet.has(file));
+  assert.deepEqual(missing, [], `Flat ZIP is missing root Markdown docs: ${missing.join(', ')}`);
+}
+
 function checkVersionInDirectory(dir) {
   const { version, sprint } = readVersionInfoFromDirectory(dir);
   const swJs = read(join(dir, 'sw.js'));
@@ -142,6 +156,7 @@ function checkZipPackage(zipPath) {
   checkEntriesAreFlat(entries);
   checkForbiddenPackageEntries(entries);
   checkRequiredPackageEntries(entries);
+  checkAllRootMarkdownEntries(entries);
 
   const tempRoot = mkdtempSync(join(tmpdir(), 'mushroom-package-check-'));
   try {
