@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.48-hotfix\.1 · Sprint 5\.48\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.49 · Sprint 5\.49/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1110,6 +1110,60 @@ test('group join accepts retargeted WebKit click by button geometry', async ({ p
   await expectJoinedGroupReady(page, 'e2e-retargeted-join');
 });
 
+
+test('fresh invite link requires a local profile before group join', async ({ page }) => {
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-invite-needs-profile' });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await expect(page.locator('#groupId')).toHaveValue('e2e-invite-needs-profile');
+  await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
+  await expect(page.locator('#joinGroupBtn')).toBeDisabled();
+  await expect(page.locator('#liveHint')).toContainText('Вы должны быть авторизованы');
+
+  const beforeProfile = await page.evaluate(() => ({
+    persistedGroup: localStorage.getItem('mushroom_live_group_id'),
+    profiles: JSON.parse(localStorage.getItem('mushroom_people_profiles_v1') || '[]')
+  }));
+  expect(beforeProfile.persistedGroup).toBeNull();
+  expect(beforeProfile.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
+
+  await page.locator('#liveName').fill('E2E пользователь');
+  await expect(page.locator('#joinGroupBtn')).toBeEnabled();
+  await page.locator('#joinGroupBtn').click();
+  await expectJoinedGroupReady(page, 'e2e-invite-needs-profile');
+});
+
+test('new local person does not inherit the previous group code', async ({ page }) => {
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-old-person-group' });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('Первый пользователь');
+  await page.locator('#joinGroupBtn').click();
+  await expectJoinedGroupReady(page, 'e2e-old-person-group');
+
+  page.once('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('prompt');
+    await dialog.accept('Другой пользователь');
+  });
+  await page.locator('#newPersonProfileBtn').click();
+
+  await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
+  await expect(page.locator('#liveName')).toHaveValue('Другой пользователь');
+  await expect(page.locator('#groupId')).toHaveValue('');
+  await expect(page.locator('#joinGroupBtn')).toBeDisabled();
+  await expect(page.locator('#liveHint')).toContainText('Открой приглашение или вставь код группы вручную');
+
+  const afterSwitch = await page.evaluate(() => ({
+    persistedGroup: localStorage.getItem('mushroom_live_group_id'),
+    activeProfileId: localStorage.getItem('mushroom_active_profile_id'),
+    profiles: JSON.parse(localStorage.getItem('mushroom_people_profiles_v1') || '[]')
+  }));
+  expect(afterSwitch.persistedGroup).toBeNull();
+  const active = afterSwitch.profiles.find((profile) => profile.id === afterSwitch.activeProfileId);
+  expect(active?.displayName).toBe('Другой пользователь');
+  expect(active?.lastGroupId || '').toBe('');
+});
+
 test('group chat disables duplicate send and clears composer after success', async ({ page }) => {
   let chatPostCount = 0;
   await bootApp(page, {
@@ -1376,6 +1430,58 @@ test('picked map point context sheet enables share action only when group chat i
   await expect(page.locator('#savePlaceDialog')).toBeVisible();
   await expect(page.locator('#savePlaceDialogTitle')).toHaveText('Сохранить выбранную точку');
   await expect(page.locator('#savePlaceDialogSaveBtn')).toHaveText('Сохранить и поделиться');
+});
+
+
+test('save and share keeps the saved spot when chat send fails and offers retry', async ({ page }) => {
+  let chatPostCount = 0;
+  await bootApp(page, {
+    fakeSupabase: true,
+    path: '/?group=e2e-share-retry',
+    fakeSupabaseHandler: async (route, { url, method }) => {
+      if (url.pathname.endsWith('/rest/v1/group_messages') && method === 'POST') {
+        chatPostCount += 1;
+        if (chatPostCount === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'chat offline' }) });
+          return true;
+        }
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify([{ id: `retry-chat-${chatPostCount}` }])
+        });
+        return true;
+      }
+      return false;
+    }
+  });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#joinGroupBtn').click();
+  await expectJoinedGroupReady(page, 'e2e-share-retry');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await pickMapPoint(page);
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
+  await page.locator('#spotName').fill('Точка с повтором чата');
+  await page.locator('#savePlaceDialogSaveBtn').click();
+
+  await expect(page.locator('#savePlaceDialog')).toBeHidden();
+  await expect(page.locator('#saveResultCard')).toBeVisible();
+  await expect(page.locator('#saveResultTitle')).toContainText('Точка сохранена, но не отправлена в чат');
+  await expect(page.locator('#saveResultText')).toContainText('Точка с повтором чата');
+  await expect(page.locator('#saveResultShareBtn')).toHaveText('Повторить отправку');
+  await expect(page.locator('#chatHint')).toContainText('Точка сохранена, но не отправлена в чат');
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#spotsList')).toContainText('Точка с повтором чата');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await page.locator('#saveResultShareBtn').click();
+  await expect(page.locator('#chatHint')).toContainText('Сохранённая точка отправлена в чат');
+  expect(chatPostCount).toBe(2);
 });
 
 test('picked map point bookmark opens save form and creates result actions and spots handoff', async ({ page }) => {
@@ -1795,7 +1901,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.48-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.49');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -1926,7 +2032,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.48-hotfix.1',
+    appVersion: '0.7.49',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

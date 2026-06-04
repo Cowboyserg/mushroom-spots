@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.48-hotfix.1';
+const APP_VERSION = '0.7.49';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -466,7 +466,9 @@ function applyProfileToInputs(profile, keepCurrentGroup = false) {
   rememberGroupEntryInputs();
   localStorage.setItem('mushroom_live_user_id', profile.id);
   localStorage.setItem('mushroom_live_name', profile.displayName || '');
-  localStorage.setItem('mushroom_live_group_id', currentGroupId() || profile.lastGroupId || '');
+  const nextGroup = currentGroupId() || profile.lastGroupId || '';
+  if (nextGroup) localStorage.setItem('mushroom_live_group_id', nextGroup);
+  else localStorage.removeItem('mushroom_live_group_id');
 }
 
 function clearGroupInviteFromUrl() {
@@ -568,15 +570,19 @@ function createNewPersonProfile() {
   const name = String(typed || '').trim();
   if (!name) { markButtonCancelled('новый человек не создан'); return false; }
   resetRuntimeGroupSession();
-  const profile = makeLocalProfile(name, currentGroupId());
+  const profile = makeLocalProfile(name, '');
   peopleProfiles.push(profile);
   activeProfileId = profile.id;
   userId = profile.id;
   savePeopleProfiles();
-  applyProfileToInputs(profile, true);
+  if ($('groupId')) $('groupId').value = '';
+  groupEntryDraft.groupId = '';
+  localStorage.removeItem('mushroom_live_group_id');
+  clearGroupInviteFromUrl();
+  applyProfileToInputs(profile, false);
   renderPeopleProfiles();
   updateLiveUi();
-  $('liveHint').textContent = `Создан профиль на этом устройстве: ${name}. Введи код группы и нажми “Войти в группу”.`;
+  $('liveHint').textContent = `Создан профиль на этом устройстве: ${name}. Открой приглашение или вставь код группы вручную, затем нажми “Войти в группу”.`;
   return true;
 }
 
@@ -6789,7 +6795,12 @@ async function submitSavePlaceDialog() {
   closeSavePlaceDialog({ reset: true });
   if (state.shareAfterSave) {
     selectedSpotId = spot.id;
-    return sendSelectedSpotToChat();
+    try {
+      return await sendSelectedSpotToChat();
+    } catch (err) {
+      showSaveShareFailure(spot, err);
+      return false;
+    }
   }
   return true;
 }
@@ -6909,7 +6920,12 @@ async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
   if (!spot) return false;
   if (shouldShare) {
     selectedSpotId = spot.id;
-    return sendSelectedSpotToChat();
+    try {
+      return await sendSelectedSpotToChat();
+    } catch (err) {
+      showSaveShareFailure(spot, err);
+      return false;
+    }
   }
   return true;
 }
@@ -7870,7 +7886,26 @@ function showSaveResult(spot, source) {
   const sourceText = (source === 'map-picked' || source === 'offline-map-picked') ? 'выбранная точка на карте' : 'текущая GPS-позиция';
   setText('saveResultTitle', 'Точка сохранена');
   setText('saveResultText', `“${spot.name}” сохранена как ${sourceText} в папку “${spot.collection || SPOT_DEFAULT_COLLECTION}”. Теперь её можно открыть в “Точках”${canSendSpotToChat() ? ' или отправить группе' : ''}.`);
+  const shareBtn = $('saveResultShareBtn');
+  if (shareBtn) shareBtn.textContent = 'Поделиться в группе';
+  card.dataset.shareState = 'idle';
   card.hidden = false;
+  updateActionButtonsUi();
+}
+
+function showSaveShareFailure(spot, err) {
+  const message = err?.message || String(err || 'ошибка отправки');
+  const card = $('saveResultCard');
+  if (card) {
+    card.hidden = false;
+    card.dataset.shareState = 'failed';
+  }
+  setText('saveResultTitle', 'Точка сохранена, но не отправлена в чат');
+  setText('saveResultText', `“${spot?.name || 'Точка'}” сохранена локально. Отправка в чат не удалась: ${message}. Можно повторить отправку.`);
+  const shareBtn = $('saveResultShareBtn');
+  if (shareBtn) shareBtn.textContent = 'Повторить отправку';
+  setChatHint('Точка сохранена, но не отправлена в чат. Повторить отправку?', true);
+  if (activeButtonDiagnostics) setButtonApiStatus(activeButtonDiagnostics, 'ошибка', `точка сохранена, чат не отправлен: ${message}`);
   updateActionButtonsUi();
 }
 
@@ -7893,7 +7928,15 @@ function showLastSavedSpotInList() {
 async function shareLastSavedSpotToChat() {
   if (!lastSavedSpotId) { markButtonBlocked('нет последней сохранённой точки'); return false; }
   selectSpot(lastSavedSpotId, false);
-  return sendSelectedSpotToChat();
+  try {
+    const sent = await sendSelectedSpotToChat();
+    if (sent && $('saveResultShareBtn')) $('saveResultShareBtn').textContent = 'Поделиться в группе';
+    return sent;
+  } catch (err) {
+    const spot = spots.find(item => item.id === lastSavedSpotId) || null;
+    showSaveShareFailure(spot, err);
+    return false;
+  }
 }
 
 function closeSaveResult() {
@@ -9578,7 +9621,6 @@ function parseGroupFromUrl() {
   if (group && $('groupId')) {
     $('groupId').value = group;
     groupEntryDraft.groupId = group;
-    localStorage.setItem('mushroom_live_group_id', group);
     return group;
   }
   return null;
@@ -9643,7 +9685,7 @@ function loadLiveInputs() {
   $('groupId').value = localStorage.getItem('mushroom_live_group_id') || profile?.lastGroupId || '';
   rememberGroupEntryInputs();
   const groupFromUrl = parseGroupFromUrl();
-  if (groupFromUrl && profile) {
+  if (groupFromUrl && profile && currentLiveName()) {
     profile.lastGroupId = groupFromUrl;
     savePeopleProfiles();
   }
@@ -9651,6 +9693,18 @@ function loadLiveInputs() {
   updateLiveUi();
   renderPeopleProfiles();
   return groupFromUrl;
+}
+
+function showGroupInviteAuthorizationRequired(group = currentGroupId()) {
+  const message = 'Вы должны быть авторизованы, чтобы войти в группу. Укажи профиль на этом устройстве и нажми “Войти в группу”.';
+  groupJoined = false;
+  joinedGroupId = '';
+  setMemberSyncPending(false, 'invite requires local profile');
+  stopChatAutoRefresh(true);
+  updateLiveUi();
+  if ($('liveHint')) $('liveHint').textContent = group ? `${message} Код приглашения: ${group}.` : message;
+  showAppToast(message, 'error');
+  return false;
 }
 
 function clearFriendMarkers() {
@@ -11111,7 +11165,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.48.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.49`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -11142,10 +11196,16 @@ async function init() {
     updateLiveUi();
     $('liveHint').textContent = 'Для live-режима нужно подключение к БД.';
   } else if (currentGroupId()) {
-    await joinGroup(true);
-    $('liveHint').textContent = groupFromUrl
-      ? 'Приглашение открыто: вход выполнен локально, имя участника синхронизируется при связи. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.'
-      : 'Последняя группа восстановлена локально. Участники показываются из сети или кэша; чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.';
+    if (groupFromUrl && !currentLiveName()) {
+      showGroupInviteAuthorizationRequired(groupFromUrl);
+    } else {
+      const joined = await joinGroup(true);
+      $('liveHint').textContent = joined
+        ? (groupFromUrl
+          ? 'Приглашение открыто: вход выполнен локально, имя участника синхронизируется при связи. Чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.'
+          : 'Последняя группа восстановлена локально. Участники показываются из сети или кэша; чтобы друзья видели твою точку на карте, нажми “Начать показ моей позиции”.')
+        : 'Группа найдена, но вход не выполнен. Укажи профиль на этом устройстве и нажми “Войти в группу”.';
+    }
   } else {
     updateLiveUi();
   }
