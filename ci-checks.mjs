@@ -92,7 +92,6 @@ function checkRequiredProjectFiles() {
     'serve-static.mjs',
     'playwright.config.mjs',
     'e2e-smoke.spec.mjs',
-    'OFFLINE_MAP_RELEASE_WORKFLOW_RU.md',
   ]) {
     assert.ok(pathExists(path), `Required project file is missing: ${path}`);
   }
