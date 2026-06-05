@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.53 · Sprint 5\.53/;
+const EXPECTED_APP_VERSION = /v0\.7\.53-hotfix\.1 · Sprint 5\.53\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -293,6 +293,17 @@ async function bootApp(page, options = {}) {
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await expect(page.locator('#map')).toHaveAttribute('data-map-runtime', 'leaflet-offline-lite');
   expect(pageErrors, 'app must not throw fatal page errors during boot').toEqual([]);
+}
+
+
+async function openOfflineCountryFolder(page, countryId = 'russia') {
+  const folder = page.locator(`.offline-country-folder[data-country-id="${countryId}"]`);
+  await expect(folder).toHaveCount(1);
+  if ((await folder.getAttribute('open')) === null) {
+    await folder.locator('summary').first().click();
+  }
+  await expect(folder).toHaveAttribute('open', '');
+  return folder;
 }
 
 async function expectJoinedGroupReady(page, expectedGroup) {
@@ -711,6 +722,7 @@ test('offline region catalog loads release manifest without installing maps', as
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('Калининградская область');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('1.1 GB');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('не установлена');
+  await openOfflineCountryFolder(page, 'russia');
   await expect(page.locator('#offlineRegionCatalogList').getByRole('button', { name: 'Установить' }).first()).toBeVisible();
   await expect(page.locator('#offlineRegionCatalogList').getByRole('link', { name: 'Скачать вручную' }).first()).toHaveAttribute('href', /central-fed-district\.pmtiles$/);
   await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
@@ -728,6 +740,7 @@ test('manual region download dialog hands the downloaded file to streamed import
 
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#refreshOfflineRegionCatalogBtn').click();
+  await openOfflineCountryFolder(page, 'russia');
   const central = page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' });
 
   await central.getByRole('link', { name: 'Скачать вручную' }).click();
@@ -783,6 +796,7 @@ test('offline region install streams a catalog package into OPFS when supported'
 
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#refreshOfflineRegionCatalogBtn').click();
+  await openOfflineCountryFolder(page, 'russia');
   const hasOpfs = await page.evaluate(() => Boolean(navigator.storage && typeof navigator.storage.getDirectory === 'function'));
   const central = page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' });
   await central.getByRole('button', { name: 'Установить' }).click();
@@ -815,6 +829,7 @@ test('offline region install streams a catalog package into OPFS when supported'
   await page.reload();
   await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
   await expect(page.locator('#screen-offline')).toBeVisible();
+  await openOfflineCountryFolder(page, 'russia');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
   const centralAfterReload = page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' });
@@ -832,6 +847,7 @@ test('offline region install keeps manual fallback on fetch failure', async ({ p
 
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
   await page.locator('#refreshOfflineRegionCatalogBtn').click();
+  await openOfflineCountryFolder(page, 'russia');
   const central = page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' });
   await central.getByRole('button', { name: 'Установить' }).click();
   await expect(page.locator('#offlineRegionInstallConfirmDialog')).toBeVisible();
@@ -858,6 +874,7 @@ test('offline region catalog opens the installed local map instead of remote pac
   await page.locator('#offlineImportNameSaveBtn').click();
 
   await page.locator('#refreshOfflineRegionCatalogBtn').click();
+  await openOfflineCountryFolder(page, 'russia');
   const kaliningrad = page.locator('.offline-region-card').filter({ hasText: 'Калининградская область' });
   await expect(kaliningrad).toContainText('открыта сейчас');
   await expect(kaliningrad.getByRole('button', { name: 'Показать карту' })).toBeVisible();
@@ -2077,7 +2094,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.53');
+  expect(backup.appVersion).toBe('0.7.53-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2208,7 +2225,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.53',
+    appVersion: '0.7.53-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
