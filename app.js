@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.51';
+const APP_VERSION = '0.7.51-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -1774,6 +1774,18 @@ async function getOfflineMapsOpfsDirectory(create = true) {
   return root.getDirectoryHandle(OPFS_OFFLINE_MAPS_DIR, { create });
 }
 
+async function readPmtilesBlobChunk(blob) {
+  if (blob && typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+  if (typeof FileReader === 'undefined') throw new Error('Браузер не умеет читать выбранный файл частями.');
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Файл не удалось прочитать.'));
+    reader.onabort = () => reject(makeLocalPmtilesImportAbortError());
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 async function writePmtilesFileToOpfs(file, storageName, options = {}) {
   const signal = options.signal || null;
   const onProgress = options.onProgress || null;
@@ -1790,7 +1802,7 @@ async function writePmtilesFileToOpfs(file, storageName, options = {}) {
     while (receivedBytes < totalBytes) {
       throwIfLocalPmtilesImportAborted(signal);
       const end = Math.min(receivedBytes + LOCAL_PMTILES_IMPORT_CHUNK_BYTES, totalBytes);
-      const bytes = await file.slice(receivedBytes, end).arrayBuffer();
+      const bytes = await readPmtilesBlobChunk(file.slice(receivedBytes, end));
       throwIfLocalPmtilesImportAborted(signal);
       await writable.write(bytes);
       receivedBytes = end;
@@ -1836,16 +1848,22 @@ async function putPmtilesFileBlobToIndexedDb(file, storageName, options = {}) {
   const signal = options.signal || null;
   const onProgress = options.onProgress || null;
   const totalBytes = Number(file?.size || 0);
-  const parts = [];
   let receivedBytes = 0;
+  let bytes = null;
+
+  try {
+    bytes = new Uint8Array(totalBytes);
+  } catch (err) {
+    throw new Error(`Недостаточно памяти для резервного импорта файла ${formatBytes(totalBytes)}. Используй браузер с OPFS или карту меньшего размера.`);
+  }
 
   if (typeof onProgress === 'function') onProgress({ receivedBytes, totalBytes, storageType: 'idb-blob', storageName });
   while (receivedBytes < totalBytes) {
     throwIfLocalPmtilesImportAborted(signal);
     const end = Math.min(receivedBytes + LOCAL_PMTILES_IMPORT_CHUNK_BYTES, totalBytes);
-    const bytes = await file.slice(receivedBytes, end).arrayBuffer();
+    const chunk = new Uint8Array(await readPmtilesBlobChunk(file.slice(receivedBytes, end)));
     throwIfLocalPmtilesImportAborted(signal);
-    parts.push(bytes);
+    bytes.set(chunk, receivedBytes);
     receivedBytes = end;
     if (typeof onProgress === 'function') onProgress({ receivedBytes, totalBytes, storageType: 'idb-blob', storageName });
   }
@@ -1857,7 +1875,7 @@ async function putPmtilesFileBlobToIndexedDb(file, storageName, options = {}) {
     sizeBytes: totalBytes || receivedBytes || null,
     contentType: file.type || 'application/octet-stream',
     updatedAt: new Date().toISOString(),
-    blob: new Blob(parts, { type: file.type || 'application/octet-stream' })
+    bytes: bytes.buffer
   });
   throwIfLocalPmtilesImportAborted(signal);
   return { storageType: 'idb-blob', storageName, sizeBytes: receivedBytes };
@@ -11623,7 +11641,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.51`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.51.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

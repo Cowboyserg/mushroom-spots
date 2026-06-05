@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.51 · Sprint 5\.51/;
+const EXPECTED_APP_VERSION = /v0\.7\.51-hotfix\.1 · Sprint 5\.51\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -15,6 +15,25 @@ const EXTERNAL_RUNTIME_HOSTS = [
 async function bootApp(page, options = {}) {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  if (options.forceNoOpfs) {
+    await page.addInitScript(() => {
+      try {
+        if (typeof StorageManager !== 'undefined' && StorageManager.prototype) {
+          Object.defineProperty(StorageManager.prototype, 'getDirectory', {
+            configurable: true,
+            value: undefined
+          });
+        }
+        if (navigator.storage) {
+          Object.defineProperty(navigator.storage, 'getDirectory', {
+            configurable: true,
+            value: undefined
+          });
+        }
+      } catch (_) { /* no-op */ }
+    });
+  }
 
   if (options.slowLocalFileReads) {
     await page.addInitScript(() => {
@@ -815,6 +834,28 @@ test('offline region catalog opens the installed local map instead of remote pac
   expect(frameBox).not.toBeNull();
   expect(centerButtonBox).not.toBeNull();
   expect(centerButtonBox.x).toBeLessThan(frameBox.x + frameBox.width / 2);
+});
+
+
+test('manual PMTiles import keeps the IndexedDB fallback compatible without OPFS', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true, forceNoOpfs: true });
+
+  const hasOpfs = await page.evaluate(() => Boolean(navigator.storage && typeof navigator.storage.getDirectory === 'function'));
+  expect(hasOpfs).toBe(false);
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'webkit-fallback.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+
+  await expect(page.locator('#appToast')).toContainText('Карта импортирована');
+  await expect(page.locator('#localPmtilesImportProgressBar')).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+  await expect(page.locator('#localPmtilesFileStatus')).toContainText('импортирован в IndexedDB');
 });
 
 
@@ -1988,7 +2029,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.51');
+  expect(backup.appVersion).toBe('0.7.51-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2119,7 +2160,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.51',
+    appVersion: '0.7.51-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

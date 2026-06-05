@@ -234,7 +234,9 @@ function checkManualPmtilesImportProgressContract() {
 
   assertIncludes(appJs, 'const LOCAL_PMTILES_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024;', 'manual PMTiles import chunk size');
   assertIncludes(appJs, 'async function writePmtilesFileToOpfs(file, storageName, options = {})', 'streamed OPFS manual import');
-  assertIncludes(appJs, 'file.slice(receivedBytes, end).arrayBuffer()', 'manual PMTiles chunk reads');
+  assertIncludes(appJs, 'readPmtilesBlobChunk(file.slice(receivedBytes, end))', 'manual PMTiles chunk reads');
+  assertIncludes(appJs, 'bytes: bytes.buffer', 'WebKit-compatible IndexedDB ArrayBuffer persistence');
+  assert.ok(!appJs.includes('blob: new Blob(parts'), 'IndexedDB fallback must not persist Blob parts on WebKit');
   assertIncludes(appJs, 'function cancelLocalPmtilesImport()', 'manual PMTiles import cancellation');
   assertIncludes(appJs, 'await deletePmtilesFileFromOpfs(storageName);', 'partial OPFS import cleanup');
   assertIncludes(appJs, 'status: \'verifying\'', 'manual PMTiles verification progress phase');
