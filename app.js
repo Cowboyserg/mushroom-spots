@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.52';
+const APP_VERSION = '0.7.53';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -151,6 +151,8 @@ let activeAppScreen = 'map';
 let showMapAdvancedControls = false;
 let onlineMapExpanded = false;
 let watchId = null;
+let gpsRequestInFlight = null;
+let gpsCenterRequested = false;
 let spots = [];
 let customSpotCollections = [];
 let deletedSpotCollections = [];
@@ -232,7 +234,6 @@ let offlineMapManifest = {
   autoLoadAttempted: false
 };
 let offlineOpenCountryFolderIds = new Set();
-let offlineCountryFoldersInitialized = false;
 let offlineRegionInstallState = {
   byPackageId: {},
   lastPackageId: null
@@ -3898,7 +3899,7 @@ function renderOfflineRegionCatalogUi() {
     return;
   }
 
-  countryGroups.forEach((group, groupIndex) => {
+  countryGroups.forEach((group) => {
     const folder = document.createElement('details');
     folder.className = 'offline-country-folder';
     folder.dataset.countryId = group.id;
@@ -3906,19 +3907,17 @@ function renderOfflineRegionCatalogUi() {
 
     const summary = document.createElement('summary');
     summary.className = 'offline-country-summary';
+
+    const folderIcon = document.createElement('span');
+    folderIcon.className = 'offline-country-folder-icon';
+    folderIcon.setAttribute('aria-hidden', 'true');
+
     const titleWrap = document.createElement('span');
     titleWrap.className = 'offline-country-summary-copy';
     const title = document.createElement('strong');
     title.textContent = group.name;
 
     const installedCount = group.packages.filter((pkg) => Boolean(findRememberedPmtilesMapForPackage(pkg))).length;
-    const activeInGroup = group.packages.some((pkg) => {
-      const installed = findRememberedPmtilesMapForPackage(pkg);
-      return Boolean(installed
-        && rememberedPmtilesMapsState.selectedId === installed.id
-        && localPmtilesFileState.status === 'selected'
-        && localPmtilesFileState.rememberedId === installed.id);
-    });
     const statusText = installedCount === 0
       ? `${formatOfflineRegionCount(group.packages.length)} · ничего не установлено`
       : installedCount === group.packages.length
@@ -3929,10 +3928,19 @@ function renderOfflineRegionCatalogUi() {
     meta.textContent = statusText;
     titleWrap.append(title, meta);
 
-    const countryPill = document.createElement('span');
-    countryPill.className = `pill ${installedCount ? 'on' : 'warn'}`;
-    countryPill.textContent = installedCount ? `${installedCount}/${group.packages.length}` : 'папка';
-    summary.append(titleWrap, countryPill);
+    const trailing = document.createElement('span');
+    trailing.className = 'offline-country-summary-trailing';
+    const countryCount = document.createElement('span');
+    countryCount.className = `offline-country-count${installedCount ? ' has-installed' : ''}`;
+    countryCount.textContent = installedCount ? `${installedCount}/${group.packages.length}` : String(group.packages.length);
+    countryCount.setAttribute('aria-label', installedCount
+      ? `Установлено ${installedCount} из ${group.packages.length}`
+      : `Регионов: ${group.packages.length}`);
+    const chevron = document.createElement('span');
+    chevron.className = 'offline-country-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    trailing.append(countryCount, chevron);
+    summary.append(folderIcon, titleWrap, trailing);
 
     const regionList = document.createElement('div');
     regionList.className = 'offline-country-region-list';
@@ -3940,19 +3948,16 @@ function renderOfflineRegionCatalogUi() {
     regionList.setAttribute('aria-label', `Регионы: ${group.name}`);
     for (const pkg of group.packages) regionList.appendChild(createOfflineRegionCatalogCard(pkg).card);
 
-    folder.open = activeInGroup
-      || offlineOpenCountryFolderIds.has(group.id)
-      || (!offlineCountryFoldersInitialized && groupIndex === 0);
-    if (folder.open) offlineOpenCountryFolderIds.add(group.id);
+    // All country folders start collapsed on a fresh app load. Only an
+    // explicit user toggle is remembered across catalog re-renders.
+    folder.open = offlineOpenCountryFolderIds.has(group.id);
     folder.addEventListener('toggle', () => {
-      offlineCountryFoldersInitialized = true;
       if (folder.open) offlineOpenCountryFolderIds.add(group.id);
       else offlineOpenCountryFolderIds.delete(group.id);
     });
     folder.append(summary, regionList);
     list.appendChild(folder);
   });
-  offlineCountryFoldersInitialized = true;
 }
 
 function openOfflineRegionDownloadUrl(event, pkg) {
@@ -8247,35 +8252,59 @@ function requestCurrentPositionWithDesktopFallback(primaryOptions = GPS_PRIMARY_
   });
 }
 
-function startGps(center=true) {
+function ensureGpsWatch() {
+  if (!navigator.geolocation || watchId != null) return;
+  const watchRequestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', 'GPS live updates');
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      finishApiRequest(watchRequestId, 'готово', `watch активен, GPS ${meters(pos.coords.accuracy)}`);
+      updateUserPosition(pos, false);
+    },
+    (err) => finishApiRequest(watchRequestId, 'ошибка', err.message),
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+  );
+}
+
+function startGps(center=true, options={}) {
+  if (center) gpsCenterRequested = true;
+  const silent = Boolean(options.silent);
+  const reason = options.reason === 'startup' ? 'GPS startup permission/current position' : 'GPS permission/current position';
   if (!navigator.geolocation) {
-    alert('Геолокация не поддерживается этим браузером.');
-    return;
+    gpsCenterRequested = false;
+    if ($('gpsStatus')) $('gpsStatus').textContent = 'недоступен';
+    if (!silent) alert('Геолокация не поддерживается этим браузером.');
+    return Promise.resolve(false);
   }
+  if (currentPosition) {
+    ensureGpsWatch();
+    if (gpsCenterRequested && canUseMapRuntime()) map.setView([currentPosition.lat, currentPosition.lon], Math.max(map.getZoom(), 16));
+    gpsCenterRequested = false;
+    return Promise.resolve(true);
+  }
+  if (gpsRequestInFlight) return gpsRequestInFlight;
+
   $('gpsStatus').textContent = 'запрос разрешения…';
-  const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'GPS permission/current position');
-  requestCurrentPositionWithDesktopFallback()
+  const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', reason);
+  gpsRequestInFlight = requestCurrentPositionWithDesktopFallback()
     .then(({ position, fallbackUsed }) => {
       finishApiRequest(requestId, 'готово', `${fallbackUsed ? 'GPS fallback' : 'GPS'} ${meters(position.coords.accuracy)}`);
-      updateUserPosition(position, center);
+      updateUserPosition(position, gpsCenterRequested);
+      gpsCenterRequested = false;
+      ensureGpsWatch();
+      return true;
     })
     .catch((err) => {
       finishApiRequest(requestId, 'ошибка', err.message);
       $('gpsStatus').textContent = err.code === 1 ? 'доступ запрещён' : 'ошибка';
       setText('saveFlowDescription', err.code === 1 ? 'GPS запрещён в браузере. Можно сохранить выбранную точку вручную: зажми место на карте примерно на секунду.' : 'GPS не дал координаты. Можно попробовать ещё раз или выбрать точку на карте вручную.');
-      alert(`GPS ошибка: ${err.message}. Можно сохранить место вручную долгим нажатием на карте.`);
+      gpsCenterRequested = false;
+      if (!silent) alert(`GPS ошибка: ${err.message}. Можно сохранить место вручную долгим нажатием на карте.`);
+      return false;
+    })
+    .finally(() => {
+      gpsRequestInFlight = null;
     });
-  if (watchId == null) {
-    const watchRequestId = beginApiRequest('Geolocation.watchPosition', 'BROWSER', 'GPS live updates');
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        finishApiRequest(watchRequestId, 'готово', `watch активен, GPS ${meters(pos.coords.accuracy)}`);
-        updateUserPosition(pos, false);
-      },
-      (err) => finishApiRequest(watchRequestId, 'ошибка', err.message),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
-    );
-  }
+  return gpsRequestInFlight;
 }
 
 function distanceMeters(a, b) {
@@ -11772,7 +11801,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.52`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.53`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -11781,6 +11810,9 @@ async function init() {
   ensureUserId();
   initMap();
   bindUi();
+  // Ask for location as part of normal app startup. Permission denial is
+  // reflected in the GPS panel without blocking startup or showing an alert.
+  void startGps(false, { silent: true, reason: 'startup' });
   renderOnlineMapExpandButton();
   updateOnlineMapExpandInsets();
   offlineMapManifest.url = getConfiguredOfflineMapManifestUrl();

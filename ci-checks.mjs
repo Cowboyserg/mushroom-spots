@@ -212,7 +212,12 @@ function checkOfflineMapsUxContract() {
   assertIncludes(systemHtml, 'id="offlinePackageSelect"', 'System information technical package select');
   assertIncludes(read('app.js'), 'groupOfflineRegionPackagesByCountry', 'offline catalog country grouping');
   assertIncludes(read('app.js'), 'countryId', 'offline package country metadata');
-  assertIncludes(read('styles.css'), '.offline-country-folder', 'offline catalog country folder styles');
+  const appJs = read('app.js');
+  const stylesCss = read('styles.css');
+  assertIncludes(stylesCss, '.offline-country-folder', 'offline catalog country folder styles');
+  assertIncludes(stylesCss, '.offline-country-folder-icon', 'Notes-like offline country folder icon');
+  assertIncludes(appJs, 'folder.open = offlineOpenCountryFolderIds.has(group.id);', 'offline country folders start collapsed unless explicitly opened');
+  assert.ok(!appJs.includes('!offlineCountryFoldersInitialized && groupIndex === 0'), 'offline catalog must not auto-open the first country folder');
   assert.ok(
     !systemHtml.includes('id="startBboxExportBtn"'),
     'System information must not hide the user-facing rectangle preparation action'
@@ -306,6 +311,9 @@ function checkGpsDesktopFallbackContract() {
   assertIncludes(appJs, 'isRetryableGeolocationError(primaryError)', 'GPS fallback must only retry recoverable errors');
   assertIncludes(appJs, 'enableHighAccuracy: false, timeout: 30000, maximumAge: 120000', 'GPS fallback lower-accuracy longer timeout options');
   assertIncludes(appJs, "fallbackUsed ? 'GPS fallback' : 'GPS'", 'main GPS diagnostic must report fallback use');
+  assertIncludes(appJs, "void startGps(false, { silent: true, reason: 'startup' });", 'application startup GPS request');
+  assertIncludes(appJs, 'if (!silent) alert(`GPS ошибка:', 'startup GPS denial must stay non-blocking while manual retry can alert');
+  assertIncludes(appJs, 'function ensureGpsWatch()', 'GPS watch starts after a successful location request');
 }
 
 function checkDomIdContracts() {

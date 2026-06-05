@@ -3586,62 +3586,116 @@ body.online-map-expanded .bottom-nav {
 }
 
 
-/* Sprint 5.50 — Offline map country folders. */
+/* Sprint 5.50 / 5.53 — Offline map country folders. */
 .offline-region-catalog-list {
   grid-template-columns: minmax(0, 1fr);
+  gap: 0.6rem;
 }
 .offline-country-folder {
   overflow: hidden;
-  border: 1px solid rgba(36, 75, 47, 0.18);
-  border-radius: 16px;
-  background: rgba(248, 249, 242, 0.86);
+  border: 1px solid rgba(122, 94, 28, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 252, 240, 0.96);
+  box-shadow: 0 1px 0 rgba(71, 54, 16, 0.04);
 }
 .offline-country-folder[open] {
-  border-color: rgba(36, 75, 47, 0.3);
-  background: rgba(244, 248, 239, 0.94);
+  border-color: rgba(196, 145, 23, 0.34);
+  background: rgba(255, 251, 233, 0.98);
+  box-shadow: 0 8px 22px rgba(91, 69, 17, 0.08);
 }
 .offline-country-summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-height: 48px;
-  padding: 0.75rem;
+  gap: 0.72rem;
+  min-height: 58px;
+  padding: 0.72rem 0.8rem;
   cursor: pointer;
-  list-style-position: inside;
+  list-style: none;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .offline-country-summary::-webkit-details-marker {
   display: none;
 }
-.offline-country-summary::before {
-  content: '▸';
-  flex: 0 0 auto;
-  color: var(--green);
-  font-size: 1rem;
-  transform-origin: center;
-  transition: transform 120ms ease;
+.offline-country-summary:focus-visible {
+  outline: 3px solid rgba(241, 183, 44, 0.35);
+  outline-offset: -3px;
 }
-.offline-country-folder[open] > .offline-country-summary::before {
-  transform: rotate(90deg);
+.offline-country-folder-icon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 31px;
+  height: 23px;
+  margin-top: 3px;
+  border-radius: 4px 5px 5px 5px;
+  background: linear-gradient(180deg, #ffd45b 0%, #f3b72f 100%);
+  box-shadow: inset 0 -1px 0 rgba(134, 90, 0, 0.18), 0 1px 2px rgba(100, 72, 12, 0.12);
+}
+.offline-country-folder-icon::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: -5px;
+  width: 14px;
+  height: 8px;
+  border-radius: 4px 5px 0 0;
+  background: #f5bd37;
 }
 .offline-country-summary-copy {
   display: inline-flex;
   min-width: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.18rem;
+  gap: 0.16rem;
 }
 .offline-country-summary-copy strong {
+  overflow: hidden;
+  color: #2f2b21;
   font-size: 1rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .offline-country-summary-copy .hint {
+  overflow: hidden;
   margin: 0;
+  color: #746d5f;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.offline-country-summary-trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+.offline-country-count {
+  min-width: 1.5rem;
+  color: #8a8376;
+  font-size: 0.9rem;
+  text-align: right;
+}
+.offline-country-count.has-installed {
+  color: #47734d;
+  font-weight: 700;
+}
+.offline-country-chevron {
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid #aaa397;
+  border-right: 2px solid #aaa397;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+.offline-country-folder[open] > .offline-country-summary .offline-country-chevron {
+  transform: rotate(135deg) translate(-1px, -1px);
 }
 .offline-country-region-list {
   display: grid;
   gap: 0.65rem;
-  padding: 0 0.65rem 0.65rem;
+  padding: 0.2rem 0.65rem 0.7rem;
+  border-top: 1px solid rgba(122, 94, 28, 0.1);
 }
 @media (min-width: 760px) {
   .offline-region-catalog-list {

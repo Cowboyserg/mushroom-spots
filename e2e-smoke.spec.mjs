@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.52 · Sprint 5\.52/;
+const EXPECTED_APP_VERSION = /v0\.7\.53 · Sprint 5\.53/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -762,10 +762,12 @@ test('offline catalog groups legacy Russia and manifest Spain packages into coun
   await expect(spain).toHaveCount(1);
   await expect(russia.locator('summary')).toContainText('Россия');
   await expect(russia.locator('summary')).toContainText('2 региона');
-  await expect(russia).toHaveAttribute('open', '');
+  await expect(russia).not.toHaveAttribute('open', '');
   await expect(spain.locator('summary')).toContainText('Испания');
   await expect(spain.locator('summary')).toContainText('1 регион');
   await expect(spain).not.toHaveAttribute('open', '');
+  await expect(russia.locator('.offline-country-folder-icon')).toHaveCount(1);
+  await expect(spain.locator('.offline-country-chevron')).toHaveCount(1);
 
   await spain.locator('summary').click();
   await expect(spain).toHaveAttribute('open', '');
@@ -1771,12 +1773,11 @@ test('selected map point can be saved without GPS through save dialog', async ({
   await expect(page.locator('#spotsList')).toContainText('Тестовая точка без GPS');
 });
 
-test('GPS point can be saved with mocked geolocation', async ({ page, context }) => {
+test('app requests GPS on startup and a mocked position can be saved', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 56.9496, longitude: 24.1052, accuracy: 12 });
   await bootApp(page);
 
-  await page.locator('#startGpsBtn').click();
   await expect(page.locator('#gpsStatus')).toHaveText('активен');
   await expect(page.locator('#saveSpotBtn')).toHaveText('Сохранить моё место');
   await page.locator('#saveSpotBtn').click();
@@ -2076,7 +2077,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.52');
+  expect(backup.appVersion).toBe('0.7.53');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2207,7 +2208,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.52',
+    appVersion: '0.7.53',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
