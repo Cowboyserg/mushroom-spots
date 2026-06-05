@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.51-hotfix.1';
+const APP_VERSION = '0.7.52';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -260,6 +260,7 @@ let pendingDuplicatePmtilesImport = null;
 let pendingOfflineImportNameMapId = null;
 let offlineActiveMapRenameEditing = false;
 let pendingOfflineRegionInstallPackageId = null;
+let pendingOfflineRegionManualPackageId = null;
 let pendingOfflineMapDeleteRecordId = null;
 let appToastTimer = null;
 const OFFLINE_IMPORT_TOAST_STEP_MS = 1200;
@@ -397,7 +398,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   offlineRegionInstallBtn: 'Установить карту региона',
   offlineRegionInstallConfirmBtn: 'Подтвердить установку региона',
   offlineRegionCancelInstallBtn: 'Отменить установку региона',
-  offlineRegionCatalogDownload: 'Скачать карту региона вручную',
+  offlineRegionCatalogDownload: 'Открыть ручную установку карты',
+  offlineRegionManualDownloadStartBtn: 'Скачать файл карты',
+  offlineRegionManualChooseFileBtn: 'Выбрать скачанный файл карты',
   chooseLocalPmtilesBtn: 'Выбрать файл карты',
   cancelLocalPmtilesImportBtn: 'Отменить импорт карты',
   probePmtilesBtn: 'Проверить выбранный файл карты',
@@ -2827,10 +2830,18 @@ function findRememberedPmtilesMapForFile(file) {
 
 function findRememberedPmtilesMapForPackage(pkg) {
   if (!pkg) return null;
+  const packageId = String(pkg.id || '').trim();
   const fileName = String(pkg.fileName || pkg.url?.split('/').pop() || '').trim().toLowerCase();
   const sizeBytes = Number(pkg.sizeBytes || 0);
-  if (!fileName || sizeBytes <= 0) return null;
-  return (rememberedPmtilesMapsState.maps || []).find((item) => String(item.fileName || '').trim().toLowerCase() === fileName && Number(item.sizeBytes || 0) === sizeBytes) || null;
+  return (rememberedPmtilesMapsState.maps || []).find((item) => {
+    const linkedPackageId = String(item.catalogPackageId || '').trim();
+    if (packageId && linkedPackageId === packageId) {
+      return sizeBytes <= 0 || Number(item.sizeBytes || 0) === sizeBytes;
+    }
+    return Boolean(fileName && sizeBytes > 0
+      && String(item.fileName || '').trim().toLowerCase() === fileName
+      && Number(item.sizeBytes || 0) === sizeBytes);
+  }) || null;
 }
 
 function getRemoteOfflineMapPackages() {
@@ -2904,7 +2915,10 @@ async function upsertRememberedPmtilesMapForFile(file, options = {}) {
     ? (rememberedPmtilesMapsState.maps || []).find((item) => item.id === options.replaceRecordId)
     : null;
   const existing = replaceTarget || (options.replaceSelected && selected ? selected : findRememberedPmtilesMapForFile(file));
-  const fallbackTitle = String(file.name || 'local.pmtiles').replace(/\.pmtiles$/i, '') || 'Локальная карта';
+  const catalogPackage = options.catalogPackage || null;
+  const fallbackTitle = catalogPackage
+    ? getOfflineRegionCatalogTitle(catalogPackage)
+    : (String(file.name || 'local.pmtiles').replace(/\.pmtiles$/i, '') || 'Локальная карта');
   const recordId = existing?.id || `remembered-pmtiles-${Date.now()}`;
   const storageName = `${recordId}-${Date.now()}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
   let persisted = null;
@@ -2938,7 +2952,12 @@ async function upsertRememberedPmtilesMapForFile(file, options = {}) {
     importedAt: now,
     createdAt: existing?.createdAt || now,
     lastSelectedAt: now,
-    notes: existing?.notes || null
+    notes: existing?.notes || null,
+    catalogPackageId: catalogPackage?.id || existing?.catalogPackageId || null,
+    catalogFileName: catalogPackage?.fileName || existing?.catalogFileName || null,
+    countryId: catalogPackage?.countryId || existing?.countryId || null,
+    countryName: catalogPackage?.countryName || existing?.countryName || null,
+    regionId: catalogPackage?.regionId || existing?.regionId || null
   };
 
   const withoutRecord = (rememberedPmtilesMapsState.maps || []).filter((item) => item.id !== mapRecord.id);
@@ -3563,6 +3582,112 @@ function closeOfflineRegionInstallConfirmDialog() {
   closeDialogSafely('offlineRegionInstallConfirmDialog');
 }
 
+function getPendingOfflineRegionManualPackage() {
+  return getOfflineRegionPackageById(pendingOfflineRegionManualPackageId);
+}
+
+function openOfflineRegionManualInstallDialog(packageId) {
+  const pkg = getOfflineRegionPackageById(packageId);
+  if (!pkg?.url) return false;
+  pendingOfflineRegionManualPackageId = pkg.id;
+  const fileName = pkg.fileName || pkg.url.split('/').pop() || 'map.pmtiles';
+  setText('offlineRegionManualInstallTitle', `Установить вручную: ${getOfflineRegionCatalogTitle(pkg)}`);
+  setText('offlineRegionManualInstallText', 'Сначала скачай файл в браузере. После завершения вернись сюда и выбери скачанный .pmtiles файл.');
+  setText('offlineRegionManualInstallFileName', fileName);
+  setText('offlineRegionManualInstallSize', formatBytes(pkg.sizeBytes));
+  setText('offlineRegionManualInstallStatus', 'Файл ещё не выбран. Окно останется доступным, когда ты вернёшься после скачивания.');
+  const download = $('offlineRegionManualDownloadStartBtn');
+  if (download) {
+    download.href = pkg.url;
+    download.download = fileName;
+    download.setAttribute('aria-label', `Скачать ${fileName}`);
+  }
+  showDialogSafely('offlineRegionManualInstallDialog');
+  return true;
+}
+
+function closeOfflineRegionManualInstallDialog() {
+  pendingOfflineRegionManualPackageId = null;
+  closeDialogSafely('offlineRegionManualInstallDialog');
+}
+
+function noteOfflineRegionManualDownloadStarted() {
+  const pkg = getPendingOfflineRegionManualPackage();
+  if (!pkg) return false;
+  const fileName = pkg.fileName || pkg.url?.split('/').pop() || 'map.pmtiles';
+  setText('offlineRegionManualInstallStatus', `Скачивание ${fileName} открыто в браузере. Когда оно завершится, нажми “Выбрать скачанный файл”.`);
+  setButtonApiStatus({ buttonId: 'offlineRegionManualDownloadStartBtn', label: BUTTON_DIAGNOSTIC_LABELS.offlineRegionManualDownloadStartBtn }, 'готово', `открыт ${fileName}`);
+  return true;
+}
+
+function resetLocalPmtilesPickerProgress(mode = 'add') {
+  pendingLocalPmtilesImportMode = mode;
+  setLocalPmtilesImportProgressState({
+    status: 'idle',
+    fileName: null,
+    receivedBytes: 0,
+    totalBytes: 0,
+    storageType: null,
+    error: null
+  });
+  setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
+}
+
+function openLocalPmtilesInputFallback(mode = 'add') {
+  resetLocalPmtilesPickerProgress(mode);
+  const input = $('localPmtilesFileInput');
+  if (!input) return false;
+  try {
+    if (typeof input.showPicker === 'function') input.showPicker();
+    else input.click();
+    return true;
+  } catch (err) {
+    recordMapDebug('local PMTiles file input picker failed', err?.message || String(err));
+    try {
+      input.click();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+async function chooseDownloadedOfflineRegionFile() {
+  const pkg = getPendingOfflineRegionManualPackage();
+  if (!pkg) return false;
+  resetLocalPmtilesPickerProgress('add');
+  setText('offlineRegionManualInstallStatus', 'Открываю папку загрузок…');
+
+  if (typeof window.showOpenFilePicker === 'function') {
+    try {
+      const handles = await window.showOpenFilePicker({
+        id: 'offline-pmtiles-import',
+        startIn: 'downloads',
+        multiple: false,
+        types: [{
+          description: 'PMTiles карта',
+          accept: { 'application/octet-stream': ['.pmtiles'] }
+        }]
+      });
+      const handle = handles && handles[0];
+      if (!handle) return false;
+      const file = await handle.getFile();
+      closeOfflineRegionManualInstallDialog();
+      await selectLocalPmtilesFile(file, { catalogPackage: pkg });
+      return true;
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        setText('offlineRegionManualInstallStatus', 'Выбор файла отменён. Диалог можно открыть снова.');
+        return false;
+      }
+      recordMapDebug('showOpenFilePicker failed, using file input fallback', err?.message || String(err));
+    }
+  }
+
+  setText('offlineRegionManualInstallStatus', 'Выбери скачанный .pmtiles файл в системном окне.');
+  return openLocalPmtilesInputFallback('add');
+}
+
 async function confirmPendingOfflineRegionInstall() {
   const packageId = pendingOfflineRegionInstallPackageId;
   if (!packageId) return null;
@@ -3685,7 +3810,11 @@ function createOfflineRegionCatalogCard(pkg) {
     download.target = '_blank';
     download.rel = 'noopener noreferrer';
     download.textContent = installed ? 'Скачать заново' : 'Скачать вручную';
-    download.addEventListener('click', (event) => openOfflineRegionDownloadUrl(event, pkg));
+    download.addEventListener('click', (event) => {
+      event.preventDefault();
+      setButtonApiStatus({ buttonId: 'offlineRegionCatalogDownload', label: BUTTON_DIAGNOSTIC_LABELS.offlineRegionCatalogDownload }, 'готово', `${pkg.name || pkg.id} · открыт диалог`);
+      openOfflineRegionManualInstallDialog(pkg.id);
+    });
     actions.appendChild(download);
   }
 
@@ -4004,6 +4133,12 @@ async function makeLocalPmtilesPackage(file, options = {}) {
 
 async function importLocalPmtilesFile(file, options = {}) {
   validatePmtilesImportFile(file);
+  const expectedPackage = options.catalogPackage || null;
+  const expectedSize = Number(expectedPackage?.sizeBytes || 0);
+  const actualSize = Number(file?.size || 0);
+  if (expectedSize > 0 && actualSize !== expectedSize) {
+    throw new Error(`Выбран другой файл: ожидался ${expectedPackage.fileName || 'файл региона'} размером ${formatBytes(expectedSize)}, выбран ${file.name || 'файл'} размером ${formatBytes(actualSize)}.`);
+  }
   const replaceSelected = Boolean(options.replaceSelected || pendingLocalPmtilesImportMode === 'replace');
   const replaceRecordId = options.replaceRecordId || null;
   showAppToast('Проверяю файл карты', 'info');
@@ -4035,6 +4170,7 @@ async function importLocalPmtilesFile(file, options = {}) {
   const pkg = await makeLocalPmtilesPackage(file, {
     replaceSelected,
     replaceRecordId,
+    catalogPackage: expectedPackage,
     signal,
     onProgress: ({ receivedBytes, totalBytes, storageType }) => {
       setLocalPmtilesImportProgressState({
@@ -11562,26 +11698,19 @@ function bindUi() {
   if ($('saveOfflineManifestUrlBtn')) $('saveOfflineManifestUrlBtn').onclick = withButtonDiagnostics('saveOfflineManifestUrlBtn', saveOfflineManifestUrlFromInput);
   if ($('refreshOfflineRegionCatalogBtn')) $('refreshOfflineRegionCatalogBtn').onclick = withButtonDiagnostics('refreshOfflineRegionCatalogBtn', refreshOfflineRegionCatalogFromUi);
   if ($('offlineManifestUrlInput')) $('offlineManifestUrlInput').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); refreshOfflineRegionCatalogFromUi(); } };
-  const openLocalPmtilesPicker = (mode = 'add') => {
-    pendingLocalPmtilesImportMode = mode;
-    setLocalPmtilesImportProgressState({
-      status: 'idle',
-      fileName: null,
-      receivedBytes: 0,
-      totalBytes: 0,
-      storageType: null,
-      error: null
-    });
-    setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
-    $('localPmtilesFileInput')?.click();
-  };
+  const openLocalPmtilesPicker = (mode = 'add') => openLocalPmtilesInputFallback(mode);
   if ($('chooseLocalPmtilesBtn')) $('chooseLocalPmtilesBtn').onclick = withButtonDiagnostics('chooseLocalPmtilesBtn', () => openLocalPmtilesPicker('add'));
   if ($('replaceLocalPmtilesBtn')) $('replaceLocalPmtilesBtn').onclick = withButtonDiagnostics('replaceLocalPmtilesBtn', () => openLocalPmtilesPicker('replace'));
   if ($('localPmtilesFileInput')) $('localPmtilesFileInput').onchange = async (event) => {
     const file = event.target.files && event.target.files[0];
-    await selectLocalPmtilesFile(file);
+    const manualPackage = file ? getPendingOfflineRegionManualPackage() : null;
+    if (manualPackage) closeOfflineRegionManualInstallDialog();
+    await selectLocalPmtilesFile(file, manualPackage ? { catalogPackage: manualPackage } : {});
     event.target.value = '';
   };
+  if ($('offlineRegionManualDownloadStartBtn')) $('offlineRegionManualDownloadStartBtn').onclick = withButtonDiagnostics('offlineRegionManualDownloadStartBtn', noteOfflineRegionManualDownloadStarted);
+  if ($('offlineRegionManualChooseFileBtn')) $('offlineRegionManualChooseFileBtn').onclick = withButtonDiagnostics('offlineRegionManualChooseFileBtn', chooseDownloadedOfflineRegionFile);
+  if ($('offlineRegionManualInstallCloseBtn')) $('offlineRegionManualInstallCloseBtn').onclick = withButtonDiagnostics('offlineRegionManualInstallCloseBtn', closeOfflineRegionManualInstallDialog);
   if ($('cancelLocalPmtilesImportBtn')) $('cancelLocalPmtilesImportBtn').onclick = withButtonDiagnostics('cancelLocalPmtilesImportBtn', cancelLocalPmtilesImport);
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('rememberedPmtilesMapSelect')) $('rememberedPmtilesMapSelect').onchange = (event) => selectRememberedPmtilesMap(event.target.value, true).catch(console.warn);
@@ -11600,6 +11729,8 @@ function bindUi() {
   if ($('offlineRegionInstallConfirmBtn')) $('offlineRegionInstallConfirmBtn').onclick = withButtonDiagnostics('offlineRegionInstallConfirmBtn', confirmPendingOfflineRegionInstall);
   const offlineRegionInstallConfirmDialog = $('offlineRegionInstallConfirmDialog');
   if (offlineRegionInstallConfirmDialog) offlineRegionInstallConfirmDialog.addEventListener('close', () => { pendingOfflineRegionInstallPackageId = null; });
+  const offlineRegionManualInstallDialog = $('offlineRegionManualInstallDialog');
+  if (offlineRegionManualInstallDialog) offlineRegionManualInstallDialog.addEventListener('close', () => { pendingOfflineRegionManualPackageId = null; });
   if ($('forgetRememberedPmtilesMapBtn')) $('forgetRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('forgetRememberedPmtilesMapBtn', forgetSelectedRememberedPmtilesMap);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
@@ -11641,7 +11772,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.51.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.52`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

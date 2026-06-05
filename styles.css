@@ -2659,14 +2659,26 @@ select {
   align-items: stretch;
   flex-direction: column;
 }
-.stacked-actions button {
+.stacked-actions button,
+.stacked-actions a {
   width: 100%;
+}
+.dialog-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.manual-install-status {
+  min-height: 2.8em;
 }
 @media (max-width: 560px) {
   .dialog-actions {
     flex-direction: column;
   }
-  .dialog-actions button {
+  .dialog-actions button,
+  .dialog-actions a {
     width: 100%;
   }
 }

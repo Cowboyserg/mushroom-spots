@@ -254,6 +254,32 @@ function checkManualPmtilesImportProgressContract() {
   assertIncludes(stylesCss, '--local-pmtiles-import-progress', 'manual PMTiles import progress width variable');
 }
 
+
+function checkManualRegionDownloadHandoffContract() {
+  const appJs = read('app.js');
+  const indexHtml = read('index.html');
+  const stylesCss = read('styles.css');
+
+  for (const id of [
+    'offlineRegionManualInstallDialog',
+    'offlineRegionManualInstallTitle',
+    'offlineRegionManualInstallFileName',
+    'offlineRegionManualDownloadStartBtn',
+    'offlineRegionManualChooseFileBtn',
+    'offlineRegionManualInstallCloseBtn'
+  ]) {
+    assertIncludes(indexHtml, `id="${id}"`, `manual region download handoff UI ${id}`);
+  }
+  assertIncludes(appJs, 'function openOfflineRegionManualInstallDialog(packageId)', 'manual region download dialog opener');
+  assertIncludes(appJs, "startIn: 'downloads'", 'Downloads-first file picker hint');
+  assertIncludes(appJs, "typeof window.showOpenFilePicker === 'function'", 'modern file picker branch');
+  assertIncludes(appJs, "typeof input.showPicker === 'function'", 'file input showPicker fallback');
+  assertIncludes(appJs, "openLocalPmtilesInputFallback('add')", 'manual region input fallback');
+  assertIncludes(appJs, 'catalogPackageId: catalogPackage?.id', 'manual region import catalog linkage');
+  assertIncludes(appJs, 'Выбран другой файл: ожидался', 'manual region selected-file size guard');
+  assertIncludes(stylesCss, '.dialog-actions a', 'manual download link dialog styling');
+}
+
 function checkRuntimeStateDeclarations() {
   const appJs = read('app.js');
   assertIncludes(appJs, 'let selectedMapObject = null;', 'selectedMapObject runtime state declaration');
@@ -401,6 +427,7 @@ checkVersionedAppShellAssets();
 checkDomIdContracts();
 checkOfflineMapsUxContract();
 checkManualPmtilesImportProgressContract();
+checkManualRegionDownloadHandoffContract();
 checkRuntimeStateDeclarations();
 checkOnlineMapControlsContract();
 checkGpsDesktopFallbackContract();

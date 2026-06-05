@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.51-hotfix\.1 · Sprint 5\.51\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.52 · Sprint 5\.52/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -47,6 +47,24 @@ async function bootApp(page, options = {}) {
         };
         return part;
       };
+    });
+  }
+
+
+  if (options.fakeManualPmtilesPicker) {
+    await page.addInitScript(() => {
+      const content = `PMTiles fake ${'x'.repeat(256)}`;
+      Object.defineProperty(window, 'showOpenFilePicker', {
+        configurable: true,
+        value: async () => [{
+          async getFile() {
+            return new File([content], 'central-fed-district.pmtiles', {
+              type: 'application/octet-stream',
+              lastModified: Date.now()
+            });
+          }
+        }]
+      });
     });
   }
 
@@ -697,6 +715,35 @@ test('offline region catalog loads release manifest without installing maps', as
   await expect(page.locator('#offlineRegionCatalogList').getByRole('link', { name: 'Скачать вручную' }).first()).toHaveAttribute('href', /central-fed-district\.pmtiles$/);
   await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+});
+
+
+test('manual region download dialog hands the downloaded file to streamed import', async ({ page }) => {
+  await bootApp(page, {
+    fakePmtilesRuntime: true,
+    fakeOfflineManifest: true,
+    fakeOfflineManifestSmallSizes: true,
+    fakeManualPmtilesPicker: true
+  });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#refreshOfflineRegionCatalogBtn').click();
+  const central = page.locator('.offline-region-card').filter({ hasText: 'Центральный федеральный округ' });
+
+  await central.getByRole('link', { name: 'Скачать вручную' }).click();
+  await expect(page.locator('#offlineRegionManualInstallDialog')).toBeVisible();
+  await expect(page.locator('#offlineRegionManualInstallTitle')).toContainText('Центральный федеральный округ');
+  await expect(page.locator('#offlineRegionManualInstallFileName')).toHaveText('central-fed-district.pmtiles');
+  await expect(page.locator('#offlineRegionManualDownloadStartBtn')).toHaveAttribute('href', /central-fed-district\.pmtiles$/);
+  await expect(page.locator('#offlineRegionManualChooseFileBtn')).toBeVisible();
+
+  await page.locator('#offlineRegionManualChooseFileBtn').click();
+  await expect(page.locator('#offlineRegionManualInstallDialog')).toBeHidden();
+  await expect(page.locator('#appToast')).toContainText('Карта импортирована');
+  await expect(page.locator('#localPmtilesImportProgressBar')).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(central).toContainText(/установлена|открыта сейчас/);
 });
 
 
@@ -2029,7 +2076,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.51-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.52');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2160,7 +2207,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.51-hotfix.1',
+    appVersion: '0.7.52',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
