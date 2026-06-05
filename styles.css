@@ -3639,3 +3639,35 @@ body.online-map-expanded .bottom-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Sprint 5.51 — streamed manual PMTiles import progress. */
+.local-pmtiles-import-progress {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(36, 75, 47, 0.14);
+  border-radius: 12px;
+  background: rgba(244, 248, 241, 0.72);
+}
+.local-pmtiles-import-progress-bar {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(36, 75, 47, 0.12);
+  border: 1px solid rgba(36, 75, 47, 0.14);
+}
+.local-pmtiles-import-progress-bar::before {
+  content: "";
+  display: block;
+  width: var(--local-pmtiles-import-progress, 0%);
+  height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: inherit;
+  background: #244b2f;
+  transition: width 120ms linear;
+}
+.local-pmtiles-import-progress-text {
+  margin: 0;
+}

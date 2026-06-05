@@ -227,6 +227,31 @@ function checkOfflineMapsUxContract() {
   assertIncludes(catalogSourceDetails, 'id="offlineManifestUrlInput"', 'catalog source details');
 }
 
+function checkManualPmtilesImportProgressContract() {
+  const appJs = read('app.js');
+  const indexHtml = read('index.html');
+  const stylesCss = read('styles.css');
+
+  assertIncludes(appJs, 'const LOCAL_PMTILES_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024;', 'manual PMTiles import chunk size');
+  assertIncludes(appJs, 'async function writePmtilesFileToOpfs(file, storageName, options = {})', 'streamed OPFS manual import');
+  assertIncludes(appJs, 'file.slice(receivedBytes, end).arrayBuffer()', 'manual PMTiles chunk reads');
+  assertIncludes(appJs, 'function cancelLocalPmtilesImport()', 'manual PMTiles import cancellation');
+  assertIncludes(appJs, 'await deletePmtilesFileFromOpfs(storageName);', 'partial OPFS import cleanup');
+  assertIncludes(appJs, 'status: \'verifying\'', 'manual PMTiles verification progress phase');
+  assert.ok(!appJs.includes('const bytes = await fileToArrayBuffer(file);'), 'manual PMTiles import must not buffer the whole file before OPFS write');
+
+  for (const id of [
+    'localPmtilesImportProgress',
+    'localPmtilesImportProgressBar',
+    'localPmtilesImportProgressText',
+    'cancelLocalPmtilesImportBtn'
+  ]) {
+    assertIncludes(indexHtml, `id="${id}"`, `manual PMTiles import UI ${id}`);
+  }
+  assertIncludes(stylesCss, '.local-pmtiles-import-progress-bar', 'manual PMTiles import progress styles');
+  assertIncludes(stylesCss, '--local-pmtiles-import-progress', 'manual PMTiles import progress width variable');
+}
+
 function checkRuntimeStateDeclarations() {
   const appJs = read('app.js');
   assertIncludes(appJs, 'let selectedMapObject = null;', 'selectedMapObject runtime state declaration');
@@ -373,6 +398,7 @@ checkVersionConsistency();
 checkVersionedAppShellAssets();
 checkDomIdContracts();
 checkOfflineMapsUxContract();
+checkManualPmtilesImportProgressContract();
 checkRuntimeStateDeclarations();
 checkOnlineMapControlsContract();
 checkGpsDesktopFallbackContract();

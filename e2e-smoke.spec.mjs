@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.50 · Sprint 5\.50/;
+const EXPECTED_APP_VERSION = /v0\.7\.51 · Sprint 5\.51/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -15,6 +15,21 @@ const EXTERNAL_RUNTIME_HOSTS = [
 async function bootApp(page, options = {}) {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  if (options.slowLocalFileReads) {
+    await page.addInitScript(() => {
+      const originalSlice = Blob.prototype.slice;
+      Blob.prototype.slice = function patchedSlice(...args) {
+        const part = originalSlice.apply(this, args);
+        const originalArrayBuffer = part.arrayBuffer.bind(part);
+        part.arrayBuffer = async () => {
+          await new Promise((resolve) => setTimeout(resolve, 180));
+          return originalArrayBuffer();
+        };
+        return part;
+      };
+    });
+  }
 
   if (options.fakePmtilesRuntime) {
     await page.addInitScript(() => {
@@ -817,6 +832,9 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
   await expect(page.locator('#appToast')).toContainText('Импорт карты начался');
   await expect(page.locator('#appToast')).toContainText('Карта импортирована');
   await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await expect(page.locator('#localPmtilesImportProgress')).toBeVisible();
+  await expect(page.locator('#localPmtilesImportProgressBar')).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.locator('#localPmtilesImportProgressText')).toContainText('импорт завершён');
   await page.locator('#offlineImportNameInput').fill('Карелия');
   await page.locator('#offlineImportNameSaveBtn').click();
   await expect(page.locator('#offlineImportNameDialog')).toBeHidden();
@@ -851,6 +869,27 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
   await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
   await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
   await expect(page.locator('#offlineMapListSection')).toBeHidden();
+});
+
+
+test('manual offline map import can be canceled without adding a partial map', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true, slowLocalFileReads: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  const bytes = Buffer.alloc(9 * 1024 * 1024, 120);
+  Buffer.from('PMTiles fake').copy(bytes, 0);
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'cancel-me.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: bytes
+  });
+
+  await expect(page.locator('#localPmtilesImportProgress')).toBeVisible();
+  await expect(page.locator('#cancelLocalPmtilesImportBtn')).toBeVisible();
+  await page.locator('#cancelLocalPmtilesImportBtn').click();
+  await expect(page.locator('#localPmtilesImportProgressText')).toContainText('импорт отменён');
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+  await expect(page.locator('#offlineImportNameDialog')).toBeHidden();
 });
 
 
@@ -1949,7 +1988,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.50');
+  expect(backup.appVersion).toBe('0.7.51');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2080,7 +2119,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.50',
+    appVersion: '0.7.51',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

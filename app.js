@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.50';
+const APP_VERSION = '0.7.51';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -264,6 +264,16 @@ let pendingOfflineMapDeleteRecordId = null;
 let appToastTimer = null;
 const OFFLINE_IMPORT_TOAST_STEP_MS = 1200;
 const OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS = 1600;
+const LOCAL_PMTILES_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024;
+let localPmtilesImportController = null;
+let localPmtilesImportProgressState = {
+  status: 'idle',
+  fileName: null,
+  receivedBytes: 0,
+  totalBytes: 0,
+  storageType: null,
+  error: null
+};
 let rememberedPmtilesMapsState = {
   status: 'not-loaded',
   maps: [],
@@ -389,6 +399,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   offlineRegionCancelInstallBtn: 'Отменить установку региона',
   offlineRegionCatalogDownload: 'Скачать карту региона вручную',
   chooseLocalPmtilesBtn: 'Выбрать файл карты',
+  cancelLocalPmtilesImportBtn: 'Отменить импорт карты',
   probePmtilesBtn: 'Проверить выбранный файл карты',
   previewPmtilesBtn: 'Предпросмотр офлайн-карты',
   replaceLocalPmtilesBtn: 'Заменить файл карты',
@@ -1664,28 +1675,143 @@ function sanitizeOfflineMapStorageName(value = 'map.pmtiles') {
   return safe || 'map.pmtiles';
 }
 
+function makeLocalPmtilesImportAbortError() {
+  const err = new Error('Импорт карты отменён.');
+  err.name = 'AbortError';
+  err.code = 'LOCAL_PMTILES_IMPORT_CANCELED';
+  return err;
+}
+
+function isLocalPmtilesImportAbort(err) {
+  return Boolean(err && (err.name === 'AbortError' || err.code === 'LOCAL_PMTILES_IMPORT_CANCELED'));
+}
+
+function throwIfLocalPmtilesImportAborted(signal) {
+  if (signal?.aborted) throw makeLocalPmtilesImportAbortError();
+}
+
+function localPmtilesImportPercent(state = localPmtilesImportProgressState) {
+  const total = Number(state.totalBytes || 0);
+  const received = Number(state.receivedBytes || 0);
+  if (total <= 0) return state.status === 'completed' ? 100 : 0;
+  return Math.max(0, Math.min(100, Math.floor((received / total) * 100)));
+}
+
+function renderLocalPmtilesImportProgressUi() {
+  const panel = $('localPmtilesImportProgress');
+  const bar = $('localPmtilesImportProgressBar');
+  const text = $('localPmtilesImportProgressText');
+  const cancelBtn = $('cancelLocalPmtilesImportBtn');
+  const chooseBtn = $('chooseLocalPmtilesBtn');
+  const replaceBtn = $('replaceLocalPmtilesBtn');
+  const state = localPmtilesImportProgressState;
+  const active = ['copying', 'switching-storage', 'verifying', 'canceling'].includes(state.status);
+  const percent = localPmtilesImportPercent(state);
+
+  if (panel) panel.hidden = state.status === 'idle';
+  if (bar) {
+    bar.style.setProperty('--local-pmtiles-import-progress', `${percent}%`);
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.setAttribute('aria-valuenow', String(percent));
+    bar.setAttribute('aria-valuetext', `${percent}%`);
+  }
+  if (cancelBtn) {
+    cancelBtn.hidden = !['copying', 'switching-storage'].includes(state.status);
+    cancelBtn.disabled = state.status === 'canceling';
+  }
+  if (chooseBtn) chooseBtn.disabled = active;
+  if (replaceBtn) replaceBtn.disabled = active;
+  if (!text) return;
+
+  const fileName = state.fileName || 'map.pmtiles';
+  const received = Number(state.receivedBytes || 0);
+  const total = Number(state.totalBytes || 0);
+  const storageLabel = state.storageType === 'opfs'
+    ? 'в хранилище приложения'
+    : (state.storageType === 'idb-blob' ? 'в резервное хранилище' : '');
+
+  if (state.status === 'copying') {
+    text.textContent = total > 0
+      ? `${fileName}: ${formatBytes(received)} из ${formatBytes(total)} · ${percent}% ${storageLabel}`.trim()
+      : `${fileName}: скопировано ${formatBytes(received)} ${storageLabel}`.trim();
+  } else if (state.status === 'switching-storage') {
+    text.textContent = `${fileName}: OPFS недоступен, продолжаю импорт через резервное хранилище…`;
+  } else if (state.status === 'verifying') {
+    text.textContent = `${fileName}: файл скопирован · проверяю сохранённую карту…`;
+  } else if (state.status === 'canceling') {
+    text.textContent = `${fileName}: отменяю импорт и удаляю незавершённую копию…`;
+  } else if (state.status === 'completed') {
+    text.textContent = `${fileName}: импорт завершён · ${formatBytes(total || received)} · 100%`;
+  } else if (state.status === 'canceled') {
+    text.textContent = `${fileName}: импорт отменён. Незавершённая копия удалена.`;
+  } else if (state.status === 'error') {
+    text.textContent = `${fileName}: ошибка — ${state.error || 'импорт не завершён'}`;
+  } else {
+    text.textContent = 'Импорт файла не запущен.';
+  }
+}
+
+function setLocalPmtilesImportProgressState(patch = {}) {
+  localPmtilesImportProgressState = {
+    ...localPmtilesImportProgressState,
+    ...patch
+  };
+  renderLocalPmtilesImportProgressUi();
+  return localPmtilesImportProgressState;
+}
+
+function cancelLocalPmtilesImport() {
+  if (!localPmtilesImportController || localPmtilesImportController.signal.aborted) return false;
+  setLocalPmtilesImportProgressState({ status: 'canceling' });
+  localPmtilesImportController.abort();
+  return true;
+}
+
 async function getOfflineMapsOpfsDirectory(create = true) {
   if (!hasOpfsStorage()) throw new Error('OPFS недоступен в этом браузере');
   const root = await navigator.storage.getDirectory();
   return root.getDirectoryHandle(OPFS_OFFLINE_MAPS_DIR, { create });
 }
 
-async function fileToArrayBuffer(file) {
-  if (!file || typeof file.arrayBuffer !== 'function') throw new Error('Файл офлайн-карты не читается браузером');
-  return file.arrayBuffer();
-}
-
-async function writePmtilesFileToOpfs(file, storageName) {
+async function writePmtilesFileToOpfs(file, storageName, options = {}) {
+  const signal = options.signal || null;
+  const onProgress = options.onProgress || null;
+  const totalBytes = Number(file?.size || 0);
   const dir = await getOfflineMapsOpfsDirectory(true);
   const handle = await dir.getFileHandle(storageName, { create: true });
   const writable = await handle.createWritable();
+  let receivedBytes = 0;
+  let closed = false;
+  let completed = false;
+
   try {
-    const bytes = await fileToArrayBuffer(file);
-    await writable.write(bytes);
-  } finally {
+    if (typeof onProgress === 'function') onProgress({ receivedBytes, totalBytes, storageType: 'opfs', storageName });
+    while (receivedBytes < totalBytes) {
+      throwIfLocalPmtilesImportAborted(signal);
+      const end = Math.min(receivedBytes + LOCAL_PMTILES_IMPORT_CHUNK_BYTES, totalBytes);
+      const bytes = await file.slice(receivedBytes, end).arrayBuffer();
+      throwIfLocalPmtilesImportAborted(signal);
+      await writable.write(bytes);
+      receivedBytes = end;
+      if (typeof onProgress === 'function') onProgress({ receivedBytes, totalBytes, storageType: 'opfs', storageName });
+    }
     await writable.close();
+    closed = true;
+    if (receivedBytes !== totalBytes) {
+      throw new Error(`Файл импортирован не полностью: ${formatBytes(receivedBytes)} из ${formatBytes(totalBytes)}.`);
+    }
+    completed = true;
+    return { storageType: 'opfs', storageName, sizeBytes: receivedBytes };
+  } finally {
+    if (!completed) {
+      try {
+        if (!closed && typeof writable.abort === 'function') await writable.abort();
+        else if (!closed) await writable.close();
+      } catch (_) { /* no-op */ }
+      await deletePmtilesFileFromOpfs(storageName);
+    }
   }
-  return { storageType: 'opfs', storageName };
 }
 
 async function readPmtilesFileFromOpfs(storageName) {
@@ -1706,17 +1832,35 @@ async function deletePmtilesFileFromOpfs(storageName) {
   }
 }
 
-async function putPmtilesFileBlobToIndexedDb(file, storageName) {
-  const bytes = await fileToArrayBuffer(file);
+async function putPmtilesFileBlobToIndexedDb(file, storageName, options = {}) {
+  const signal = options.signal || null;
+  const onProgress = options.onProgress || null;
+  const totalBytes = Number(file?.size || 0);
+  const parts = [];
+  let receivedBytes = 0;
+
+  if (typeof onProgress === 'function') onProgress({ receivedBytes, totalBytes, storageType: 'idb-blob', storageName });
+  while (receivedBytes < totalBytes) {
+    throwIfLocalPmtilesImportAborted(signal);
+    const end = Math.min(receivedBytes + LOCAL_PMTILES_IMPORT_CHUNK_BYTES, totalBytes);
+    const bytes = await file.slice(receivedBytes, end).arrayBuffer();
+    throwIfLocalPmtilesImportAborted(signal);
+    parts.push(bytes);
+    receivedBytes = end;
+    if (typeof onProgress === 'function') onProgress({ receivedBytes, totalBytes, storageType: 'idb-blob', storageName });
+  }
+
+  throwIfLocalPmtilesImportAborted(signal);
   await putStoreValue(OFFLINE_MAP_FILES_STORE, {
     id: storageName,
     fileName: file.name || 'local.pmtiles',
-    sizeBytes: file.size || bytes.byteLength || null,
+    sizeBytes: totalBytes || receivedBytes || null,
     contentType: file.type || 'application/octet-stream',
     updatedAt: new Date().toISOString(),
-    bytes
+    blob: new Blob(parts, { type: file.type || 'application/octet-stream' })
   });
-  return { storageType: 'idb-blob', storageName };
+  throwIfLocalPmtilesImportAborted(signal);
+  return { storageType: 'idb-blob', storageName, sizeBytes: receivedBytes };
 }
 
 async function readPmtilesFileBlobFromIndexedDb(storageName) {
@@ -1735,13 +1879,26 @@ async function deletePmtilesFileBlobFromIndexedDb(storageName) {
   });
 }
 
-async function persistPmtilesFile(file, preferredStorageName) {
+async function persistPmtilesFile(file, preferredStorageName, options = {}) {
   const storageName = preferredStorageName || `pmtiles-${Date.now()}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
+  throwIfLocalPmtilesImportAborted(options.signal);
+  if (hasOpfsStorage()) {
+    try {
+      return await writePmtilesFileToOpfs(file, storageName, options);
+    } catch (err) {
+      if (isLocalPmtilesImportAbort(err)) throw err;
+      recordMapDebug('OPFS PMTiles import unavailable, falling back to IndexedDB Blob', err?.message || String(err));
+      if (typeof options.onStorageFallback === 'function') options.onStorageFallback(err);
+    }
+  }
+  throwIfLocalPmtilesImportAborted(options.signal);
   try {
-    return await writePmtilesFileToOpfs(file, storageName);
+    return await putPmtilesFileBlobToIndexedDb(file, storageName, options);
   } catch (err) {
-    recordMapDebug('OPFS PMTiles import unavailable, falling back to IndexedDB Blob', err?.message || String(err));
-    return putPmtilesFileBlobToIndexedDb(file, storageName);
+    if (isLocalPmtilesImportAbort(err)) {
+      await deletePmtilesFileBlobFromIndexedDb(storageName).catch(() => false);
+    }
+    throw err;
   }
 }
 
@@ -2069,6 +2226,16 @@ function resetOfflineMapRuntimeAfterFileClear() {
   };
   localStorage.removeItem(REMEMBERED_PMTILES_MAPS_KEY);
   localStorage.removeItem(OFFLINE_MAP_SELECTED_PACKAGE_KEY);
+  if (localPmtilesImportController && !localPmtilesImportController.signal.aborted) localPmtilesImportController.abort();
+  localPmtilesImportController = null;
+  localPmtilesImportProgressState = {
+    status: 'idle',
+    fileName: null,
+    receivedBytes: 0,
+    totalBytes: 0,
+    storageType: null,
+    error: null
+  };
   localPmtilesFileState = {
     status: 'not-selected',
     file: null,
@@ -2721,9 +2888,22 @@ async function upsertRememberedPmtilesMapForFile(file, options = {}) {
   const existing = replaceTarget || (options.replaceSelected && selected ? selected : findRememberedPmtilesMapForFile(file));
   const fallbackTitle = String(file.name || 'local.pmtiles').replace(/\.pmtiles$/i, '') || 'Локальная карта';
   const recordId = existing?.id || `remembered-pmtiles-${Date.now()}`;
-  const storageName = existing?.storageName || `${recordId}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
-  const persisted = await persistPmtilesFile(file, storageName);
-  await verifyPersistedPmtilesFile(persisted);
+  const storageName = `${recordId}-${Date.now()}-${sanitizeOfflineMapStorageName(file.name || 'map.pmtiles')}`;
+  let persisted = null;
+
+  try {
+    persisted = await persistPmtilesFile(file, storageName, {
+      signal: options.signal || null,
+      onProgress: options.onProgress || null,
+      onStorageFallback: options.onStorageFallback || null
+    });
+    if (typeof options.onPhase === 'function') options.onPhase('verifying', persisted);
+    await verifyPersistedPmtilesFile(persisted);
+  } catch (err) {
+    if (persisted) await deletePersistedPmtilesFile(persisted).catch(() => false);
+    throw err;
+  }
+
   const sourceType = persisted.storageType === 'opfs' ? 'local-file-opfs' : 'local-file-idb';
   const mapRecord = {
     ...(existing || {}),
@@ -2747,6 +2927,13 @@ async function upsertRememberedPmtilesMapForFile(file, options = {}) {
   rememberedPmtilesMapsState.maps = [mapRecord, ...withoutRecord];
   rememberedPmtilesMapsState.selectedId = mapRecord.id;
   saveRememberedPmtilesMaps(existing ? 'persistent PMTiles map updated' : 'persistent PMTiles map imported');
+
+  if (existing?.storageName && existing.storageName !== persisted.storageName) {
+    await deletePersistedPmtilesFile(existing).catch((err) => {
+      recordMapDebug('previous PMTiles file cleanup failed after replacement', err?.message || String(err));
+      return false;
+    });
+  }
   return mapRecord;
 }
 
@@ -3812,18 +3999,78 @@ async function importLocalPmtilesFile(file, options = {}) {
     return null;
   }
 
+  localPmtilesImportController = new AbortController();
+  const signal = localPmtilesImportController.signal;
+  setLocalPmtilesImportProgressState({
+    status: 'copying',
+    fileName: file.name || 'map.pmtiles',
+    receivedBytes: 0,
+    totalBytes: Number(file.size || 0),
+    storageType: hasOpfsStorage() ? 'opfs' : 'idb-blob',
+    error: null
+  });
   showAppToast('Импорт карты начался', 'info');
   await waitForMs(OFFLINE_IMPORT_TOAST_STEP_MS);
+  throwIfLocalPmtilesImportAborted(signal);
   setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'пендинг', `${file.name} · импорт`);
-  const pkg = await makeLocalPmtilesPackage(file, { replaceSelected, replaceRecordId });
+
+  const pkg = await makeLocalPmtilesPackage(file, {
+    replaceSelected,
+    replaceRecordId,
+    signal,
+    onProgress: ({ receivedBytes, totalBytes, storageType }) => {
+      setLocalPmtilesImportProgressState({
+        status: 'copying',
+        fileName: file.name || 'map.pmtiles',
+        receivedBytes,
+        totalBytes,
+        storageType,
+        error: null
+      });
+    },
+    onStorageFallback: () => {
+      setLocalPmtilesImportProgressState({
+        status: 'switching-storage',
+        fileName: file.name || 'map.pmtiles',
+        receivedBytes: 0,
+        totalBytes: Number(file.size || 0),
+        storageType: 'idb-blob',
+        error: null
+      });
+    },
+    onPhase: (phase, persisted) => {
+      if (phase === 'verifying') {
+        setLocalPmtilesImportProgressState({
+          status: 'verifying',
+          fileName: file.name || 'map.pmtiles',
+          receivedBytes: Number(file.size || 0),
+          totalBytes: Number(file.size || 0),
+          storageType: persisted?.storageType || localPmtilesImportProgressState.storageType,
+          error: null
+        });
+      }
+    }
+  });
+  throwIfLocalPmtilesImportAborted(signal);
   offlineMapManifest.packages = [pkg, ...(offlineMapManifest.packages || []).filter((item) => !isLocalPmtilesPackage(item))];
   offlineMapManifest.selectedPackageId = pkg.id;
   if (offlineMapManifest.status === 'not-loaded') offlineMapManifest.status = 'local-persistent';
   selectOfflineMapPackage(pkg.id, true);
   const importedRecord = getSelectedRememberedPmtilesMap();
+  setLocalPmtilesImportProgressState({
+    status: 'completed',
+    fileName: file.name || 'map.pmtiles',
+    receivedBytes: Number(file.size || 0),
+    totalBytes: Number(file.size || 0),
+    storageType: importedRecord?.storageType || localPmtilesImportProgressState.storageType,
+    error: null
+  });
   setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', `${file.name} · ${formatBytes(file.size)} · импортировано`);
   showAppToast('Карта импортирована', 'success');
-  recordMapDebug('local offline map file imported', getLocalPmtilesFileSnapshot());
+  recordMapDebug('local offline map file imported', {
+    ...getLocalPmtilesFileSnapshot(),
+    importProgress: { ...localPmtilesImportProgressState }
+  });
   renderOfflineMapPackageUi();
   updateMapDebugUi(true);
   if ($('screen-offline') && !$('screen-offline').hidden) {
@@ -3845,8 +4092,23 @@ async function selectLocalPmtilesFile(file, options = {}) {
     if (!file) return null;
     return await importLocalPmtilesFile(file, options);
   } catch (err) {
+    if (isLocalPmtilesImportAbort(err)) {
+      setLocalPmtilesImportProgressState({
+        status: 'canceled',
+        error: null
+      });
+      setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'готово', 'импорт отменён');
+      showAppToast('Импорт карты отменён', 'info');
+      renderLocalPmtilesFileUi();
+      updateMapDebugUi(true);
+      return null;
+    }
     const message = offlineImportErrorMessage(err);
     localPmtilesFileState = { ...localPmtilesFileState, status: 'error', error: message };
+    setLocalPmtilesImportProgressState({
+      status: 'error',
+      error: message
+    });
     setButtonApiStatus({ buttonId: 'chooseLocalPmtilesBtn', label: BUTTON_DIAGNOSTIC_LABELS.chooseLocalPmtilesBtn }, 'ошибка', message);
     showOfflineImportError(message);
     renderLocalPmtilesFileUi();
@@ -3854,6 +4116,8 @@ async function selectLocalPmtilesFile(file, options = {}) {
     return null;
   } finally {
     pendingLocalPmtilesImportMode = 'add';
+    localPmtilesImportController = null;
+    renderLocalPmtilesImportProgressUi();
   }
 }
 
@@ -11282,6 +11546,14 @@ function bindUi() {
   if ($('offlineManifestUrlInput')) $('offlineManifestUrlInput').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); refreshOfflineRegionCatalogFromUi(); } };
   const openLocalPmtilesPicker = (mode = 'add') => {
     pendingLocalPmtilesImportMode = mode;
+    setLocalPmtilesImportProgressState({
+      status: 'idle',
+      fileName: null,
+      receivedBytes: 0,
+      totalBytes: 0,
+      storageType: null,
+      error: null
+    });
     setButtonApiStatus(activeButtonDiagnostics, 'пендинг', 'ожидание выбора файла');
     $('localPmtilesFileInput')?.click();
   };
@@ -11292,6 +11564,7 @@ function bindUi() {
     await selectLocalPmtilesFile(file);
     event.target.value = '';
   };
+  if ($('cancelLocalPmtilesImportBtn')) $('cancelLocalPmtilesImportBtn').onclick = withButtonDiagnostics('cancelLocalPmtilesImportBtn', cancelLocalPmtilesImport);
   if ($('offlinePackageSelect')) $('offlinePackageSelect').onchange = (event) => selectOfflineMapPackage(event.target.value, true);
   if ($('rememberedPmtilesMapSelect')) $('rememberedPmtilesMapSelect').onchange = (event) => selectRememberedPmtilesMap(event.target.value, true).catch(console.warn);
   if ($('renameRememberedPmtilesMapBtn')) $('renameRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('renameRememberedPmtilesMapBtn', handleSelectedRememberedPmtilesRenameAction);
@@ -11350,7 +11623,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.50`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.51`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
