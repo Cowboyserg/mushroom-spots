@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.49-hotfix.4';
+const APP_VERSION = '0.7.50';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -76,7 +76,64 @@ const OFFLINE_REGION_NAMES_RU = {
   'south-fed-district': 'Южный федеральный округ',
   'ural-fed-district': 'Уральский федеральный округ',
   'volga-fed-district': 'Приволжский федеральный округ',
-  'kaliningrad': 'Калининградская область'
+  'kaliningrad': 'Калининградская область',
+  'andalucia': 'Андалусия',
+  'aragon': 'Арагон',
+  'asturias': 'Астурия',
+  'cantabria': 'Кантабрия',
+  'castilla-la-mancha': 'Кастилия-Ла-Манча',
+  'castilla-y-leon': 'Кастилия и Леон',
+  'cataluna': 'Каталония',
+  'ceuta': 'Сеута',
+  'extremadura': 'Эстремадура',
+  'galicia': 'Галисия',
+  'islas-baleares': 'Балеарские острова',
+  'la-rioja': 'Ла-Риоха',
+  'madrid': 'Мадрид',
+  'melilla': 'Мелилья',
+  'murcia': 'Мурсия',
+  'navarra': 'Наварра',
+  'pais-vasco': 'Страна Басков',
+  'valencia': 'Валенсия',
+  'canary-islands': 'Канарские острова'
+};
+
+const OFFLINE_COUNTRY_NAMES_RU = {
+  russia: 'Россия',
+  spain: 'Испания',
+  other: 'Другие карты'
+};
+
+const OFFLINE_REGION_COUNTRY_BY_ID = {
+  'central-fed-district': 'russia',
+  'crimean-fed-district': 'russia',
+  'far-eastern-fed-district': 'russia',
+  'north-caucasus-fed-district': 'russia',
+  'northwestern-fed-district': 'russia',
+  'siberian-fed-district': 'russia',
+  'south-fed-district': 'russia',
+  'ural-fed-district': 'russia',
+  'volga-fed-district': 'russia',
+  'kaliningrad': 'russia',
+  'andalucia': 'spain',
+  'aragon': 'spain',
+  'asturias': 'spain',
+  'cantabria': 'spain',
+  'castilla-la-mancha': 'spain',
+  'castilla-y-leon': 'spain',
+  'cataluna': 'spain',
+  'ceuta': 'spain',
+  'extremadura': 'spain',
+  'galicia': 'spain',
+  'islas-baleares': 'spain',
+  'la-rioja': 'spain',
+  'madrid': 'spain',
+  'melilla': 'spain',
+  'murcia': 'spain',
+  'navarra': 'spain',
+  'pais-vasco': 'spain',
+  'valencia': 'spain',
+  'canary-islands': 'spain'
 };
 
 const MAP_PROVIDER_LABELS = {
@@ -174,6 +231,8 @@ let offlineMapManifest = {
   fromCache: false,
   autoLoadAttempted: false
 };
+let offlineOpenCountryFolderIds = new Set();
+let offlineCountryFoldersInitialized = false;
 let offlineRegionInstallState = {
   byPackageId: {},
   lastPackageId: null
@@ -2183,7 +2242,7 @@ function normalizeOfflineMapPackage(pkg = {}, index = 0) {
   const id = String(pkg.id || pkg.name || `package-${index + 1}`).trim();
   const url = String(pkg.url || '').trim();
   const enabled = pkg.enabled !== false && Boolean(url);
-  return {
+  const normalized = {
     id,
     name: String(pkg.name || id || fallback.name).trim(),
     fileName: String(pkg.fileName || pkg.filename || (url ? url.split('/').pop() : '') || '').trim(),
@@ -2200,9 +2259,74 @@ function normalizeOfflineMapPackage(pkg = {}, index = 0) {
     description: pkg.description || null,
     releaseTag: pkg.releaseTag || null,
     checksum: pkg.checksum || null,
+    countryId: String(pkg.countryId || pkg.country_id || '').trim().toLowerCase(),
+    countryName: String(pkg.countryName || pkg.country_name || '').trim(),
+    regionId: String(pkg.regionId || pkg.region_id || id).trim(),
+    geofabrikId: String(pkg.geofabrikId || pkg.geofabrik_id || '').trim(),
     fileRef: Boolean(pkg.fileRef),
     localSession: Boolean(pkg.localSession)
   };
+  return { ...normalized, ...inferOfflineMapPackageCountry(normalized) };
+}
+
+function inferOfflineMapPackageCountry(pkg = {}) {
+  let countryId = String(pkg.countryId || '').trim().toLowerCase();
+  const regionId = String(pkg.regionId || pkg.id || '').trim();
+  const geofabrikId = String(pkg.geofabrikId || '').trim().toLowerCase();
+  const name = String(pkg.name || '').trim();
+
+  if (!countryId && geofabrikId) {
+    if (geofabrikId === 'russia' || geofabrikId.startsWith('russia/')) countryId = 'russia';
+    if (geofabrikId === 'europe/spain' || geofabrikId.startsWith('europe/spain/') || geofabrikId === 'africa/canary-islands') countryId = 'spain';
+  }
+  if (!countryId) countryId = OFFLINE_REGION_COUNTRY_BY_ID[regionId] || OFFLINE_REGION_COUNTRY_BY_ID[pkg.id] || '';
+  if (!countryId && /^Россия\s*·/i.test(name)) countryId = 'russia';
+  if (!countryId && /^Испания\s*·/i.test(name)) countryId = 'spain';
+  if (!countryId) countryId = 'other';
+
+  return {
+    countryId,
+    countryName: String(pkg.countryName || OFFLINE_COUNTRY_NAMES_RU[countryId] || countryId).trim()
+  };
+}
+
+function getOfflineRegionCatalogTitle(pkg = {}) {
+  const name = String(pkg.name || pkg.id || '').trim();
+  const countryName = String(pkg.countryName || '').trim();
+  const prefix = countryName ? `${countryName} · ` : '';
+  return prefix && name.startsWith(prefix) ? name.slice(prefix.length).trim() : name;
+}
+
+function formatRussianCount(count, one, few, many) {
+  const value = Math.abs(Number(count) || 0);
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  const word = mod100 >= 11 && mod100 <= 14 ? many : mod10 === 1 ? one : mod10 >= 2 && mod10 <= 4 ? few : many;
+  return `${count} ${word}`;
+}
+
+function formatOfflineRegionCount(count) {
+  return formatRussianCount(count, 'регион', 'региона', 'регионов');
+}
+
+function formatOfflineCountryCount(count) {
+  return formatRussianCount(count, 'страна', 'страны', 'стран');
+}
+
+function groupOfflineRegionPackagesByCountry(packages = []) {
+  const groups = new Map();
+  for (const pkg of packages) {
+    const countryId = pkg.countryId || 'other';
+    if (!groups.has(countryId)) {
+      groups.set(countryId, {
+        id: countryId,
+        name: pkg.countryName || OFFLINE_COUNTRY_NAMES_RU[countryId] || countryId,
+        packages: []
+      });
+    }
+    groups.get(countryId).packages.push(pkg);
+  }
+  return [...groups.values()];
 }
 
 function ensureSamplePackage(packages = []) {
@@ -3257,12 +3381,122 @@ function getOfflineRegionInstallUiState(pkg, installed, activeInstalled = false)
   return { status: entry.status || 'not-installed', label: entry.status || 'не установлена', mode: 'warn', detail: entry.error || '' };
 }
 
+function createOfflineRegionCatalogCard(pkg) {
+  const installed = findRememberedPmtilesMapForPackage(pkg);
+  const installEntry = getOfflineRegionInstallEntry(pkg.id);
+  const activeInstalled = Boolean(installed
+    && rememberedPmtilesMapsState.selectedId === installed.id
+    && localPmtilesFileState.status === 'selected'
+    && localPmtilesFileState.rememberedId === installed.id);
+  const uiState = getOfflineRegionInstallUiState(pkg, installed, activeInstalled);
+  const card = document.createElement('article');
+  card.className = `offline-region-card${installed ? ' installed' : ''}${activeInstalled ? ' active' : ''}`;
+  card.setAttribute('role', 'listitem');
+  card.dataset.packageId = pkg.id;
+  card.dataset.installStatus = uiState.status;
+
+  const top = document.createElement('div');
+  top.className = 'offline-region-card-top';
+  const titleWrap = document.createElement('div');
+  const title = document.createElement('h4');
+  title.textContent = getOfflineRegionCatalogTitle(pkg);
+  const meta = document.createElement('p');
+  meta.className = 'hint';
+  meta.textContent = `${pkg.fileName || pkg.url.split('/').pop() || 'pmtiles'} · ${formatBytes(pkg.sizeBytes)}${pkg.version ? ` · ${pkg.version}` : ''}`;
+  titleWrap.append(title, meta);
+  const state = document.createElement('span');
+  state.className = `pill ${uiState.mode}`.trim();
+  state.textContent = uiState.label;
+  top.append(titleWrap, state);
+
+  const desc = document.createElement('p');
+  desc.className = 'hint';
+  desc.textContent = pkg.description || 'Региональная офлайн-карта из GitHub Release.';
+
+  const installDetail = document.createElement('p');
+  installDetail.className = 'hint offline-region-install-detail';
+  installDetail.textContent = uiState.detail;
+
+  const progressWrap = document.createElement('div');
+  progressWrap.className = 'offline-region-progress';
+  const progressReceived = Number(installEntry?.receivedBytes || installed?.sizeBytes || 0);
+  const progressTotal = Number(installEntry?.totalBytes || pkg.sizeBytes || installed?.sizeBytes || 0);
+  const shouldShowProgress = progressReceived > 0 || ['downloading', 'verifying'].includes(String(installEntry?.status || ''));
+  if (shouldShowProgress) {
+    const progress = document.createElement('div');
+    progress.className = 'offline-region-progress-bar';
+    progress.setAttribute('role', 'progressbar');
+    const percent = progressTotal > 0 ? Math.max(0, Math.min(100, Math.floor((progressReceived / progressTotal) * 100))) : 0;
+    progress.setAttribute('aria-valuemin', '0');
+    progress.setAttribute('aria-valuemax', '100');
+    progress.setAttribute('aria-valuenow', String(percent));
+    progress.style.setProperty('--offline-region-progress', `${percent}%`);
+    const progressText = document.createElement('span');
+    progressText.className = 'hint offline-region-progress-text';
+    progressText.textContent = formatOfflineRegionInstallProgress(installEntry || { receivedBytes: progressReceived, totalBytes: progressTotal }) || 'Подготовка загрузки…';
+    progressWrap.append(progress, progressText);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'row offline-region-actions';
+
+  if (installed) {
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = activeInstalled ? 'secondary btn-secondary small-btn offline-region-show-map-btn' : 'btn-primary small-btn offline-region-open-map-btn';
+    openBtn.textContent = activeInstalled ? 'Показать карту' : 'Открыть карту';
+    openBtn.addEventListener('click', () => {
+      openRememberedPmtilesMapFromCatalog(installed.id).catch(console.warn);
+    });
+    actions.appendChild(openBtn);
+  } else if (installEntry?.status === 'downloading') {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'secondary btn-secondary small-btn';
+    cancelBtn.textContent = 'Отменить';
+    cancelBtn.addEventListener('click', () => cancelOfflineRegionInstall(pkg.id));
+    actions.appendChild(cancelBtn);
+  } else {
+    const installBtn = document.createElement('button');
+    installBtn.type = 'button';
+    installBtn.className = 'btn-primary small-btn';
+    installBtn.textContent = installEntry?.status === 'failed' || installEntry?.status === 'blocked-manual-required' || installEntry?.status === 'canceled'
+      ? 'Повторить установку'
+      : 'Установить';
+    installBtn.addEventListener('click', () => {
+      openOfflineRegionInstallConfirmDialog(pkg.id).catch((err) => {
+        recordMapDebug('offline region confirm open failed', err?.message || String(err));
+      });
+    });
+    actions.appendChild(installBtn);
+  }
+
+  if (pkg.url) {
+    const download = document.createElement('a');
+    download.className = installed
+      ? 'offline-region-download-link offline-region-redownload-link'
+      : 'secondary btn-secondary small-btn offline-region-download-link';
+    download.href = pkg.url;
+    download.target = '_blank';
+    download.rel = 'noopener noreferrer';
+    download.textContent = installed ? 'Скачать заново' : 'Скачать вручную';
+    download.addEventListener('click', (event) => openOfflineRegionDownloadUrl(event, pkg));
+    actions.appendChild(download);
+  }
+
+  card.append(top, desc, installDetail);
+  if (progressWrap.childNodes.length) card.appendChild(progressWrap);
+  card.appendChild(actions);
+  return { card, installed, activeInstalled };
+}
+
 function renderOfflineRegionCatalogUi() {
   renderOfflineManifestUrlUi();
   const status = $('offlineRegionCatalogStatus');
   const pill = $('offlineRegionCatalogPill');
   const list = $('offlineRegionCatalogList');
   const remotePackages = getRemoteOfflineMapPackages();
+  const countryGroups = groupOfflineRegionPackagesByCountry(remotePackages);
   const lastInstall = getLastOfflineRegionInstallEntry();
   const lastInstallText = lastInstall
     ? ` Установка: ${lastInstall.status}${lastInstall.receivedBytes ? ` · ${formatOfflineRegionInstallProgress(lastInstall)}` : ''}${lastInstall.error ? ` · ${lastInstall.error}` : ''}.`
@@ -3270,14 +3504,16 @@ function renderOfflineRegionCatalogUi() {
 
   if (pill) {
     if (offlineMapManifest.status === 'loaded') {
-      pill.textContent = remotePackages.length ? `${remotePackages.length} регионов` : 'пусто';
+      pill.textContent = remotePackages.length
+        ? `${formatOfflineCountryCount(countryGroups.length)} · ${formatOfflineRegionCount(remotePackages.length)}`
+        : 'пусто';
       pill.className = `pill ${remotePackages.length ? 'on' : 'warn'}`.trim();
     } else if (offlineMapManifest.status === 'loading') {
       pill.textContent = 'загрузка';
       pill.className = 'pill warn';
     } else if (offlineMapManifest.status === 'stale-cache') {
       pill.textContent = remotePackages.length ? 'последний каталог' : 'нет сети';
-      pill.className = `pill ${remotePackages.length ? 'warn' : 'warn'}`.trim();
+      pill.className = 'pill warn';
     } else if (offlineMapManifest.status === 'offline-empty') {
       pill.textContent = 'нет сети';
       pill.className = 'pill warn';
@@ -3293,20 +3529,20 @@ function renderOfflineRegionCatalogUi() {
   if (status) {
     if (offlineMapManifest.status === 'loaded') {
       status.textContent = remotePackages.length
-        ? `Каталог регионов: загружено ${remotePackages.length}. Выбери регион и нажми “Установить”.${lastInstallText}`
-        : 'Каталог регионов: загружен, но региональных .pmtiles в manifest нет.';
+        ? `Каталог карт: загружено ${formatOfflineRegionCount(remotePackages.length)}. Папок стран: ${countryGroups.length}. Открой папку страны и выбери регион.${lastInstallText}`
+        : 'Каталог карт: загружен, но региональных .pmtiles в manifest нет.';
     } else if (offlineMapManifest.status === 'loading') {
-      status.textContent = 'Каталог регионов: загружается…';
+      status.textContent = 'Каталог карт: загружается…';
     } else if (offlineMapManifest.status === 'stale-cache') {
       status.textContent = remotePackages.length
-        ? `Каталог регионов: показан последний загруженный каталог (${remotePackages.length}). Обновить сейчас не удалось${offlineMapManifest.error ? ` — ${offlineMapManifest.error}` : ''}. Уже установленные карты доступны без интернета.`
-        : 'Каталог регионов: нет соединения. Уже установленные карты и ручной импорт остаются доступны.';
+        ? `Каталог карт: показан последний загруженный каталог (${formatOfflineRegionCount(remotePackages.length)}). Обновить сейчас не удалось${offlineMapManifest.error ? ` — ${offlineMapManifest.error}` : ''}. Уже установленные карты доступны без интернета.`
+        : 'Каталог карт: нет соединения. Уже установленные карты и ручной импорт остаются доступны.';
     } else if (offlineMapManifest.status === 'offline-empty') {
-      status.textContent = 'Каталог регионов недоступен: нет соединения или список регионов не загрузился. Уже установленные карты, ручной импорт и выбор прямоугольника остаются доступны.';
+      status.textContent = 'Каталог карт недоступен: нет соединения или список регионов не загрузился. Уже установленные карты, ручной импорт и выбор прямоугольника остаются доступны.';
     } else if (offlineMapManifest.status === 'error') {
-      status.textContent = `Каталог регионов: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Уже установленные карты не затронуты; можно повторить обновление или импортировать файл вручную.`;
+      status.textContent = `Каталог карт: ошибка — ${offlineMapManifest.error || 'неизвестно'}. Уже установленные карты не затронуты; можно повторить обновление или импортировать файл вручную.`;
     } else {
-      status.textContent = 'Каталог регионов: не загружен. Открой экран офлайн-карт — приложение попробует обновить каталог автоматически.';
+      status.textContent = 'Каталог карт: не загружен. Открой экран офлайн-карт — приложение попробует обновить каталог автоматически.';
     }
   }
 
@@ -3318,7 +3554,7 @@ function renderOfflineRegionCatalogUi() {
     if (offlineMapManifest.status === 'loaded') {
       empty.textContent = 'В manifest нет доступных региональных карт.';
     } else if (offlineMapManifest.status === 'offline-empty' || offlineMapManifest.status === 'error') {
-      empty.textContent = 'Каталог регионов сейчас недоступен. Повтори обновление, импортируй готовый файл карты или подготовь прямоугольник региона на компьютере.';
+      empty.textContent = 'Каталог карт сейчас недоступен. Повтори обновление, импортируй готовый файл карты или подготовь прямоугольник региона на компьютере.';
     } else if (offlineMapManifest.status === 'stale-cache') {
       empty.textContent = 'Сохранённый каталог пустой. Повтори обновление, когда будет интернет.';
     } else {
@@ -3328,114 +3564,61 @@ function renderOfflineRegionCatalogUi() {
     return;
   }
 
-  for (const pkg of remotePackages) {
-    const installed = findRememberedPmtilesMapForPackage(pkg);
-    const installEntry = getOfflineRegionInstallEntry(pkg.id);
-    const activeInstalled = Boolean(installed
-      && rememberedPmtilesMapsState.selectedId === installed.id
-      && localPmtilesFileState.status === 'selected'
-      && localPmtilesFileState.rememberedId === installed.id);
-    const uiState = getOfflineRegionInstallUiState(pkg, installed, activeInstalled);
-    const card = document.createElement('article');
-    card.className = `offline-region-card${installed ? ' installed' : ''}${activeInstalled ? ' active' : ''}`;
-    card.setAttribute('role', 'listitem');
-    card.dataset.packageId = pkg.id;
-    card.dataset.installStatus = uiState.status;
+  countryGroups.forEach((group, groupIndex) => {
+    const folder = document.createElement('details');
+    folder.className = 'offline-country-folder';
+    folder.dataset.countryId = group.id;
+    folder.setAttribute('role', 'listitem');
 
-    const top = document.createElement('div');
-    top.className = 'offline-region-card-top';
-    const titleWrap = document.createElement('div');
-    const title = document.createElement('h4');
-    title.textContent = pkg.name || pkg.id;
-    const meta = document.createElement('p');
+    const summary = document.createElement('summary');
+    summary.className = 'offline-country-summary';
+    const titleWrap = document.createElement('span');
+    titleWrap.className = 'offline-country-summary-copy';
+    const title = document.createElement('strong');
+    title.textContent = group.name;
+
+    const installedCount = group.packages.filter((pkg) => Boolean(findRememberedPmtilesMapForPackage(pkg))).length;
+    const activeInGroup = group.packages.some((pkg) => {
+      const installed = findRememberedPmtilesMapForPackage(pkg);
+      return Boolean(installed
+        && rememberedPmtilesMapsState.selectedId === installed.id
+        && localPmtilesFileState.status === 'selected'
+        && localPmtilesFileState.rememberedId === installed.id);
+    });
+    const statusText = installedCount === 0
+      ? `${formatOfflineRegionCount(group.packages.length)} · ничего не установлено`
+      : installedCount === group.packages.length
+        ? `${formatOfflineRegionCount(group.packages.length)} · установлены все`
+        : `${formatOfflineRegionCount(group.packages.length)} · установлено ${installedCount} из ${group.packages.length}`;
+    const meta = document.createElement('span');
     meta.className = 'hint';
-    meta.textContent = `${pkg.fileName || pkg.url.split('/').pop() || 'pmtiles'} · ${formatBytes(pkg.sizeBytes)}${pkg.version ? ` · ${pkg.version}` : ''}`;
+    meta.textContent = statusText;
     titleWrap.append(title, meta);
-    const state = document.createElement('span');
-    state.className = `pill ${uiState.mode}`.trim();
-    state.textContent = uiState.label;
-    top.append(titleWrap, state);
 
-    const desc = document.createElement('p');
-    desc.className = 'hint';
-    desc.textContent = pkg.description || 'Региональная офлайн-карта из GitHub Release.';
+    const countryPill = document.createElement('span');
+    countryPill.className = `pill ${installedCount ? 'on' : 'warn'}`;
+    countryPill.textContent = installedCount ? `${installedCount}/${group.packages.length}` : 'папка';
+    summary.append(titleWrap, countryPill);
 
-    const installDetail = document.createElement('p');
-    installDetail.className = 'hint offline-region-install-detail';
-    installDetail.textContent = uiState.detail;
+    const regionList = document.createElement('div');
+    regionList.className = 'offline-country-region-list';
+    regionList.setAttribute('role', 'list');
+    regionList.setAttribute('aria-label', `Регионы: ${group.name}`);
+    for (const pkg of group.packages) regionList.appendChild(createOfflineRegionCatalogCard(pkg).card);
 
-    const progressWrap = document.createElement('div');
-    progressWrap.className = 'offline-region-progress';
-    const progressReceived = Number(installEntry?.receivedBytes || installed?.sizeBytes || 0);
-    const progressTotal = Number(installEntry?.totalBytes || pkg.sizeBytes || installed?.sizeBytes || 0);
-    const shouldShowProgress = progressReceived > 0 || ['downloading', 'verifying'].includes(String(installEntry?.status || ''));
-    if (shouldShowProgress) {
-      const progress = document.createElement('div');
-      progress.className = 'offline-region-progress-bar';
-      progress.setAttribute('role', 'progressbar');
-      const percent = progressTotal > 0 ? Math.max(0, Math.min(100, Math.floor((progressReceived / progressTotal) * 100))) : 0;
-      progress.setAttribute('aria-valuemin', '0');
-      progress.setAttribute('aria-valuemax', '100');
-      progress.setAttribute('aria-valuenow', String(percent));
-      progress.style.setProperty('--offline-region-progress', `${percent}%`);
-      const progressText = document.createElement('span');
-      progressText.className = 'hint offline-region-progress-text';
-      progressText.textContent = formatOfflineRegionInstallProgress(installEntry || { receivedBytes: progressReceived, totalBytes: progressTotal }) || 'Подготовка загрузки…';
-      progressWrap.append(progress, progressText);
-    }
-
-    const actions = document.createElement('div');
-    actions.className = 'row offline-region-actions';
-
-    if (installed) {
-      const openBtn = document.createElement('button');
-      openBtn.type = 'button';
-      openBtn.className = activeInstalled ? 'secondary btn-secondary small-btn offline-region-show-map-btn' : 'btn-primary small-btn offline-region-open-map-btn';
-      openBtn.textContent = activeInstalled ? 'Показать карту' : 'Открыть карту';
-      openBtn.addEventListener('click', () => {
-        openRememberedPmtilesMapFromCatalog(installed.id).catch(console.warn);
-      });
-      actions.appendChild(openBtn);
-    } else if (installEntry?.status === 'downloading') {
-      const cancelBtn = document.createElement('button');
-      cancelBtn.type = 'button';
-      cancelBtn.className = 'secondary btn-secondary small-btn';
-      cancelBtn.textContent = 'Отменить';
-      cancelBtn.addEventListener('click', () => cancelOfflineRegionInstall(pkg.id));
-      actions.appendChild(cancelBtn);
-    } else {
-      const installBtn = document.createElement('button');
-      installBtn.type = 'button';
-      installBtn.className = 'btn-primary small-btn';
-      installBtn.textContent = installEntry?.status === 'failed' || installEntry?.status === 'blocked-manual-required' || installEntry?.status === 'canceled'
-        ? 'Повторить установку'
-        : 'Установить';
-      installBtn.addEventListener('click', () => {
-        openOfflineRegionInstallConfirmDialog(pkg.id).catch((err) => {
-          recordMapDebug('offline region confirm open failed', err?.message || String(err));
-        });
-      });
-      actions.appendChild(installBtn);
-    }
-
-    if (pkg.url) {
-      const download = document.createElement('a');
-      download.className = installed
-        ? 'offline-region-download-link offline-region-redownload-link'
-        : 'secondary btn-secondary small-btn offline-region-download-link';
-      download.href = pkg.url;
-      download.target = '_blank';
-      download.rel = 'noopener noreferrer';
-      download.textContent = installed ? 'Скачать заново' : 'Скачать вручную';
-      download.addEventListener('click', (event) => openOfflineRegionDownloadUrl(event, pkg));
-      actions.appendChild(download);
-    }
-
-    card.append(top, desc, installDetail);
-    if (progressWrap.childNodes.length) card.appendChild(progressWrap);
-    card.appendChild(actions);
-    list.appendChild(card);
-  }
+    folder.open = activeInGroup
+      || offlineOpenCountryFolderIds.has(group.id)
+      || (!offlineCountryFoldersInitialized && groupIndex === 0);
+    if (folder.open) offlineOpenCountryFolderIds.add(group.id);
+    folder.addEventListener('toggle', () => {
+      offlineCountryFoldersInitialized = true;
+      if (folder.open) offlineOpenCountryFolderIds.add(group.id);
+      else offlineOpenCountryFolderIds.delete(group.id);
+    });
+    folder.append(summary, regionList);
+    list.appendChild(folder);
+  });
+  offlineCountryFoldersInitialized = true;
 }
 
 function openOfflineRegionDownloadUrl(event, pkg) {
@@ -3444,7 +3627,7 @@ function openOfflineRegionDownloadUrl(event, pkg) {
   try {
     setButtonApiStatus(activeButtonDiagnostics || { buttonId: 'offlineRegionCatalogDownload', label: 'Скачать карту региона' }, 'готово', `открываю файл: ${pkg.fileName || pkg.name || 'регион'}`);
     const status = $('offlineRegionCatalogStatus');
-    if (status) status.textContent = `Каталог регионов: открываю файл “${pkg.name || pkg.fileName || 'регион'}”. Если новое окно не открылось, повтори нажатие или скопируй ссылку из GitHub Release.`;
+    if (status) status.textContent = `Каталог карт: открываю файл “${pkg.name || pkg.fileName || 'регион'}”. Если новое окно не открылось, повтори нажатие или скопируй ссылку из GitHub Release.`;
     if (!event) return;
     event.preventDefault();
     const opened = window.open(url, '_blank');
@@ -3477,7 +3660,7 @@ function saveOfflineManifestUrlFromInput() {
   } catch (err) {
     setButtonApiStatus(activeButtonDiagnostics, 'ошибка', err?.message || String(err));
     const status = $('offlineRegionCatalogStatus');
-    if (status) status.textContent = `Каталог регионов: ошибка URL — ${err?.message || String(err)}`;
+    if (status) status.textContent = `Каталог карт: ошибка URL — ${err?.message || String(err)}`;
     return null;
   }
 }
@@ -3489,7 +3672,7 @@ async function refreshOfflineRegionCatalogFromUi() {
   } catch (err) {
     setButtonApiStatus(activeButtonDiagnostics, 'ошибка', err?.message || String(err));
     const status = $('offlineRegionCatalogStatus');
-    if (status) status.textContent = `Каталог регионов: ошибка URL — ${err?.message || String(err)}`;
+    if (status) status.textContent = `Каталог карт: ошибка URL — ${err?.message || String(err)}`;
     return null;
   }
   return loadOfflineMapManifest(true);
@@ -11167,7 +11350,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.49.4`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.50`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

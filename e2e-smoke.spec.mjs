@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.49-hotfix\.4 · Sprint 5\.49\.4/;
+const EXPECTED_APP_VERSION = /v0\.7\.50 · Sprint 5\.50/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -192,7 +192,24 @@ async function bootApp(page, options = {}) {
               role: 'regional-map',
               schema: 'openmaptiles-planetiler',
               description: 'Офлайн-карта: Калининградская область.'
-            }
+            },
+            ...(options.fakeOfflineManifestCountries ? [{
+              id: 'madrid',
+              name: 'Испания · Мадрид',
+              fileName: 'madrid.pmtiles',
+              url: 'https://github.com/test-owner/mushroom-spots/releases/download/maps-2026-06-02/madrid.pmtiles',
+              sourceType: 'github-release-asset',
+              version: 'maps-2026-06-02',
+              sizeBytes: options.fakeOfflineManifestSmallSizes ? Buffer.byteLength(`PMTiles fake ${'x'.repeat(256)}`) : 81234567,
+              enabled: true,
+              role: 'regional-map',
+              schema: 'openmaptiles-planetiler',
+              countryId: 'spain',
+              countryName: 'Испания',
+              regionId: 'madrid',
+              geofabrikId: 'europe/spain/madrid',
+              description: 'Офлайн-карта: Испания · Мадрид.'
+            }] : [])
           ]
         })
       });
@@ -563,8 +580,8 @@ test('offline catalog auto-refreshes on first offline screen open', async ({ pag
   await bootApp(page, { fakeOfflineManifest: true });
 
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
-  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 регионов');
-  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText('загружено 2');
+  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 региона');
+  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText('загружено 2 региона');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('Центральный федеральный округ');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('Калининградская область');
 });
@@ -575,7 +592,7 @@ test('offline catalog failure keeps offline map user flows available', async ({ 
 
   await page.context().setOffline(true);
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
-  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText(/Каталог регионов недоступен|нет соединения|не загрузился/);
+  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText(/Каталог карт недоступен|нет соединения|не загрузился/);
   await expect(page.locator('#chooseLocalPmtilesBtn')).toBeVisible();
   await expect(page.locator('#startBboxExportBtn')).toBeVisible();
   await expect(page.locator('#offlineSystemDetails > summary').getByText('Системная информация', { exact: true })).toBeVisible();
@@ -632,12 +649,12 @@ test('offline region catalog loads release manifest without installing maps', as
   await bootApp(page, { fakeOfflineManifest: true });
 
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Каталог регионов' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Каталог карт по странам' })).toBeVisible();
   await expect(page.locator('#offlineManifestUrlInput')).toHaveValue(/offline-map-packages\.json/);
   await page.locator('#refreshOfflineRegionCatalogBtn').click();
 
-  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 регионов');
-  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText('загружено 2');
+  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 региона');
+  await expect(page.locator('#offlineRegionCatalogStatus')).toContainText('загружено 2 региона');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('Центральный федеральный округ');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('Калининградская область');
   await expect(page.locator('#offlineRegionCatalogList')).toContainText('1.1 GB');
@@ -646,6 +663,35 @@ test('offline region catalog loads release manifest without installing maps', as
   await expect(page.locator('#offlineRegionCatalogList').getByRole('link', { name: 'Скачать вручную' }).first()).toHaveAttribute('href', /central-fed-district\.pmtiles$/);
   await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
+});
+
+
+test('offline catalog groups legacy Russia and manifest Spain packages into country folders', async ({ page }) => {
+  await bootApp(page, { fakeOfflineManifest: true, fakeOfflineManifestCountries: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#refreshOfflineRegionCatalogBtn').click();
+
+  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('2 страны');
+  await expect(page.locator('#offlineRegionCatalogPill')).toContainText('3 региона');
+
+  const russia = page.locator('.offline-country-folder[data-country-id="russia"]');
+  const spain = page.locator('.offline-country-folder[data-country-id="spain"]');
+  await expect(russia).toHaveCount(1);
+  await expect(spain).toHaveCount(1);
+  await expect(russia.locator('summary')).toContainText('Россия');
+  await expect(russia.locator('summary')).toContainText('2 региона');
+  await expect(russia).toHaveAttribute('open', '');
+  await expect(spain.locator('summary')).toContainText('Испания');
+  await expect(spain.locator('summary')).toContainText('1 регион');
+  await expect(spain).not.toHaveAttribute('open', '');
+
+  await spain.locator('summary').click();
+  await expect(spain).toHaveAttribute('open', '');
+  await expect(spain.locator('.offline-region-card h4')).toHaveText('Мадрид');
+  await expect(spain.locator('.offline-region-card')).toContainText('madrid.pmtiles');
+  await page.locator('#refreshOfflineRegionCatalogBtn').click();
+  await expect(spain).toHaveAttribute('open', '');
 });
 
 
@@ -1903,7 +1949,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.49-hotfix.4');
+  expect(backup.appVersion).toBe('0.7.50');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2034,7 +2080,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.49-hotfix.4',
+    appVersion: '0.7.50',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

@@ -3572,3 +3572,70 @@ body.online-map-expanded .bottom-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* Sprint 5.50 — Offline map country folders. */
+.offline-region-catalog-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.offline-country-folder {
+  overflow: hidden;
+  border: 1px solid rgba(36, 75, 47, 0.18);
+  border-radius: 16px;
+  background: rgba(248, 249, 242, 0.86);
+}
+.offline-country-folder[open] {
+  border-color: rgba(36, 75, 47, 0.3);
+  background: rgba(244, 248, 239, 0.94);
+}
+.offline-country-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 48px;
+  padding: 0.75rem;
+  cursor: pointer;
+  list-style-position: inside;
+  touch-action: manipulation;
+}
+.offline-country-summary::-webkit-details-marker {
+  display: none;
+}
+.offline-country-summary::before {
+  content: '▸';
+  flex: 0 0 auto;
+  color: var(--green);
+  font-size: 1rem;
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+.offline-country-folder[open] > .offline-country-summary::before {
+  transform: rotate(90deg);
+}
+.offline-country-summary-copy {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.offline-country-summary-copy strong {
+  font-size: 1rem;
+}
+.offline-country-summary-copy .hint {
+  margin: 0;
+}
+.offline-country-region-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0 0.65rem 0.65rem;
+}
+@media (min-width: 760px) {
+  .offline-region-catalog-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .offline-country-region-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

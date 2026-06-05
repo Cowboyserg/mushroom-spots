@@ -210,6 +210,9 @@ function checkOfflineMapsUxContract() {
   const systemHtml = indexHtml.slice(systemStart);
   assertIncludes(systemHtml, 'id="probePmtilesBtn"', 'System information PMTiles diagnostics');
   assertIncludes(systemHtml, 'id="offlinePackageSelect"', 'System information technical package select');
+  assertIncludes(read('app.js'), 'groupOfflineRegionPackagesByCountry', 'offline catalog country grouping');
+  assertIncludes(read('app.js'), 'countryId', 'offline package country metadata');
+  assertIncludes(read('styles.css'), '.offline-country-folder', 'offline catalog country folder styles');
   assert.ok(
     !systemHtml.includes('id="startBboxExportBtn"'),
     'System information must not hide the user-facing rectangle preparation action'
