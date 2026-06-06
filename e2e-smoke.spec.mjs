@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.53-hotfix\.1 · Sprint 5\.53\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.54 · Sprint 5\.54/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -87,7 +87,7 @@ async function bootApp(page, options = {}) {
             this.container.dataset.fakeMaplibreStyleLayerIds = window.__lastMapLibreStyleLayerIds.join(',');
             this.container.dataset.fakeMaplibreStyleSourceLayers = window.__lastMapLibreStyleSourceLayers.join(',');
             this.container.addEventListener('click', () => {
-              this.emit('click', { lngLat: { lng: 24.1065, lat: 56.9505 } });
+              this.emit('click', { point: { x: 80, y: 80 }, lngLat: { lng: 24.1065, lat: 56.9505 } });
             });
           }
           setTimeout(() => this.emit('load', {}), 0);
@@ -124,6 +124,7 @@ async function bootApp(page, options = {}) {
           this.sources.set(id, stored);
         }
         getSource(id) { return this.sources.get(id) || null; }
+        queryRenderedFeatures() { return window.__fakeMapLibreHitFeature ? [window.__fakeMapLibreHitFeature] : []; }
         addLayer(layer) { this.layers.add(layer.id); }
         getLayer(id) { return this.layers.has(id) ? { id } : null; }
       }
@@ -1156,6 +1157,55 @@ test('offline map preview supports Ko me, picked point save and shared overlays'
   expect(state.spots.some((spot) => spot.name === 'Точка 4')).toBe(true);
 });
 
+test('offline workspace mirrors shared spots and saves picked points back to both maps', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 56.9505, longitude: 24.1065, accuracy: 9 });
+  await bootApp(page, { fakePmtilesRuntime: true });
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'shared-spots.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-spot-count', '3');
+  await expect(page.locator('#map')).toHaveAttribute('data-spot-count', '3');
+
+  const workspaceBox = await page.locator('#pmtilesPreviewMap').boundingBox();
+  expect(workspaceBox, 'offline workspace must have visible bounds').not.toBeNull();
+  expect(workspaceBox.height).toBeGreaterThan(330);
+  await expect(page.locator('#offlineMapExpandBtn')).toBeVisible();
+  await expect(page.locator('#offlineStartGpsBtn')).toBeVisible();
+  await expect(page.locator('#centerPmtilesOnMeBtn')).toBeVisible();
+
+  await page.evaluate(() => {
+    window.__fakeMapLibreHitFeature = { properties: { kind: 'spot', id: 'e2e-white-spot' } };
+  });
+  await page.locator('#pmtilesPreviewMap').click({ position: { x: 90, y: 90 } });
+  await expect(page.locator('#offlineMapObjectCard')).toBeVisible();
+  await expect(page.locator('#offlineMapObjectTitle')).toContainText('Сохранённая точка');
+  await expect(page.locator('#offlineMapObjectDetails')).toContainText('Белые у ручья');
+
+  await page.evaluate(() => { window.__fakeMapLibreHitFeature = null; });
+  await page.locator('#pmtilesPreviewMap').click({ position: { x: 120, y: 120 } });
+  await expect(page.locator('#offlineMapObjectTitle')).toContainText('выбранной точки');
+  await page.locator('#offlineMapObjectPrimaryBtn').click();
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
+  await page.locator('#spotName').fill('Офлайн общая точка');
+  await page.locator('#savePlaceDialogSaveBtn').click();
+  await expect(page.locator('#savePlaceDialog')).toBeHidden();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-spot-count', '4');
+  await expect(page.locator('#map')).toHaveAttribute('data-spot-count', '4');
+
+  const state = await readLocalBackupState(page);
+  expect(state.spots.some((spot) => spot.name === 'Офлайн общая точка' && spot.source === 'offline-map-picked')).toBe(true);
+});
+
 test('offline map region rectangle creates a pmtiles bbox command', async ({ page }) => {
   await bootApp(page);
 
@@ -2094,7 +2144,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.53-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.54');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2225,7 +2275,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.53-hotfix.1',
+    appVersion: '0.7.54',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

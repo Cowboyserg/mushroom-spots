@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.53-hotfix.1" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.53-hotfix.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.54" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.7.54" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.7.53-hotfix.1" />
+  <link rel="stylesheet" href="styles.css?v=0.7.54" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.7.53-hotfix.1 · Sprint 5.53.1</p>
+      <p id="appVersion">v0.7.54 · Sprint 5.54</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -496,18 +496,55 @@
         </div>
 
         <div id="pmtilesPreviewPanel" class="pmtiles-preview-panel offline-active-preview" hidden>
-          <div class="pmtiles-preview-frame">
-            <div id="pmtilesPreviewMap" class="pmtiles-preview-map" aria-label="Предпросмотр офлайн-карты"></div>
-            <button id="centerPmtilesOnMeBtn" class="secondary btn-secondary small-btn offline-preview-center-btn">Ко мне</button>
-          </div>
+          <section id="offlineMapWorkspace" class="offline-map-workspace" aria-label="Рабочая офлайн-карта">
+            <div class="pmtiles-preview-frame offline-map-wrap">
+              <div id="pmtilesPreviewMap" class="pmtiles-preview-map" aria-label="Рабочая офлайн-карта"></div>
+              <button id="offlineMapExpandBtn" class="map-expand-btn map-control-btn btn-secondary" type="button" aria-label="Развернуть офлайн-карту" aria-pressed="false" title="Развернуть офлайн-карту">⛶</button>
+              <div class="map-fab-stack offline-map-fab-stack" aria-label="Быстрые действия офлайн-карты">
+                <button id="offlineStartGpsBtn" class="map-fab map-control-btn primary-fab btn-primary" type="button" aria-label="GPS" title="GPS">GPS</button>
+                <button id="centerPmtilesOnMeBtn" class="map-fab map-control-btn secondary btn-secondary" type="button" aria-label="Ко мне" title="Ко мне">◎</button>
+              </div>
+              <section class="card map-object-card map-object-sheet offline-map-object-sheet" id="offlineMapObjectCard" hidden aria-label="Контекст выбранного объекта на офлайн-карте">
+                <div class="section-title compact-title map-object-heading">
+                  <div class="map-object-title-copy">
+                    <h2 id="offlineMapObjectTitle">Объект на офлайн-карте</h2>
+                    <p class="hint" id="offlineMapObjectSubtitle">Выбери точку или маркер.</p>
+                  </div>
+                  <button id="offlineMapObjectCloseBtn" class="secondary btn-secondary map-object-close-btn" type="button" aria-label="Закрыть карточку выбранного объекта">×</button>
+                </div>
+                <div class="map-object-top-actions">
+                  <span id="offlineMapObjectPill" class="pill">объект</span>
+                  <button id="offlineMapObjectCollapseBtn" class="secondary btn-secondary small-btn map-object-collapse-btn" type="button" aria-expanded="true">Свернуть</button>
+                </div>
+                <div id="offlineMapObjectDetails" class="map-object-details"></div>
+                <div class="row map-object-actions">
+                  <button id="offlineMapObjectPrimaryBtn" class="btn-primary">Открыть</button>
+                  <button id="offlineMapObjectSecondaryBtn" class="secondary btn-secondary">Поделиться в группе</button>
+                  <button id="offlineMapObjectNavigateBtn" class="secondary btn-secondary">Показать направление</button>
+                  <button id="offlineMapObjectClearBtn" class="secondary btn-secondary">Сбросить</button>
+                </div>
+              </section>
+            </div>
+            <div class="map-live-strip offline-map-live-strip" aria-label="Статус GPS на офлайн-карте">
+              <div><span class="label">GPS</span><strong id="offlineGpsStatus">не запущен</strong></div>
+              <div><span class="label">Точность</span><strong id="offlineGpsAccuracy">—</strong></div>
+              <div><span class="label">Координаты</span><strong id="offlineGpsCoords">—</strong></div>
+            </div>
+            <div class="row offline-map-track-actions">
+              <button id="offlineStartTrackBtn" class="secondary btn-secondary small-btn" type="button">Начать маршрут</button>
+              <button id="offlineStopTrackBtn" class="secondary btn-secondary small-btn" type="button" disabled>Остановить</button>
+              <span id="offlineTrackStatus" class="hint">Маршрут не записывается.</span>
+            </div>
+          </section>
           <div class="offline-preview-point-actions row">
             <button id="savePmtilesPickedPointBtn" class="btn-primary small-btn" disabled>Сохранить выбранную точку</button>
             <button id="clearPmtilesPickedPointBtn" class="secondary btn-secondary small-btn" disabled>Сбросить выбор</button>
           </div>
           <p id="offlinePickedPointStatus" class="hint">Выбранная точка: нажми на офлайн-карту, чтобы отметить место.</p>
           <p id="offlineCoverageStatus" class="hint">Покрытие: файл карты ещё не открыт.</p>
+          <p id="offlineConnectivityStatus" class="hint">Точки хранятся локально и одинаковы на онлайн- и офлайн-картах.</p>
           <p id="pmtilesPreviewFocusStatus" class="hint">Фокус офлайн-карты: не выполнялся.</p>
-          <p id="pmtilesPreviewStatus" class="hint">Предпросмотр офлайн-карты: не запускался.</p>
+          <p id="pmtilesPreviewStatus" class="hint">Офлайн-карта: не запускалась.</p>
         </div>
 
         <div id="offlineActiveMapDetails" class="offline-current-card" aria-live="polite" hidden>
@@ -670,7 +707,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.7.53-hotfix.1 · Sprint 5.53.1</span>
+          <span class="pill">v0.7.54 · Sprint 5.54</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -686,9 +723,9 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.7.53-hotfix.1</strong></div>
-          <div><span class="label">Спринт</span><strong>Sprint 5.53.1 — Collapsed Folder E2E Hotfix</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.53-hotfix.1</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.7.54</strong></div>
+          <div><span class="label">Спринт</span><strong>Sprint 5.54 — Offline Map Workspace Parity</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.7.54</strong></div>
         </div>
       </section>
 
@@ -1098,10 +1135,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.7.53-hotfix.1"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.7.54"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.7.53-hotfix.1"></script>
-  <script src="app.js?v=0.7.53-hotfix.1"></script>
+  <script src="config.js?v=0.7.54"></script>
+  <script src="app.js?v=0.7.54"></script>
 </body>
 </html>

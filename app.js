@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.53-hotfix.1';
+const APP_VERSION = '0.7.54';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -150,6 +150,12 @@ let currentPosition = null;
 let activeAppScreen = 'map';
 let showMapAdvancedControls = false;
 let onlineMapExpanded = false;
+let offlineMapExpanded = false;
+let offlineMapObjectSheetCollapsed = false;
+let offlineMapLongPressTimer = null;
+let offlineMapLongPressStart = null;
+let offlineMapLongPressHandledAt = 0;
+let offlineNavigationTarget = null;
 let watchId = null;
 let gpsRequestInFlight = null;
 let gpsCenterRequested = false;
@@ -1109,7 +1115,10 @@ function updateActionButtonsUi() {
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
+  setDisabled('offlineStartGpsBtn', !navigator.geolocation);
   setDisabled('centerPmtilesOnMeBtn', !hasPosition && !navigator.geolocation);
+  setDisabled('offlineStartTrackBtn', trackRecording.active || !canRequestGps);
+  setDisabled('offlineStopTrackBtn', !trackRecording.active);
   setDisabled('showSelectedSpotOnMapBtn', !hasSelected);
   const spotListEditing = Boolean(hasSelected && spotListEditorOpen);
   setDisabled('spotListShowOnMapBtn', !hasSelected || spotListEditing);
@@ -1130,6 +1139,8 @@ function updateActionButtonsUi() {
   setDisabled('clearBboxExportBtn', !bboxExportState.command && bboxExportState.mode === 'idle' && !bboxExportState.firstCorner);
   updateSaveSpotFlowUi();
   renderMapObjectPanel();
+  renderOfflineMapObjectPanel();
+  updateOfflineWorkspaceStatus();
 
   if ($('joinGroupBtn')) $('joinGroupBtn').textContent = groupJoined ? 'В группе' : 'Войти в группу';
   setHidden('copyInviteBtn', !groupJoined);
@@ -4837,10 +4848,16 @@ async function showPmtilesPreviewMap() {
           fadeDuration: 0
         });
         if (window.maplibregl.NavigationControl) {
-          pmtilesPreviewMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+          pmtilesPreviewMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-left');
         }
         if (typeof pmtilesPreviewMap.on === 'function') {
           pmtilesPreviewMap.on('click', handlePmtilesPreviewMapClick);
+          pmtilesPreviewMap.on('contextmenu', handlePmtilesPreviewContextMenu);
+          pmtilesPreviewMap.on('mousedown', beginPmtilesPreviewLongPress);
+          pmtilesPreviewMap.on('touchstart', beginPmtilesPreviewLongPress);
+          ['mousemove', 'touchmove', 'dragstart', 'zoomstart', 'mouseup', 'touchend', 'touchcancel'].forEach((eventName) => {
+            pmtilesPreviewMap.on(eventName, cancelPmtilesPreviewLongPress);
+          });
         }
       } catch (err) {
         window.clearTimeout(timeout);
@@ -5129,6 +5146,14 @@ function buildPmtilesPreviewUserLayerData() {
     }
   }
 
+  if (currentPosition && offlineNavigationTarget) {
+    const navigationFeature = previewLineFeature('navigation', [currentPosition, offlineNavigationTarget], {
+      label: offlineNavigationTarget.label || 'Направление',
+      targetKind: offlineNavigationTarget.kind || ''
+    });
+    if (navigationFeature) lineFeatures.push(navigationFeature);
+  }
+
   return {
     points: { type: 'FeatureCollection', features: pointFeatures },
     accuracy: { type: 'FeatureCollection', features: accuracyFeatures },
@@ -5165,8 +5190,8 @@ function ensurePmtilesPreviewUserLayerSources() {
     type: 'line',
     source: 'pmtiles-preview-user-lines',
     paint: {
-      'line-color': ['match', ['get', 'kind'], 'active-track', '#2563eb', '#2f7d32'],
-      'line-width': ['match', ['get', 'kind'], 'active-track', 4, 3],
+      'line-color': ['match', ['get', 'kind'], 'active-track', '#2563eb', 'navigation', '#f97316', '#2f7d32'],
+      'line-width': ['match', ['get', 'kind'], 'active-track', 4, 'navigation', 4, 3],
       'line-opacity': 0.88
     }
   });
@@ -5240,6 +5265,7 @@ function renderPmtilesPreviewUserLayers(reason = 'PMTiles preview user layers up
     const preview = $('pmtilesPreviewMap');
     if (preview) {
       preview.dataset.userPointCount = String(data.points.features.length);
+      preview.dataset.spotCount = String(data.counts.spots || 0);
       preview.dataset.trackLineCount = String(data.lines.features.length);
     }
     updateOfflinePickedPointUi();
@@ -5305,7 +5331,87 @@ function focusPmtilesPreviewOnLatLon(lat, lon, zoom = 16, target = 'точка')
   return true;
 }
 
+function getPmtilesPreviewUserFeatureAtEvent(event) {
+  if (!pmtilesPreviewMap || typeof pmtilesPreviewMap.queryRenderedFeatures !== 'function' || !event?.point) return null;
+  try {
+    const features = pmtilesPreviewMap.queryRenderedFeatures(event.point, { layers: ['pmtiles-preview-user-points'] }) || [];
+    return features.find((feature) => feature?.properties?.kind) || null;
+  } catch (err) {
+    recordMapDebug('PMTiles point hit-test failed', err?.message || String(err));
+    return null;
+  }
+}
+
+function focusOfflineMapPoint(point, label = 'точка') {
+  if (!point || !isPmtilesPreviewLoaded()) return false;
+  return focusPmtilesPreviewOnLatLon(point.lat, point.lon ?? point.lng, 16, label);
+}
+
+function selectPmtilesPreviewUserFeature(feature) {
+  const properties = feature?.properties || {};
+  const kind = String(properties.kind || '');
+  if (kind === 'spot' || kind === 'selected-spot') {
+    const id = String(properties.id || '');
+    if (!id || !spots.some((spot) => spot.id === id)) return false;
+    selectSpot(id, false);
+    renderOfflineMapObjectPanel();
+    return true;
+  }
+  if (kind === 'chat' && chatPreviewPoint) {
+    setSelectedMapObject('chat', {});
+    return true;
+  }
+  if (kind === 'live') {
+    const userId = String(properties.userId || '');
+    const row = (pmtilesPreviewLiveRows || []).find((item) => String(item.userId || item.location?.user_id || '') === userId);
+    if (!row) return false;
+    const loc = row.location || row;
+    setSelectedMapObject('friend', {
+      userId,
+      name: row.name || loc.user_name || 'Друг',
+      loc: { lat: loc.lat, lon: loc.lon, accuracy: loc.accuracy, updated_at: loc.updated_at || row.updatedAt || '' }
+    });
+    return true;
+  }
+  if (kind === 'picked' && pickedMapPoint) {
+    setSelectedMapObject('picked', { source: pickedMapPoint.source || 'offline-map-picked' });
+    return true;
+  }
+  return false;
+}
+
+function cancelPmtilesPreviewLongPress() {
+  if (offlineMapLongPressTimer) window.clearTimeout(offlineMapLongPressTimer);
+  offlineMapLongPressTimer = null;
+  offlineMapLongPressStart = null;
+}
+
+function beginPmtilesPreviewLongPress(event) {
+  const lngLat = event?.lngLat;
+  if (!lngLat) return;
+  cancelPmtilesPreviewLongPress();
+  offlineMapLongPressStart = { lng: Number(lngLat.lng), lat: Number(lngLat.lat) };
+  offlineMapLongPressTimer = window.setTimeout(() => {
+    const point = offlineMapLongPressStart;
+    cancelPmtilesPreviewLongPress();
+    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+    offlineMapLongPressHandledAt = Date.now();
+    setPickedMapPoint({ lat: point.lat, lng: point.lng }, 'offline-map-long-press');
+  }, 850);
+}
+
+function handlePmtilesPreviewContextMenu(event) {
+  try { event?.originalEvent?.preventDefault?.(); } catch {}
+  const lngLat = event?.lngLat;
+  if (!lngLat) return false;
+  setPickedMapPoint({ lat: Number(lngLat.lat), lng: Number(lngLat.lng) }, 'offline-map-contextmenu');
+  return true;
+}
+
 function handlePmtilesPreviewMapClick(event) {
+  if (Date.now() - offlineMapLongPressHandledAt < 700) return true;
+  const feature = getPmtilesPreviewUserFeatureAtEvent(event);
+  if (feature && selectPmtilesPreviewUserFeature(feature)) return true;
   const lngLat = event?.lngLat;
   const lon = Number(lngLat?.lng ?? lngLat?.lon ?? (Array.isArray(lngLat) ? lngLat[0] : NaN));
   const lat = Number(lngLat?.lat ?? (Array.isArray(lngLat) ? lngLat[1] : NaN));
@@ -5330,6 +5436,12 @@ async function saveOfflinePickedMapPoint() {
     return false;
   }
   return saveSpotFromPosition(pickedMapPoint, 'offline-map-picked');
+}
+
+async function startOfflineGps() {
+  const ok = await startGps(false, { reason: 'offline-map-button' });
+  if (!ok) return false;
+  return centerPmtilesPreviewOnMe();
 }
 
 async function centerPmtilesPreviewOnMe() {
@@ -6096,6 +6208,7 @@ function switchAppScreen(screen, options = {}) {
   const { persist = true, scrollTop = true } = options;
   activeAppScreen = next;
   if (next !== 'map' && onlineMapExpanded) setOnlineMapExpanded(false);
+  if (next !== 'offline' && offlineMapExpanded) setOfflineMapExpanded(false);
 
   document.querySelectorAll('[data-app-screen]').forEach((section) => {
     const isActive = section.dataset.appScreen === next;
@@ -6290,6 +6403,29 @@ function setOnlineMapExpanded(expanded) {
 
 function toggleOnlineMapExpanded() {
   return setOnlineMapExpanded(!onlineMapExpanded);
+}
+
+function renderOfflineMapExpandButton() {
+  const button = $('offlineMapExpandBtn');
+  if (!button) return;
+  button.textContent = offlineMapExpanded ? '↙' : '⛶';
+  button.setAttribute('aria-pressed', offlineMapExpanded ? 'true' : 'false');
+  button.setAttribute('aria-label', offlineMapExpanded ? 'Свернуть офлайн-карту' : 'Развернуть офлайн-карту');
+  button.title = offlineMapExpanded ? 'Свернуть офлайн-карту' : 'Развернуть офлайн-карту';
+}
+
+function setOfflineMapExpanded(expanded) {
+  offlineMapExpanded = Boolean(expanded);
+  updateOnlineMapExpandInsets();
+  document.body.classList.toggle('offline-map-expanded', offlineMapExpanded);
+  renderOfflineMapExpandButton();
+  resizePmtilesPreviewMap(0, offlineMapExpanded ? 'offline map expanded' : 'offline map collapsed');
+  resizePmtilesPreviewMap(250, offlineMapExpanded ? 'offline map expanded delayed' : 'offline map collapsed delayed');
+  return offlineMapExpanded;
+}
+
+function toggleOfflineMapExpanded() {
+  return setOfflineMapExpanded(!offlineMapExpanded);
 }
 
 function getMapDebugSnapshot() {
@@ -6875,8 +7011,8 @@ function updatePickedMapPointUi() {
 }
 
 function setPickedMapPoint(latlng, source = 'map') {
-  if (!canUseMapRuntime()) {
-    recordMapDebug('map point pick ignored: map runtime unavailable');
+  if (!canUseMapRuntime() && !isPmtilesPreviewLoaded()) {
+    recordMapDebug('map point pick ignored: map runtimes unavailable');
     return;
   }
   if (!latlng || !Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) return;
@@ -6887,15 +7023,17 @@ function setPickedMapPoint(latlng, source = 'map') {
     source,
     timestamp: new Date().toISOString()
   };
-  if (!pickedMapPointMarker) {
-    pickedMapPointMarker = L.marker([pickedMapPoint.lat, pickedMapPoint.lon], {
-      title: 'Выбранная точка для сохранения',
-      icon: makeMapIcon('picked')
-    }).addTo(map).bindPopup('Выбранная точка для сохранения');
-  } else {
-    pickedMapPointMarker.setLatLng([pickedMapPoint.lat, pickedMapPoint.lon]);
+  if (canUseMapRuntime()) {
+    if (!pickedMapPointMarker) {
+      pickedMapPointMarker = L.marker([pickedMapPoint.lat, pickedMapPoint.lon], {
+        title: 'Выбранная точка для сохранения',
+        icon: makeMapIcon('picked')
+      }).addTo(map).bindPopup('Выбранная точка для сохранения');
+    } else {
+      pickedMapPointMarker.setLatLng([pickedMapPoint.lat, pickedMapPoint.lon]);
+    }
+    pickedMapPointMarker.openPopup();
   }
-  pickedMapPointMarker.openPopup();
   pickedSaveEditorOpen = false;
   pickedSaveShareAfterSave = false;
   recordMapDebug('picked map point', pickedMapPoint);
@@ -7051,6 +7189,7 @@ function setSelectedMapObject(kind, payload = {}) {
     savedSpotEditorOpen = false;
   }
   renderMapObjectPanel();
+  renderOfflineMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
 
@@ -7062,6 +7201,7 @@ function clearSelectedMapObjectOnly() {
   savedSpotEditorOpen = false;
   spotListEditorOpen = false;
   renderMapObjectPanel();
+  renderOfflineMapObjectPanel();
   updateSavedSpotMarkerStates();
 }
 
@@ -7209,6 +7349,7 @@ function renderMapObjectPanel() {
     setHidden('mapObjectSaveEditor', true);
     const collapseBtn = $('mapObjectCollapseBtn');
     if (collapseBtn) collapseBtn.setAttribute('aria-expanded', 'true');
+    renderOfflineMapObjectPanel();
     return;
   }
 
@@ -7239,6 +7380,117 @@ function renderMapObjectPanel() {
     collapseBtn.setAttribute('aria-expanded', mapObjectSheetCollapsed ? 'false' : 'true');
     collapseBtn.setAttribute('aria-label', mapObjectSheetCollapsed ? 'Развернуть карточку выбранного объекта' : 'Свернуть карточку выбранного объекта');
   }
+  renderOfflineMapObjectPanel();
+}
+
+function getSelectedMapObjectTargetPoint() {
+  if (!selectedMapObject) return null;
+  if (selectedMapObject.kind === 'saved') {
+    const spot = spots.find((item) => item.id === selectedMapObject.id);
+    return spot ? { lat: spot.lat, lon: spot.lon, label: spot.name || 'Точка', kind: 'saved' } : null;
+  }
+  if (selectedMapObject.kind === 'picked' && pickedMapPoint) {
+    return { lat: pickedMapPoint.lat, lon: pickedMapPoint.lon, label: 'Выбранная точка', kind: 'picked' };
+  }
+  if (selectedMapObject.kind === 'chat' && chatPreviewPoint) {
+    return { lat: chatPreviewPoint.lat, lon: chatPreviewPoint.lon, label: chatPreviewPoint.title || 'Точка из чата', kind: 'chat' };
+  }
+  if (selectedMapObject.kind === 'friend' && selectedMapObject.loc) {
+    return { lat: selectedMapObject.loc.lat, lon: selectedMapObject.loc.lon, label: selectedMapObject.name || 'Друг', kind: 'friend' };
+  }
+  return null;
+}
+
+function updateOfflineWorkspaceStatus() {
+  const onlineGpsStatus = $('gpsStatus')?.textContent?.trim();
+  setText('offlineGpsStatus', currentPosition ? 'готов' : (onlineGpsStatus || (navigator.geolocation ? 'ожидание' : 'недоступен')));
+  setText('offlineGpsAccuracy', currentPosition ? meters(currentPosition.accuracy) : '—');
+  setText('offlineGpsCoords', currentPosition ? `${fmtCoord(currentPosition.lat)}, ${fmtCoord(currentPosition.lon)}` : '—');
+  setDisabled('offlineStartGpsBtn', !navigator.geolocation);
+  setDisabled('offlineStartTrackBtn', trackRecording.active || !navigator.geolocation);
+  setDisabled('offlineStopTrackBtn', !trackRecording.active);
+  setText('offlineTrackStatus', trackRecording.active
+    ? `Запись идёт · GPS-точек: ${trackRecording.points.length}`
+    : (tracks.length ? `Сохранено маршрутов: ${tracks.length}` : 'Маршрут не записывается.'));
+  const shareReady = Boolean(navigator.onLine && canSendSpotToChat());
+  setText('offlineConnectivityStatus', shareReady
+    ? 'Точки хранятся локально и одинаковы на обеих картах. Группа доступна: точку можно сохранить и поделиться.'
+    : 'Точки хранятся локально и одинаковы на обеих картах. Сейчас доступно локальное сохранение; отправка в группу недоступна.');
+}
+
+function renderOfflineMapObjectPanel() {
+  const card = $('offlineMapObjectCard');
+  if (!card) return;
+  const model = describeSelectedMapObject();
+  if (!model) {
+    card.hidden = true;
+    card.classList.remove('map-object-collapsed');
+    return;
+  }
+  card.hidden = false;
+  card.dataset.objectKind = model.kind;
+  card.classList.toggle('map-object-collapsed', offlineMapObjectSheetCollapsed);
+  setText('offlineMapObjectTitle', model.title);
+  setText('offlineMapObjectSubtitle', model.subtitle);
+  setText('offlineMapObjectPill', model.pill);
+  const details = $('offlineMapObjectDetails');
+  if (details) details.innerHTML = model.rows.map(([label, value]) => mapObjectDetailRow(label, value)).join('');
+
+  const isOnlineShareReady = Boolean(navigator.onLine && canSendSpotToChat());
+  setText('offlineMapObjectPrimaryBtn', model.kind === 'picked' ? '☆ Сохранить' : (model.primary || 'Открыть'));
+  setText('offlineMapObjectSecondaryBtn', model.kind === 'picked' ? 'Сохранить и поделиться' : 'Поделиться в группе');
+  setHidden('offlineMapObjectSecondaryBtn', !((model.kind === 'picked' || model.kind === 'saved') && isOnlineShareReady));
+  setHidden('offlineMapObjectNavigateBtn', !getSelectedMapObjectTargetPoint());
+  setText('offlineMapObjectClearBtn', model.kind === 'picked' ? 'Сбросить выбор' : 'Закрыть');
+
+  const collapseBtn = $('offlineMapObjectCollapseBtn');
+  if (collapseBtn) {
+    collapseBtn.textContent = offlineMapObjectSheetCollapsed ? 'Развернуть' : 'Свернуть';
+    collapseBtn.setAttribute('aria-expanded', offlineMapObjectSheetCollapsed ? 'false' : 'true');
+  }
+  updateOfflineWorkspaceStatus();
+}
+
+function toggleOfflineMapObjectSheetCollapsed() {
+  if (!selectedMapObject) return false;
+  offlineMapObjectSheetCollapsed = !offlineMapObjectSheetCollapsed;
+  renderOfflineMapObjectPanel();
+  return true;
+}
+
+function runOfflineMapObjectPrimaryAction() {
+  if (!selectedMapObject) return false;
+  if (selectedMapObject.kind === 'picked') return openSavePlaceDialog('offline-map-picked', { shareAfterSave: false });
+  if (selectedMapObject.kind === 'saved') return runSelectedMapObjectPrimaryAction();
+  const target = getSelectedMapObjectTargetPoint();
+  if (target) return focusOfflineMapPoint(target, target.label);
+  return false;
+}
+
+function runOfflineMapObjectSecondaryAction() {
+  if (!navigator.onLine || !canSendSpotToChat()) return false;
+  if (selectedMapObject?.kind === 'picked') return openSavePlaceDialog('offline-map-picked', { shareAfterSave: true });
+  if (selectedMapObject?.kind === 'saved') return sendSelectedSpotToChat();
+  return false;
+}
+
+function showOfflineDirectionToSelectedObject() {
+  const target = getSelectedMapObjectTargetPoint();
+  if (!target) return false;
+  if (!currentPosition) {
+    markButtonBlocked('нет GPS для направления');
+    return startGps(true, { reason: 'offline-navigation' });
+  }
+  offlineNavigationTarget = target;
+  renderPmtilesPreviewUserLayers('offline navigation target selected');
+  focusOfflineMapPoint(target, target.label);
+  return true;
+}
+
+function closeOfflineMapObjectSheet() {
+  offlineNavigationTarget = null;
+  renderPmtilesPreviewUserLayers('offline navigation cleared');
+  return closeMapObjectSheet();
 }
 
 function toggleMapObjectSheetCollapsed() {
@@ -7321,15 +7573,18 @@ function resetSavePlaceDialogForm({ preserveCollection = true } = {}) {
 }
 
 function makeSavePlaceDialogTarget(source) {
-  if (source === 'map-picked') {
+  if (source === 'map-picked' || source === 'offline-map-picked') {
     if (!pickedMapPoint) return null;
+    const offline = source === 'offline-map-picked';
     return {
-      source: 'map-picked',
+      source,
       position: pickedMapPoint,
       title: 'Сохранить выбранную точку',
-      subtitle: 'Место выбрано на карте. Выбери папку, добавь описание и сохрани точку.',
+      subtitle: offline
+        ? 'Место выбрано на офлайн-карте. Выбери папку, добавь описание и сохрани точку.'
+        : 'Место выбрано на карте. Выбери папку, добавь описание и сохрани точку.',
       button: 'Сохранить',
-      status: 'выбрано на карте'
+      status: offline ? 'выбрано на офлайн-карте' : 'выбрано на карте'
     };
   }
   if (source === 'current-gps') {
@@ -7872,6 +8127,8 @@ function updateUserPosition(pos, center=false) {
   updateSelectedDetails();
   renderList();
   renderPmtilesPreviewUserLayers('GPS mirrored to offline map preview');
+  updateOfflineWorkspaceStatus();
+  renderOfflineMapObjectPanel();
 }
 
 function normalizeTrackPoint(raw) {
@@ -8105,6 +8362,7 @@ function renderTrackRecorderUi() {
   setPillState('trackRecorderPill', trackRecording.active ? 'on' : (tracks.length ? 'warn' : ''));
   setDisabled('startTrackBtn', trackRecording.active || !navigator.geolocation);
   setDisabled('stopTrackBtn', !trackRecording.active);
+  updateOfflineWorkspaceStatus();
   if (trackRecording.active) {
     setText('trackStatusText', trackRecording.lastError
       ? `Запись активна, но GPS сообщил ошибку: ${trackRecording.lastError}`
@@ -8272,6 +8530,7 @@ function startGps(center=true, options={}) {
   if (!navigator.geolocation) {
     gpsCenterRequested = false;
     if ($('gpsStatus')) $('gpsStatus').textContent = 'недоступен';
+    updateOfflineWorkspaceStatus();
     if (!silent) alert('Геолокация не поддерживается этим браузером.');
     return Promise.resolve(false);
   }
@@ -8298,6 +8557,7 @@ function startGps(center=true, options={}) {
       $('gpsStatus').textContent = err.code === 1 ? 'доступ запрещён' : 'ошибка';
       setText('saveFlowDescription', err.code === 1 ? 'GPS запрещён в браузере. Можно сохранить выбранную точку вручную: зажми место на карте примерно на секунду.' : 'GPS не дал координаты. Можно попробовать ещё раз или выбрать точку на карте вручную.');
       gpsCenterRequested = false;
+      updateOfflineWorkspaceStatus();
       if (!silent) alert(`GPS ошибка: ${err.message}. Можно сохранить место вручную долгим нажатием на карте.`);
       return false;
     })
@@ -8710,6 +8970,8 @@ function renderMarkers() {
     marker.on('click', () => selectSpot(spot.id, false));
     spotMarkers.set(spot.id, marker);
   }
+  const onlineMapElement = $('map');
+  if (onlineMapElement) onlineMapElement.dataset.spotCount = String(spots.length);
   safeInvalidateMap(0, 'render/update');
   renderPmtilesPreviewUserLayers('saved spots mirrored to offline map preview');
   renderTrackLines();
@@ -11763,7 +12025,17 @@ function bindUi() {
   if ($('forgetRememberedPmtilesMapBtn')) $('forgetRememberedPmtilesMapBtn').onclick = withButtonDiagnostics('forgetRememberedPmtilesMapBtn', forgetSelectedRememberedPmtilesMap);
   if ($('probePmtilesBtn')) $('probePmtilesBtn').onclick = withButtonDiagnostics('probePmtilesBtn', runPmtilesRuntimeProbe);
   if ($('previewPmtilesBtn')) $('previewPmtilesBtn').onclick = withButtonDiagnostics('previewPmtilesBtn', showPmtilesPreviewMap);
+  if ($('offlineMapExpandBtn')) $('offlineMapExpandBtn').onclick = withButtonDiagnostics('offlineMapExpandBtn', toggleOfflineMapExpanded);
+  if ($('offlineStartGpsBtn')) $('offlineStartGpsBtn').onclick = withButtonDiagnostics('offlineStartGpsBtn', startOfflineGps);
   if ($('centerPmtilesOnMeBtn')) $('centerPmtilesOnMeBtn').onclick = withButtonDiagnostics('centerPmtilesOnMeBtn', centerPmtilesPreviewOnMe);
+  if ($('offlineStartTrackBtn')) $('offlineStartTrackBtn').onclick = withButtonDiagnostics('offlineStartTrackBtn', startTrackRecording);
+  if ($('offlineStopTrackBtn')) $('offlineStopTrackBtn').onclick = withButtonDiagnostics('offlineStopTrackBtn', stopTrackRecording);
+  if ($('offlineMapObjectPrimaryBtn')) $('offlineMapObjectPrimaryBtn').onclick = withButtonDiagnostics('offlineMapObjectPrimaryBtn', runOfflineMapObjectPrimaryAction);
+  if ($('offlineMapObjectSecondaryBtn')) $('offlineMapObjectSecondaryBtn').onclick = withButtonDiagnostics('offlineMapObjectSecondaryBtn', runOfflineMapObjectSecondaryAction);
+  if ($('offlineMapObjectNavigateBtn')) $('offlineMapObjectNavigateBtn').onclick = withButtonDiagnostics('offlineMapObjectNavigateBtn', showOfflineDirectionToSelectedObject);
+  if ($('offlineMapObjectClearBtn')) $('offlineMapObjectClearBtn').onclick = withButtonDiagnostics('offlineMapObjectClearBtn', closeOfflineMapObjectSheet);
+  if ($('offlineMapObjectCloseBtn')) $('offlineMapObjectCloseBtn').onclick = withButtonDiagnostics('offlineMapObjectCloseBtn', closeOfflineMapObjectSheet);
+  if ($('offlineMapObjectCollapseBtn')) $('offlineMapObjectCollapseBtn').onclick = withButtonDiagnostics('offlineMapObjectCollapseBtn', toggleOfflineMapObjectSheetCollapsed);
   if ($('savePmtilesPickedPointBtn')) $('savePmtilesPickedPointBtn').onclick = withButtonDiagnostics('savePmtilesPickedPointBtn', saveOfflinePickedMapPoint);
   if ($('clearPmtilesPickedPointBtn')) $('clearPmtilesPickedPointBtn').onclick = withButtonDiagnostics('clearPmtilesPickedPointBtn', () => clearPickedMapPoint(true));
   if ($('repairMapBtn')) $('repairMapBtn').onclick = withButtonDiagnostics('repairMapBtn', repairMap);
@@ -11781,10 +12053,10 @@ function bindUi() {
   bindKebabMenuBehavior();
 
   window.addEventListener('popstate', handleSpotHistoryPopState);
-  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
-  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateMapDebugUi(true); });
-  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(150, 'resize'); });
-  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); });
+  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
+  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateMapDebugUi(true); });
+  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); });
+  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) safeInvalidateMap(250, 'visibilitychange');
   });
@@ -11801,7 +12073,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.53.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.54`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();
@@ -11814,7 +12086,9 @@ async function init() {
   // reflected in the GPS panel without blocking startup or showing an alert.
   void startGps(false, { silent: true, reason: 'startup' });
   renderOnlineMapExpandButton();
+  renderOfflineMapExpandButton();
   updateOnlineMapExpandInsets();
+  updateOfflineWorkspaceStatus();
   offlineMapManifest.url = getConfiguredOfflineMapManifestUrl();
   restoreCachedOfflineMapManifest(offlineMapManifest.url);
   renderOfflineMapPackageUi();

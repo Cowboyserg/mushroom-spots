@@ -3737,3 +3737,180 @@ body.online-map-expanded .bottom-nav {
 .local-pmtiles-import-progress-text {
   margin: 0;
 }
+
+
+/* Sprint 5.54 — Offline map workspace parity.
+   The PMTiles map is a real field workspace: it shares the local spots model,
+   controls, selected-object sheet, GPS state, and route recorder with online map. */
+.offline-active-preview {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.offline-map-workspace {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 4px 18px rgba(0,0,0,.05);
+}
+
+.offline-map-wrap {
+  position: relative;
+  width: 100%;
+  height: clamp(360px, calc(100dvh - 320px), 700px);
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  background: #d7d7d7;
+  contain: layout paint;
+}
+
+.offline-map-wrap .pmtiles-preview-map {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.offline-map-wrap .map-expand-btn {
+  top: 12px;
+  left: 12px;
+}
+
+.offline-map-fab-stack {
+  top: 12px;
+  right: 12px;
+}
+
+.offline-map-wrap .map-control-btn,
+.offline-map-wrap .maplibregl-ctrl-group button {
+  width: 54px !important;
+  height: 54px !important;
+  min-width: 54px !important;
+  min-height: 54px !important;
+  padding: 0 !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(36, 75, 47, 0.20) !important;
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18) !important;
+}
+
+.offline-map-wrap .maplibregl-ctrl-top-left {
+  top: 66px;
+  left: 2px;
+}
+
+.offline-map-wrap .maplibregl-ctrl-group {
+  display: grid;
+  gap: 10px;
+  overflow: visible !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.offline-map-wrap .maplibregl-ctrl-group button {
+  background: rgba(255, 253, 247, 0.96) !important;
+}
+
+.offline-map-wrap .maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(36, 75, 47, 0.20) !important;
+}
+
+.offline-map-wrap .maplibregl-ctrl-group button span,
+.offline-map-wrap .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: none;
+}
+
+.offline-map-live-strip {
+  margin: 0;
+  padding: 10px;
+  border-top: 1px solid rgba(36, 75, 47, 0.12);
+  background: rgba(255, 253, 247, 0.96);
+}
+
+.offline-map-track-actions {
+  padding: 0 10px 10px;
+  background: rgba(255, 253, 247, 0.96);
+}
+
+.offline-map-track-actions .hint {
+  margin: 0;
+}
+
+.offline-map-object-sheet {
+  bottom: 12px;
+}
+
+body.offline-map-expanded {
+  overflow: hidden;
+}
+
+body.offline-map-expanded #offlineMapWorkspace {
+  position: fixed;
+  top: var(--online-map-expand-top, 64px);
+  right: 0;
+  bottom: var(--online-map-expand-bottom, calc(76px + env(safe-area-inset-bottom)));
+  left: 0;
+  z-index: 24;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #d7d7d7;
+}
+
+body.offline-map-expanded #offlineMapWorkspace .offline-map-wrap {
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+}
+
+body.offline-map-expanded #offlineMapWorkspace .offline-map-live-strip,
+body.offline-map-expanded #offlineMapWorkspace .offline-map-track-actions {
+  display: none;
+}
+
+body.offline-map-expanded .bottom-nav {
+  z-index: 30;
+}
+
+@media (max-width: 560px) {
+  .offline-map-workspace {
+    border-radius: 22px;
+  }
+  .offline-map-wrap {
+    height: clamp(348px, calc(100dvh - 340px - env(safe-area-inset-bottom)), 600px);
+    min-height: 348px;
+    border-radius: 22px 22px 0 0;
+  }
+  .offline-map-live-strip {
+    display: none;
+  }
+  .offline-map-wrap .map-control-btn,
+  .offline-map-wrap .maplibregl-ctrl-group button {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    min-height: 48px !important;
+    border-radius: 15px !important;
+  }
+  .offline-map-wrap .maplibregl-ctrl-top-left {
+    top: 60px;
+  }
+}
+
+@supports not (height: 100dvh) {
+  .offline-map-wrap {
+    height: clamp(360px, calc(100vh - 320px), 700px);
+  }
+  @media (max-width: 560px) {
+    .offline-map-wrap {
+      height: clamp(348px, calc(100vh - 340px - env(safe-area-inset-bottom)), 600px);
+    }
+  }
+}
