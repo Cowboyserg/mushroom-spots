@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.54 · Sprint 5\.54/;
+const EXPECTED_APP_VERSION = /v0\.7\.54-hotfix\.1 · Sprint 5\.54\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -890,17 +890,23 @@ test('offline region catalog opens the installed local map instead of remote pac
   await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
   await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
   await expectOfflinePreviewNearViewportTop(page);
-  const centerButtonStyle = await page.locator('#centerPmtilesOnMeBtn').evaluate((el) => {
+  const fabStackStyle = await page.locator('.offline-map-fab-stack').evaluate((el) => {
     const style = window.getComputedStyle(el);
-    return { left: style.left, top: style.top, position: style.position };
+    return { right: style.right, top: style.top, position: style.position };
   });
   const frameBox = await page.locator('.pmtiles-preview-frame').boundingBox();
+  const fabStackBox = await page.locator('.offline-map-fab-stack').boundingBox();
   const centerButtonBox = await page.locator('#centerPmtilesOnMeBtn').boundingBox();
-  expect(centerButtonStyle.position).toBe('absolute');
-  expect(centerButtonStyle.left).not.toBe('auto');
+  expect(fabStackStyle.position).toBe('absolute');
+  expect(fabStackStyle.right).not.toBe('auto');
   expect(frameBox).not.toBeNull();
+  expect(fabStackBox).not.toBeNull();
   expect(centerButtonBox).not.toBeNull();
-  expect(centerButtonBox.x).toBeLessThan(frameBox.x + frameBox.width / 2);
+  expect(fabStackBox.x).toBeGreaterThanOrEqual(frameBox.x);
+  expect(fabStackBox.y).toBeGreaterThanOrEqual(frameBox.y);
+  expect(fabStackBox.x + fabStackBox.width).toBeLessThanOrEqual(frameBox.x + frameBox.width + 1);
+  expect(centerButtonBox.x).toBeGreaterThanOrEqual(fabStackBox.x);
+  expect(centerButtonBox.x + centerButtonBox.width).toBeLessThanOrEqual(fabStackBox.x + fabStackBox.width + 1);
 });
 
 
@@ -2144,7 +2150,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.54');
+  expect(backup.appVersion).toBe('0.7.54-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2275,7 +2281,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.54',
+    appVersion: '0.7.54-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
