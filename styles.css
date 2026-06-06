@@ -3843,7 +3843,7 @@ body.online-map-expanded .bottom-nav {
 }
 
 .offline-map-object-sheet {
-  bottom: 12px;
+  bottom: calc(12px + var(--offline-map-object-nav-shift, 0px));
 }
 
 body.offline-map-expanded {
@@ -3942,4 +3942,12 @@ body.offline-map-expanded .bottom-nav {
   padding:0;
   background:#d97706;
   box-shadow:0 0 0 5px rgba(217,119,6,.2), 0 3px 14px rgba(0,0,0,.35);
+}
+
+
+/* Sprint 5.55.1 — keep the offline selected-object sheet above fixed navigation.
+   The runtime computes only the overlap that actually exists in the viewport,
+   so the sheet stays map-anchored without reserving a permanent empty strip. */
+.offline-map-object-sheet {
+  --offline-map-object-nav-shift: 0px;
 }

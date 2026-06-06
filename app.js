@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.55';
+const APP_VERSION = '0.7.55-hotfix.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -159,6 +159,7 @@ let showMapAdvancedControls = false;
 let onlineMapExpanded = false;
 let offlineMapExpanded = false;
 let offlineMapObjectSheetCollapsed = false;
+let offlineMapObjectSheetLayoutFrame = 0;
 let offlineMapLongPressTimer = null;
 let offlineMapLongPressStart = null;
 let offlineMapLongPressHandledAt = 0;
@@ -6437,6 +6438,8 @@ function setOfflineMapExpanded(expanded) {
   renderOfflineMapExpandButton();
   resizePmtilesPreviewMap(0, offlineMapExpanded ? 'offline map expanded' : 'offline map collapsed');
   resizePmtilesPreviewMap(250, offlineMapExpanded ? 'offline map expanded delayed' : 'offline map collapsed delayed');
+  scheduleOfflineMapObjectSheetLayout();
+  window.setTimeout(scheduleOfflineMapObjectSheetLayout, 250);
   return offlineMapExpanded;
 }
 
@@ -7545,6 +7548,40 @@ function updateOfflineWorkspaceStatus() {
     : 'Точки хранятся локально и одинаковы на обеих картах. Сейчас доступно локальное сохранение; отправка в группу недоступна.');
 }
 
+function scheduleOfflineMapObjectSheetLayout() {
+  if (offlineMapObjectSheetLayoutFrame) cancelAnimationFrame(offlineMapObjectSheetLayoutFrame);
+  offlineMapObjectSheetLayoutFrame = requestAnimationFrame(() => {
+    offlineMapObjectSheetLayoutFrame = 0;
+    const sheet = $('offlineMapObjectCard');
+    const frame = sheet?.closest('.pmtiles-preview-frame');
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (!sheet || sheet.hidden || !frame || !bottomNav) {
+      sheet?.style.setProperty('--offline-map-object-nav-shift', '0px');
+      return;
+    }
+
+    const sheetRect = sheet.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const navRect = bottomNav.getBoundingClientRect();
+    const currentShift = Number.parseFloat(
+      getComputedStyle(sheet).getPropertyValue('--offline-map-object-nav-shift')
+    ) || 0;
+    const horizontallyOverlaps = sheetRect.right > navRect.left && sheetRect.left < navRect.right;
+    if (!horizontallyOverlaps || navRect.height <= 0) {
+      sheet.style.setProperty('--offline-map-object-nav-shift', '0px');
+      return;
+    }
+
+    const gap = 12;
+    const baseBottom = sheetRect.bottom + currentShift;
+    const baseTop = sheetRect.top + currentShift;
+    const requiredShift = Math.max(0, baseBottom - navRect.top + gap);
+    const maxShiftInsideMap = Math.max(0, baseTop - frameRect.top - gap);
+    const nextShift = Math.min(requiredShift, maxShiftInsideMap);
+    sheet.style.setProperty('--offline-map-object-nav-shift', `${Math.ceil(nextShift)}px`);
+  });
+}
+
 function renderOfflineMapObjectPanel() {
   const card = $('offlineMapObjectCard');
   if (!card) return;
@@ -7552,6 +7589,7 @@ function renderOfflineMapObjectPanel() {
   if (!model) {
     card.hidden = true;
     card.classList.remove('map-object-collapsed');
+    card.style.setProperty('--offline-map-object-nav-shift', '0px');
     return;
   }
   card.hidden = false;
@@ -7576,6 +7614,7 @@ function renderOfflineMapObjectPanel() {
     collapseBtn.setAttribute('aria-expanded', offlineMapObjectSheetCollapsed ? 'false' : 'true');
   }
   updateOfflineWorkspaceStatus();
+  scheduleOfflineMapObjectSheetLayout();
 }
 
 function toggleOfflineMapObjectSheetCollapsed() {
@@ -12184,8 +12223,9 @@ function bindUi() {
   window.addEventListener('popstate', handleSpotHistoryPopState);
   window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
   window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateMapDebugUi(true); });
-  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); });
-  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); });
+  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); scheduleOfflineMapObjectSheetLayout(); });
+  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); scheduleOfflineMapObjectSheetLayout(); });
+  window.addEventListener('scroll', scheduleOfflineMapObjectSheetLayout, { passive: true });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) safeInvalidateMap(250, 'visibilitychange');
   });
@@ -12202,7 +12242,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.55`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.55.1`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

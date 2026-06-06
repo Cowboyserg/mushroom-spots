@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.55 · Sprint 5\.55/;
+const EXPECTED_APP_VERSION = /v0\.7\.55-hotfix\.1 · Sprint 5\.55\.1/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1197,6 +1197,23 @@ test('offline workspace mirrors shared spots and saves picked points back to bot
   await expect(page.locator('#offlineMapObjectTitle')).toContainText('Сохранённая точка');
   await expect(page.locator('#offlineMapObjectDetails')).toContainText('Белые у ручья');
 
+  await page.evaluate(() => {
+    const frame = document.querySelector('.pmtiles-preview-frame');
+    if (!frame) return;
+    const frameBottomInDocument = frame.getBoundingClientRect().bottom + window.scrollY;
+    const targetBottom = window.innerHeight - 4;
+    window.scrollTo(0, Math.max(0, frameBottomInDocument - targetBottom));
+  });
+  await page.waitForTimeout(150);
+  const objectSheetBox = await page.locator('#offlineMapObjectCard').boundingBox();
+  const bottomNavBox = await page.locator('.bottom-nav').boundingBox();
+  expect(objectSheetBox, 'offline object sheet must have visible bounds').not.toBeNull();
+  expect(bottomNavBox, 'bottom navigation must have visible bounds').not.toBeNull();
+  expect(
+    objectSheetBox.y + objectSheetBox.height,
+    'offline object sheet actions must stay above fixed bottom navigation'
+  ).toBeLessThanOrEqual(bottomNavBox.y - 6);
+
   await page.evaluate(() => { window.__fakeMapLibreHitFeature = null; });
   await page.locator('#pmtilesPreviewMap').click({ position: { x: 120, y: 120 } });
   await expect(page.locator('#offlineMapObjectTitle')).toContainText('выбранной точки');
@@ -2211,7 +2228,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.55');
+  expect(backup.appVersion).toBe('0.7.55-hotfix.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2342,7 +2359,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.55',
+    appVersion: '0.7.55-hotfix.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
