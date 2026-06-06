@@ -3914,3 +3914,32 @@ body.offline-map-expanded .bottom-nav {
     }
   }
 }
+
+/* Sprint 5.55 unified map marker semantics.
+   Object type is communicated by color; marker text comes from the object's name. */
+.map-dot {
+  width:100%;
+  min-width:28px;
+  height:28px;
+  padding:0 5px;
+  box-sizing:border-box;
+  border-radius:999px;
+  font-size:10px;
+  letter-spacing:.01em;
+  white-space:nowrap;
+}
+.map-dot-user { background:#2563eb; }
+.map-dot-friend { background:#f97316; border-radius:999px; }
+.map-dot-spot { background:#16a34a; }
+.map-dot-spot-selected {
+  background:#16a34a;
+  box-shadow:0 0 0 5px rgba(250,204,21,.42), 0 3px 14px rgba(0,0,0,.38);
+}
+.map-dot-chat { background:#7c3aed; border-style:solid; }
+.map-dot-picked {
+  width:28px;
+  min-width:28px;
+  padding:0;
+  background:#d97706;
+  box-shadow:0 0 0 5px rgba(217,119,6,.2), 0 3px 14px rgba(0,0,0,.35);
+}

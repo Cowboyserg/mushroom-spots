@@ -368,6 +368,22 @@ function checkServiceWorkerCacheRules() {
   assertIncludes(swJs, "cache: 'reload'", 'Service Worker Android app-shell reload fetch');
 }
 
+
+function checkMapMarkerIdentityContract() {
+  const app = read('app.js');
+  const styles = read('styles.css');
+  const e2e = read('e2e-smoke.spec.mjs');
+  assertIncludes(app, 'function buildUniqueMapNameLabels', 'unique map name prefix algorithm');
+  assertIncludes(app, "shortLabel: row.mapLabel", 'offline friend short label');
+  assertIncludes(app, "makeMapIcon('friend', row.mapLabel)", 'online friend short label');
+  assertIncludes(app, "'text-field': ['get', 'shortLabel']", 'offline marker label field');
+  assertIncludes(styles, '.map-dot-user { background:#2563eb; }', 'current user marker color');
+  assertIncludes(styles, '.map-dot-friend { background:#f97316;', 'friend marker color');
+  assertIncludes(styles, '.map-dot-spot { background:#16a34a; }', 'saved spot marker color');
+  assertIncludes(styles, '.map-dot-chat { background:#7c3aed;', 'chat marker color');
+  assertIncludes(e2e, 'map participant labels use unique name prefixes and shared semantic colors', 'marker identity E2E oracle');
+}
+
 function checkDependencyAndLockfilePolicy() {
   const packageJson = JSON.parse(read('package.json'));
   const hasDependencies = Boolean(
@@ -438,6 +454,7 @@ checkManualPmtilesImportProgressContract();
 checkManualRegionDownloadHandoffContract();
 checkRuntimeStateDeclarations();
 checkOnlineMapControlsContract();
+checkMapMarkerIdentityContract();
 checkGpsDesktopFallbackContract();
 checkServiceWorkerCacheRules();
 checkDependencyAndLockfilePolicy();

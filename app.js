@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.54-hotfix.1';
+const APP_VERSION = '0.7.55';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -40,6 +40,13 @@ const MAP_ENGINE_MAPLIBRE = 'maplibre';
 const MAP_PROVIDER_ONLINE_RASTER = 'online-raster';
 const MAP_PROVIDER_OFFLINE_PMTILES = 'offline-pmtiles';
 const MAP_PROVIDER_NO_BASEMAP = 'no-basemap';
+const MAP_MARKER_COLORS = Object.freeze({
+  user: '#2563eb',
+  friend: '#f97316',
+  spot: '#16a34a',
+  picked: '#d97706',
+  chat: '#7c3aed'
+});
 const PMTILES_SAMPLE_URL = './offline-test.pmtiles';
 const PMTILES_DEFAULT_URL = PMTILES_SAMPLE_URL;
 const OFFLINE_MAP_MANIFEST_URL = './offline-map-packages.json';
@@ -215,6 +222,7 @@ let chatEditingMessageId = null;
 let chatSendPending = false;
 let userId = null;
 let friendMarkers = new Map();
+let mapPersonLabels = new Map();
 let baseTileLayer = null;
 let mapEngine = MAP_ENGINE_LEAFLET;
 let mapProvider = MAP_PROVIDER_ONLINE_RASTER;
@@ -5063,6 +5071,8 @@ function buildPmtilesPreviewUserLayerData() {
     const feature = previewPointFeature(isSelected ? 'selected-spot' : 'spot', spot.lat, spot.lon, {
       id: spot.id || '',
       label: spot.name || 'Грибная точка',
+      shortLabel: shortMapObjectLabel(spot.name || 'Грибная точка', '?'),
+      labelLength: 1,
       type: spot.mushroomType || '',
       note: spot.note || ''
     });
@@ -5075,7 +5085,9 @@ function buildPmtilesPreviewUserLayerData() {
 
   if (currentPosition) {
     const gpsFeature = previewPointFeature('gps', currentPosition.lat, currentPosition.lon, {
-      label: 'Я',
+      label: currentChatName(),
+      shortLabel: currentSelfMapLabel(),
+      labelLength: Array.from(currentSelfMapLabel()).length,
       accuracy: currentPosition.accuracy || null
     });
     if (gpsFeature) {
@@ -5090,7 +5102,7 @@ function buildPmtilesPreviewUserLayerData() {
   }
 
   if (pickedMapPoint) {
-    const pickedFeature = previewPointFeature('picked', pickedMapPoint.lat, pickedMapPoint.lon, { label: 'Выбрано' });
+    const pickedFeature = previewPointFeature('picked', pickedMapPoint.lat, pickedMapPoint.lon, { label: 'Выбрано', shortLabel: '', labelLength: 0 });
     if (pickedFeature) {
       pointFeatures.push(pickedFeature);
       counts.picked = 1;
@@ -5099,7 +5111,9 @@ function buildPmtilesPreviewUserLayerData() {
 
   if (chatPreviewPoint) {
     const chatFeature = previewPointFeature('chat', chatPreviewPoint.lat, chatPreviewPoint.lon, {
-      label: chatPreviewPoint.title || chatPreviewPoint.name || 'Точка из чата'
+      label: chatPreviewPoint.title || chatPreviewPoint.name || 'Точка из чата',
+      shortLabel: shortMapObjectLabel(chatPreviewPoint.title || chatPreviewPoint.name || 'Точка из чата', '?'),
+      labelLength: 1
     });
     if (chatFeature) {
       pointFeatures.push(chatFeature);
@@ -5112,6 +5126,8 @@ function buildPmtilesPreviewUserLayerData() {
     const liveFeature = previewPointFeature('live', loc.lat, loc.lon, {
       userId: row.userId || loc.user_id || '',
       label: row.name || loc.user_name || 'Друг',
+      shortLabel: row.mapLabel || mapPersonLabels.get(String(row.userId || loc.user_id || '')) || shortMapObjectLabel(row.name || loc.user_name || 'Друг', '?'),
+      labelLength: Array.from(row.mapLabel || mapPersonLabels.get(String(row.userId || loc.user_id || '')) || shortMapObjectLabel(row.name || loc.user_name || 'Друг', '?')).length,
       accuracy: loc.accuracy || null,
       updatedAt: loc.updated_at || row.updatedAt || ''
     });
@@ -5213,8 +5229,8 @@ function ensurePmtilesPreviewUserLayerSources() {
     type: 'circle',
     source: 'pmtiles-preview-user-points',
     paint: {
-      'circle-radius': ['match', ['get', 'kind'], 'gps', 11, 'live', 10, 'selected-spot', 10, 'picked', 10, 'chat', 10, 8],
-      'circle-color': '#ffffff',
+      'circle-radius': ['+', ['interpolate', ['linear'], ['coalesce', ['get', 'labelLength'], 1], 0, 7, 1, 8, 2, 10, 4, 14, 8, 20], 3],
+      'circle-color': ['match', ['get', 'kind'], 'selected-spot', '#facc15', '#ffffff'],
       'circle-opacity': 0.9
     }
   });
@@ -5223,9 +5239,9 @@ function ensurePmtilesPreviewUserLayerSources() {
     type: 'circle',
     source: 'pmtiles-preview-user-points',
     paint: {
-      'circle-radius': ['match', ['get', 'kind'], 'gps', 7, 'live', 7, 'selected-spot', 7, 'picked', 7, 'chat', 7, 5.5],
-      'circle-color': ['match', ['get', 'kind'], 'gps', '#2563eb', 'live', '#dc2626', 'selected-spot', '#f59e0b', 'picked', '#f97316', 'chat', '#8b5cf6', 'spot', '#2f7d32', '#444444'],
-      'circle-stroke-color': ['match', ['get', 'kind'], 'spot', '#174a1d', 'selected-spot', '#7c2d12', '#ffffff'],
+      'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'labelLength'], 1], 0, 7, 1, 8, 2, 10, 4, 14, 8, 20],
+      'circle-color': ['match', ['get', 'kind'], 'gps', MAP_MARKER_COLORS.user, 'live', MAP_MARKER_COLORS.friend, 'selected-spot', MAP_MARKER_COLORS.spot, 'picked', MAP_MARKER_COLORS.picked, 'chat', MAP_MARKER_COLORS.chat, 'spot', MAP_MARKER_COLORS.spot, '#475569'],
+      'circle-stroke-color': '#ffffff',
       'circle-stroke-width': 1.5,
       'circle-opacity': 0.96
     }
@@ -5234,19 +5250,19 @@ function ensurePmtilesPreviewUserLayerSources() {
     id: 'pmtiles-preview-user-labels',
     type: 'symbol',
     source: 'pmtiles-preview-user-points',
-    minzoom: 11,
     layout: {
-      'text-field': ['get', 'label'],
+      'text-field': ['get', 'shortLabel'],
       'text-font': ['Noto Sans Regular'],
-      'text-size': 11,
-      'text-offset': [0, 1.25],
-      'text-anchor': 'top',
-      'text-allow-overlap': false
+      'text-size': ['interpolate', ['linear'], ['coalesce', ['get', 'labelLength'], 1], 1, 10, 4, 9, 8, 8],
+      'text-offset': [0, 0],
+      'text-anchor': 'center',
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
     },
     paint: {
-      'text-color': '#243126',
-      'text-halo-color': '#ffffff',
-      'text-halo-width': 1.3
+      'text-color': '#ffffff',
+      'text-halo-color': 'rgba(0,0,0,0.32)',
+      'text-halo-width': 0.8
     }
   });
   return true;
@@ -7027,7 +7043,7 @@ function setPickedMapPoint(latlng, source = 'map') {
     if (!pickedMapPointMarker) {
       pickedMapPointMarker = L.marker([pickedMapPoint.lat, pickedMapPoint.lon], {
         title: 'Выбранная точка для сохранения',
-        icon: makeMapIcon('picked')
+        icon: makeMapIcon('picked', '')
       }).addTo(map).bindPopup('Выбранная точка для сохранения');
     } else {
       pickedMapPointMarker.setLatLng([pickedMapPoint.lat, pickedMapPoint.lon]);
@@ -7145,22 +7161,133 @@ async function copyMapDebug() {
   }
 }
 
-function makeMapIcon(kind) {
-  const labels = {
-    user: 'Я',
-    friend: 'Д',
-    chat: 'Ч',
-    picked: '+',
-    spot: 'Г',
-    'spot-selected': '✓'
-  };
-  const label = labels[kind] || '';
-  const labelHtml = label ? `<span>${label}</span>` : '';
+function normalizeMapDisplayName(value, fallback = 'Без имени') {
+  const normalized = String(value || '').trim().replace(/\s+/g, ' ');
+  return normalized || fallback;
+}
+
+function mapLabelCharacters(value) {
+  const normalized = normalizeMapDisplayName(value, '');
+  const chars = Array.from(normalized).filter((char) => {
+    try { return /[\p{L}\p{N}]/u.test(char); } catch { return /[A-Za-zА-Яа-яЁё0-9]/.test(char); }
+  });
+  return chars.map((char) => char.toLocaleUpperCase());
+}
+
+function buildUniqueMapNameLabels(entries = []) {
+  const uniqueById = new Map();
+  for (const entry of entries || []) {
+    const id = String(entry?.id || '').trim();
+    if (!id) continue;
+    uniqueById.set(id, {
+      id,
+      name: normalizeMapDisplayName(entry?.name),
+      chars: mapLabelCharacters(entry?.name)
+    });
+  }
+  const prepared = Array.from(uniqueById.values());
+  const lengths = new Map(prepared.map((entry) => [entry.id, entry.chars.length ? 1 : 0]));
+
+  for (let pass = 0; pass < 128; pass += 1) {
+    const groups = new Map();
+    for (const entry of prepared) {
+      const length = lengths.get(entry.id) || 0;
+      const label = length ? entry.chars.slice(0, length).join('') : '?';
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(entry);
+    }
+    let changed = false;
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      for (const entry of group) {
+        const length = lengths.get(entry.id) || 0;
+        if (length < entry.chars.length) {
+          lengths.set(entry.id, length + 1);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  const labels = new Map();
+  for (const entry of prepared) {
+    const length = lengths.get(entry.id) || 0;
+    labels.set(entry.id, length ? entry.chars.slice(0, length).join('') : '?');
+  }
+
+  const duplicateGroups = new Map();
+  for (const entry of prepared) {
+    const label = labels.get(entry.id) || '?';
+    if (!duplicateGroups.has(label)) duplicateGroups.set(label, []);
+    duplicateGroups.get(label).push(entry);
+  }
+  const reserved = new Set();
+  for (const group of duplicateGroups.values()) {
+    if (group.length === 1) reserved.add(labels.get(group[0].id) || '?');
+  }
+  for (const group of duplicateGroups.values()) {
+    if (group.length < 2) continue;
+    group.sort((a, b) => a.id.localeCompare(b.id));
+    group.forEach((entry, index) => {
+      const first = entry.chars[0] || '?';
+      let ordinal = index + 1;
+      let candidate = `${first}${ordinal}`;
+      while (reserved.has(candidate)) {
+        ordinal += 1;
+        candidate = `${first}${ordinal}`;
+      }
+      labels.set(entry.id, candidate);
+      reserved.add(candidate);
+    });
+  }
+  return labels;
+}
+
+function shortMapObjectLabel(value, fallback = '') {
+  const chars = mapLabelCharacters(value);
+  return chars[0] || fallback;
+}
+
+function mapMarkerColor(kind) {
+  if (kind === 'spot-selected') return MAP_MARKER_COLORS.spot;
+  if (kind === 'live') return MAP_MARKER_COLORS.friend;
+  return MAP_MARKER_COLORS[kind] || '#475569';
+}
+
+function currentSelfMapLabel() {
+  const id = String(userId || '').trim();
+  return (id && mapPersonLabels.get(id)) || shortMapObjectLabel(currentChatName(), '?');
+}
+
+function refreshMapPersonLabels(rows = []) {
+  const selfId = String(userId || ensureUserId());
+  const entries = [{ id: selfId, name: currentChatName() }];
+  for (const row of rows || []) {
+    const id = String(row?.userId || row?.user_id || '').trim();
+    if (!id) continue;
+    entries.push({ id, name: row?.name || row?.display_name || row?.user_name || 'Без имени' });
+  }
+  mapPersonLabels = buildUniqueMapNameLabels(entries);
+  for (const row of rows || []) {
+    row.mapLabel = mapPersonLabels.get(String(row.userId || row.user_id || '')) || shortMapObjectLabel(row.name, '?');
+  }
+  if (userMarker && typeof userMarker.setIcon === 'function') {
+    userMarker.setIcon(makeMapIcon('user', currentSelfMapLabel()));
+  }
+  return mapPersonLabels;
+}
+
+function makeMapIcon(kind, label = '') {
+  const cleanLabel = String(label || '').trim();
+  const labelHtml = cleanLabel ? `<span>${escapeHtml(cleanLabel)}</span>` : '';
+  const labelLength = Math.max(1, Array.from(cleanLabel).length);
+  const width = cleanLabel ? Math.max(28, Math.min(76, 18 + labelLength * 8)) : 28;
   return L.divIcon({
     className: '',
-    html: `<div class="map-dot map-dot-${kind}">${labelHtml}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    html: `<div class="map-dot map-dot-${kind}" data-map-kind="${escapeHtml(kind)}">${labelHtml}</div>`,
+    iconSize: [width, 28],
+    iconAnchor: [width / 2, 14],
     popupAnchor: [0, -16]
   });
 }
@@ -7903,7 +8030,8 @@ function selectLiveFriendMapObject(row) {
 function updateSavedSpotMarkerStates() {
   if (!canUseMapRuntime()) return;
   for (const [id, marker] of spotMarkers.entries()) {
-    const icon = makeMapIcon(id === selectedSpotId ? 'spot-selected' : 'spot');
+    const spot = spots.find((item) => item.id === id);
+    const icon = makeMapIcon(id === selectedSpotId ? 'spot-selected' : 'spot', shortMapObjectLabel(spot?.name, '?'));
     if (typeof marker.setIcon === 'function') marker.setIcon(icon);
     else if (marker.options) marker.options.icon = icon;
   }
@@ -8115,10 +8243,10 @@ function updateUserPosition(pos, center=false) {
   const latlng = [latitude, longitude];
   if (canUseMapRuntime()) {
     if (!userMarker) {
-      userMarker = L.marker(latlng, { title: 'Я здесь', icon: makeMapIcon('user') }).addTo(map).bindPopup('Я здесь');
+      userMarker = L.marker(latlng, { title: currentChatName(), icon: makeMapIcon('user', currentSelfMapLabel()) }).addTo(map).bindPopup(`<strong>${escapeHtml(currentChatName())}</strong><br>Моя позиция`);
       accuracyCircle = L.circle(latlng, { radius: accuracy || 0 }).addTo(map);
     } else {
-      userMarker.setLatLng(latlng);
+      userMarker.setLatLng(latlng).setIcon(makeMapIcon('user', currentSelfMapLabel()));
       accuracyCircle.setLatLng(latlng).setRadius(accuracy || 0);
     }
     if (center) map.setView(latlng, Math.max(map.getZoom(), 16));
@@ -8966,7 +9094,7 @@ function renderMarkers() {
   spotMarkers.clear();
   for (const spot of spots) {
     const iconKind = spot.id === selectedSpotId ? 'spot-selected' : 'spot';
-    const marker = L.marker([spot.lat, spot.lon], { title: spot.name, icon: makeMapIcon(iconKind) }).addTo(map).bindPopup(markerPopup(spot));
+    const marker = L.marker([spot.lat, spot.lon], { title: spot.name, icon: makeMapIcon(iconKind, shortMapObjectLabel(spot.name, '?')) }).addTo(map).bindPopup(markerPopup(spot));
     marker.on('click', () => selectSpot(spot.id, false));
     spotMarkers.set(spot.id, marker);
   }
@@ -11251,9 +11379,9 @@ function showChatSpotOnMap(payload) {
   const title = payload.n || 'Точка из чата';
   const popup = `<strong>${escapeHtml(title)}</strong><br>${payload.m ? `${escapeHtml(payload.m)}<br>` : ''}${payload.d ? `${escapeHtml(payload.d)}<br>` : ''}${fmtCoord(payload.lat)}, ${fmtCoord(payload.lng)}<br><span class="hint">из чата группы</span>`;
   if (!chatPreviewPointMarker) {
-    chatPreviewPointMarker = L.marker(latlng, { title: 'Точка из чата', icon: makeMapIcon('chat') }).addTo(map).bindPopup(popup);
+    chatPreviewPointMarker = L.marker(latlng, { title, icon: makeMapIcon('chat', shortMapObjectLabel(title, '?')) }).addTo(map).bindPopup(popup);
   } else {
-    chatPreviewPointMarker.setLatLng(latlng).setPopupContent(popup);
+    chatPreviewPointMarker.setLatLng(latlng).setIcon(makeMapIcon('chat', shortMapObjectLabel(title, '?'))).setPopupContent(popup);
   }
   chatPreviewPointMarker.openPopup();
   map.setView(latlng, Math.max(map.getZoom(), 16));
@@ -11613,6 +11741,7 @@ function renderFriends(data) {
     const bt = new Date(b.location?.updated_at || b.member?.last_seen_at || 0).getTime();
     return bt - at;
   });
+  refreshMapPersonLabels(rows);
 
   for (const row of rows) {
     const loc = row.location;
@@ -11634,11 +11763,11 @@ function renderFriends(data) {
       let marker = friendMarkers.get(row.userId);
       const popup = `<strong>${escapeHtml(row.name)}</strong><br>${fmtCoord(loc.lat)}, ${fmtCoord(loc.lon)}<br>Точность: ${meters(loc.accuracy)}<br>Обновлено: ${fmtDate(loc.updated_at)}`;
       if (!marker) {
-        marker = L.marker(latlng, { title: row.name, icon: makeMapIcon('friend') }).addTo(map).bindPopup(popup);
+        marker = L.marker(latlng, { title: row.name, icon: makeMapIcon('friend', row.mapLabel) }).addTo(map).bindPopup(popup);
         marker.on('click', () => selectLiveFriendMapObject(row));
         friendMarkers.set(row.userId, marker);
       } else {
-        marker.setLatLng(latlng).setPopupContent(popup);
+        marker.setLatLng(latlng).setIcon(makeMapIcon('friend', row.mapLabel)).setPopupContent(popup);
         marker.off('click');
         marker.on('click', () => selectLiveFriendMapObject(row));
       }
@@ -12073,7 +12202,7 @@ function bindUi() {
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.54.1`;
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.55`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

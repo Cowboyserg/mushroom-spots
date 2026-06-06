@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.54-hotfix\.1 · Sprint 5\.54\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.55 · Sprint 5\.55/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -1335,6 +1335,67 @@ test('group screen separates entry actions from group features', async ({ page }
   await expect(page.getByRole('heading', { name: 'Чат' })).toBeVisible();
 });
 
+
+
+test('map participant labels use unique name prefixes and shared semantic colors', async ({ page }) => {
+  await bootApp(page);
+
+  const result = await page.evaluate(() => {
+    const now = new Date().toISOString();
+    const input = document.querySelector('#liveName');
+    if (input) input.value = 'Илья';
+    window.renderFriends({
+      members: [
+        { user_id: 'friend-a', display_name: 'Иван', last_seen_at: now, updated_at: now },
+        { user_id: 'friend-b', display_name: 'Игорь', last_seen_at: now, updated_at: now },
+        { user_id: 'friend-c', display_name: 'Иван', last_seen_at: now, updated_at: now }
+      ],
+      locations: [
+        { user_id: 'friend-a', user_name: 'Иван', lat: 56.95, lon: 24.10, accuracy: 8, updated_at: now },
+        { user_id: 'friend-b', user_name: 'Игорь', lat: 56.96, lon: 24.11, accuracy: 8, updated_at: now },
+        { user_id: 'friend-c', user_name: 'Иван', lat: 56.97, lon: 24.12, accuracy: 8, updated_at: now }
+      ]
+    });
+    const online = Array.from(document.querySelectorAll('.map-dot-friend span')).map((node) => node.textContent).sort();
+    const offline = window.buildPmtilesPreviewUserLayerData().points.features
+      .filter((feature) => feature.properties.kind === 'live')
+      .map((feature) => feature.properties.shortLabel)
+      .sort();
+    const prefixes = Object.fromEntries(window.buildUniqueMapNameLabels([
+      { id: 'anna', name: 'Анна' },
+      { id: 'anton', name: 'Антон' },
+      { id: 'alina', name: 'Алина' }
+    ]));
+    return {
+      online,
+      offline,
+      prefixes,
+      colors: {
+        user: window.mapMarkerColor('user'),
+        friend: window.mapMarkerColor('friend'),
+        spot: window.mapMarkerColor('spot'),
+        picked: window.mapMarkerColor('picked'),
+        chat: window.mapMarkerColor('chat')
+      },
+      spotIcon: window.makeMapIcon('spot', window.shortMapObjectLabel('Белые у ручья', '?')).options.html,
+      chatIcon: window.makeMapIcon('chat', window.shortMapObjectLabel('Точка из чата', '?')).options.html
+    };
+  });
+
+  expect(result.online).toEqual(['И1', 'И2', 'ИГ']);
+  expect(result.offline).toEqual(result.online);
+  expect(result.prefixes).toEqual({ anna: 'АНН', anton: 'АНТ', alina: 'АЛ' });
+  expect(new Set(Object.values(result.colors)).size).toBe(5);
+  expect(result.colors).toEqual({
+    user: '#2563eb',
+    friend: '#f97316',
+    spot: '#16a34a',
+    picked: '#d97706',
+    chat: '#7c3aed'
+  });
+  expect(result.spotIcon).toContain('>Б<');
+  expect(result.chatIcon).toContain('>Т<');
+});
 test('group join accepts retargeted WebKit click by button geometry', async ({ page }) => {
   await bootApp(page);
 
@@ -2150,7 +2211,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.54-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.55');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2281,7 +2342,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.54-hotfix.1',
+    appVersion: '0.7.55',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
