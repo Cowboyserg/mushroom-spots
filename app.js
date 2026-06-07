@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.8.2';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -988,6 +988,7 @@ function clearSectionStatus(section) {
   const root = sectionStatusElement(section);
   if (!root) return;
   root.hidden = true;
+  if (section === 'map') setHidden('saveFlowState', false);
   root.removeAttribute('data-state');
   const action = root.querySelector('.section-status-action');
   if (action) {
@@ -1012,6 +1013,7 @@ function setSectionStatus(section, spec = null) {
   const action = root.querySelector('.section-status-action');
 
   root.hidden = false;
+  if (section === 'map') setHidden('saveFlowState', true);
   root.dataset.state = spec.state;
   if (icon) icon.textContent = SECTION_STATUS_ICONS[spec.state] || 'ⓘ';
   if (title) title.textContent = String(spec.title || '');
@@ -4246,7 +4248,6 @@ function renderOfflineRegionCatalogUi() {
     }
   }
 
-  updateSectionStatuses();
   if (!list) return;
   list.innerHTML = '';
   if (!remotePackages.length) {

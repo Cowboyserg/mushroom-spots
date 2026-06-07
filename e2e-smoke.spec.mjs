@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.1$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.2$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -620,7 +620,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.1');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.2');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1729,8 +1729,17 @@ test('online map floating controls use one square touch target system', async ({
   await expect(page.locator('#centerMeBtn')).toHaveAccessibleName('Ко мне');
 });
 
-test('expanded map workspace keeps map as the primary viewport above bottom navigation', async ({ page }) => {
+test('expanded map workspace keeps map as the primary viewport above bottom navigation', async ({ page, context }) => {
   await bootApp(page);
+
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await expect(page.locator('#sectionStatusMap')).toBeVisible();
+  await expect(page.locator('#saveFlowState')).toBeHidden();
+  expect(
+    await page.locator('#sectionStatusMap:visible, #saveFlowState:visible').count(),
+    'map status and save flow must never stack above the map'
+  ).toBeLessThanOrEqual(1);
 
   const mapBox = await page.locator('.map-wrap-home').boundingBox();
   const navBox = await page.locator('.bottom-nav').boundingBox();
@@ -2330,7 +2339,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.1');
+  expect(backup.appVersion).toBe('0.8.2');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2461,7 +2470,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.1',
+    appVersion: '0.8.2',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

@@ -403,6 +403,8 @@ function checkSharedSectionStatusContract() {
   assertIncludes(styles, '.section-status[data-state="error"]', 'error section status styling');
   assertIncludes(app, 'function setSectionStatus(section, spec = null)', 'shared section status renderer');
   assertIncludes(app, 'function updateSectionStatuses()', 'shared section status decision layer');
+  assertIncludes(app, "if (section === 'map') setHidden('saveFlowState', true);", 'map status replaces save-flow guidance while visible');
+  assertIncludes(app, "if (section === 'map') setHidden('saveFlowState', false);", 'map save-flow guidance returns when status clears');
   assertIncludes(app, "setSectionStatus('group', groupStatus);", 'group section status integration');
   assertIncludes(app, "setSectionStatus('offline', currentOfflineSectionStatus());", 'offline section status integration');
   assertIncludes(e2e, 'shared section status is uniform and hidden until a section needs action', 'shared section status structure E2E oracle');
