@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.8$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.9$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -496,7 +496,7 @@ async function seedSingleTrack(page) {
           endedAt: '2026-06-07T08:01:00.000Z',
           createdAt: '2026-06-07T08:01:00.000Z',
           updatedAt: '2026-06-07T08:01:00.000Z',
-          appVersion: '0.8.8'
+          appVersion: '0.8.9'
         });
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error || new Error('Track seed failed'));
@@ -656,7 +656,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.8');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.9');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -2413,6 +2413,48 @@ test('track recorder saves, reloads, draws and deletes a mocked GPS route', asyn
   expect(state.tracks).toEqual([]);
 });
 
+
+test('active route recording stays visible across sections and above bottom navigation', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 56.9496, longitude: 24.1052, accuracy: 10 });
+  await bootApp(page);
+
+  const routeBar = page.locator('#routeRecordingBar');
+  const routeSummary = page.locator('#routeRecordingSummary');
+  const bottomNav = page.locator('.bottom-nav');
+
+  await expect(routeBar).toBeHidden();
+  await page.locator('#startTrackBtn').click();
+  await expect(routeBar).toBeVisible();
+  await expect(routeBar).toHaveAttribute('data-origin-screen', 'map');
+  await expect(page.locator('#routeRecordingTitle')).toContainText('Записывается маршрут');
+  await expect(routeSummary).toContainText('GPS-точек:');
+  await expect(routeSummary).toContainText(/\d+ мин \d{2} сек/);
+
+  for (const screen of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
+    await page.getByRole('button', { name: screen, exact: true }).click();
+    await expect(routeBar, `route bar must remain visible on ${screen}`).toBeVisible();
+    const barBox = await routeBar.boundingBox();
+    const navBox = await bottomNav.boundingBox();
+    expect(barBox, `route bar bounds on ${screen}`).not.toBeNull();
+    expect(navBox, `bottom navigation bounds on ${screen}`).not.toBeNull();
+    expect(barBox.y + barBox.height, `route bar must stay above navigation on ${screen}`).toBeLessThanOrEqual(navBox.y - 4);
+  }
+
+  await page.locator('#routeRecordingOpenBtn').click();
+  await expect(page.locator('#screen-map')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Карта', exact: true })).toHaveAttribute('aria-current', 'page');
+
+  await context.setGeolocation({ latitude: 56.9504, longitude: 24.1064, accuracy: 9 });
+  await expect(routeSummary).toContainText(/GPS-точек: [1-9]/);
+
+  await page.getByRole('button', { name: 'Группа', exact: true }).click();
+  await page.locator('#routeRecordingStopBtn').click();
+  await expect(routeBar).toBeHidden();
+  await page.getByRole('button', { name: 'Карта', exact: true }).click();
+  await expect(page.locator('#trackStatusText')).toContainText('Маршрут сохранён');
+});
+
 test('spots screen opens as folder list and filters marks inside folder', async ({ page }) => {
   await bootApp(page);
   await seedSpots(page);
@@ -2650,7 +2692,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.8');
+  expect(backup.appVersion).toBe('0.8.9');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2781,7 +2823,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.8',
+    appVersion: '0.8.9',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

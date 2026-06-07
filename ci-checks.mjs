@@ -486,6 +486,28 @@ function checkMobileGpsPromptLayoutContract() {
   }
 }
 
+
+function checkGlobalRouteRecordingIndicatorContract() {
+  const app = read('app.js');
+  const indexHtml = read('index.html');
+  const styles = read('styles.css');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(indexHtml, 'id="routeRecordingBar"', 'global route recording bar');
+  assertIncludes(indexHtml, 'id="routeRecordingOpenBtn"', 'route recording map return action');
+  assertIncludes(indexHtml, 'id="routeRecordingStopBtn"', 'route recording stop action');
+  assertIncludes(styles, '.route-recording-bar', 'global route recording bar styling');
+  assertIncludes(styles, '--route-recording-body-extra', 'route recording body clearance variable');
+  assertIncludes(app, 'function renderGlobalRouteRecordingBar()', 'global route recording renderer');
+  assertIncludes(app, 'function openActiveTrackRecordingWorkspace()', 'route recording workspace return');
+  assertIncludes(app, 'function getBottomChromeObstacleRect()', 'shared bottom chrome geometry');
+  assertIncludes(app, "originScreen: activeAppScreen === 'offline' ? 'offline' : 'map'", 'route recording origin screen capture');
+  assertIncludes(e2e, 'active route recording stays visible across sections and above bottom navigation', 'global route recording E2E oracle');
+  if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
+    assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.61 — Global Route Recording Indicator — completed', 'completed route recording roadmap marker');
+  }
+}
+
 function checkControlledPwaUpdateContract() {
   const app = read('app.js');
   const indexHtml = read('index.html');
@@ -591,6 +613,7 @@ checkSharedSectionStatusContract();
 checkExactShareAvailabilityContract();
 checkDestructiveActionConsequenceContract();
 checkMobileGpsPromptLayoutContract();
+checkGlobalRouteRecordingIndicatorContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();

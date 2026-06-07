@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.8';
+const APP_VERSION = '0.8.9';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -224,7 +224,9 @@ let navLine = null;
 let tracks = [];
 let trackLines = new Map();
 let activeTrackLine = null;
-let trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null };
+let trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null, originScreen: null };
+let routeRecordingUiTimer = null;
+let routeRecordingLayoutFrame = 0;
 let folderHandle = null;
 let groupJoined = false;
 let joinedGroupId = '';
@@ -999,9 +1001,9 @@ function updateMapWorkspaceClearance() {
   // rotated, while still shrinking just enough to stay above fixed navigation.
   mapWrap.style.removeProperty('--map-workspace-height');
   const mapRect = mapWrap.getBoundingClientRect();
-  const navRect = bottomNav.getBoundingClientRect();
   const clearance = 8;
-  const availableHeight = Math.floor(navRect.top - mapRect.top - clearance);
+  const bottomChromeTop = getBottomChromeTop();
+  const availableHeight = Math.floor(bottomChromeTop - mapRect.top - clearance);
   if (!Number.isFinite(availableHeight) || availableHeight <= 0) return;
 
   const baselineHeight = Math.floor(mapRect.height);
@@ -1368,6 +1370,7 @@ function hideAppUpdateBanner({ dismiss = false } = {}) {
   if (dismiss) appUpdateDismissedForSession = true;
   const banner = $('appUpdateBanner');
   if (banner) banner.hidden = true;
+  scheduleRouteRecordingLayout();
   updateSectionStatuses();
 }
 
@@ -1376,6 +1379,7 @@ function renderAppUpdateBanner() {
   if (!banner) return;
   const shouldShow = Boolean(pendingAppUpdateWorker) && !appUpdateDismissedForSession;
   banner.hidden = !shouldShow;
+  scheduleRouteRecordingLayout();
   if (!shouldShow) {
     updateSectionStatuses();
     return;
@@ -7033,7 +7037,7 @@ function updateOnlineMapExpandInsets() {
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
   const topInset = topbar ? Math.max(0, Math.round(topbar.getBoundingClientRect().bottom)) : 0;
   const bottomInset = bottomNav
-    ? Math.max(0, Math.ceil(viewportHeight - bottomNav.getBoundingClientRect().top))
+    ? Math.max(0, Math.ceil(viewportHeight - getBottomChromeTop()))
     : 0;
   document.documentElement.style.setProperty('--online-map-expand-top', `${topInset}px`);
   document.documentElement.style.setProperty('--online-map-expand-bottom', `${bottomInset}px`);
@@ -8213,7 +8217,7 @@ function scheduleOfflineMapObjectSheetLayout() {
 
     const sheetRect = sheet.getBoundingClientRect();
     const frameRect = frame.getBoundingClientRect();
-    const navRect = bottomNav.getBoundingClientRect();
+    const navRect = getBottomChromeObstacleRect();
     const currentShift = Number.parseFloat(
       getComputedStyle(sheet).getPropertyValue('--offline-map-object-nav-shift')
     ) || 0;
@@ -9127,7 +9131,7 @@ async function startTrackRecording() {
     return false;
   }
   const startedAt = new Date().toISOString();
-  trackRecording = { active: true, id: uid(), startedAt, points: [], watchId: null, lastError: null };
+  trackRecording = { active: true, id: uid(), startedAt, points: [], watchId: null, lastError: null, originScreen: activeAppScreen === 'offline' ? 'offline' : 'map' };
   setText('trackStatusText', 'Запрашиваю GPS для записи маршрута…');
   renderTrackRecorderUi();
   const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', 'route recorder start');
@@ -9140,7 +9144,7 @@ async function startTrackRecording() {
     return true;
   } catch (err) {
     clearTrackWatch();
-    trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: err.message || 'GPS ошибка' };
+    trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: err.message || 'GPS ошибка', originScreen: null };
     renderTrackRecorderUi();
     alert(`GPS ошибка: ${err.message}. Маршрут не начат.`);
     return false;
@@ -9155,7 +9159,7 @@ async function stopTrackRecording() {
     recordTrackPoint({ ...currentPosition, timestamp: stoppedAt }, { force: true });
   }
   const track = buildTrackFromRecording(stoppedAt);
-  trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null };
+  trackRecording = { active: false, id: null, startedAt: null, points: [], watchId: null, lastError: null, originScreen: null };
   if (!track || track.points.length === 0) {
     renderTrackRecorderUi();
     alert('Маршрут не сохранён: GPS не дал ни одной точки.');
@@ -9189,7 +9193,108 @@ function getTrackDisplayStats(trackOrPoints) {
   return { pointCount: points.length, distanceMeters: distance, durationSeconds: duration };
 }
 
+function getBottomChromeObstacleRect() {
+  const nav = document.querySelector('.bottom-nav');
+  const bar = $('routeRecordingBar');
+  const navRect = nav?.getBoundingClientRect?.();
+  const barRect = bar && !bar.hidden ? bar.getBoundingClientRect() : null;
+  if (!navRect) return barRect || { top: window.innerHeight || 0, bottom: window.innerHeight || 0, left: 0, right: window.innerWidth || 0, width: window.innerWidth || 0, height: 0 };
+  if (!barRect || barRect.height <= 0) return navRect;
+  const top = Math.min(barRect.top, navRect.top);
+  const bottom = Math.max(barRect.bottom, navRect.bottom);
+  const left = Math.min(barRect.left, navRect.left);
+  const right = Math.max(barRect.right, navRect.right);
+  return { top, bottom, left, right, width: right - left, height: bottom - top };
+}
+
+function getBottomChromeTop() {
+  return getBottomChromeObstacleRect().top;
+}
+
+function updateRouteRecordingLayout() {
+  const bar = $('routeRecordingBar');
+  const nav = document.querySelector('.bottom-nav');
+  const updateBanner = $('appUpdateBanner');
+  if (!bar || !nav || bar.hidden) {
+    document.documentElement.style.setProperty('--route-recording-body-extra', '0px');
+    updateBanner?.style.removeProperty('bottom');
+    scheduleMapWorkspaceClearance();
+    updateOnlineMapExpandInsets();
+    scheduleOfflineMapObjectSheetLayout();
+    return;
+  }
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const navRect = nav.getBoundingClientRect();
+  const navInset = Math.max(0, Math.ceil(viewportHeight - navRect.top));
+  bar.style.bottom = `${navInset + 8}px`;
+  const barRect = bar.getBoundingClientRect();
+  document.documentElement.style.setProperty('--route-recording-body-extra', `${Math.ceil(barRect.height + 12)}px`);
+  if (updateBanner && !updateBanner.hidden) {
+    updateBanner.style.bottom = `${Math.max(0, Math.ceil(viewportHeight - barRect.top + 8))}px`;
+  }
+  scheduleMapWorkspaceClearance();
+  updateOnlineMapExpandInsets();
+  scheduleOfflineMapObjectSheetLayout();
+}
+
+function scheduleRouteRecordingLayout() {
+  if (routeRecordingLayoutFrame) cancelAnimationFrame(routeRecordingLayoutFrame);
+  routeRecordingLayoutFrame = requestAnimationFrame(() => {
+    routeRecordingLayoutFrame = 0;
+    updateRouteRecordingLayout();
+  });
+}
+
+function syncRouteRecordingUiTimer() {
+  if (trackRecording.active && routeRecordingUiTimer == null) {
+    routeRecordingUiTimer = window.setInterval(() => {
+      renderGlobalRouteRecordingBar();
+      const stats = getTrackDisplayStats(trackRecording.points);
+      if ($('trackDurationValue')) setText('trackDurationValue', formatTrackDuration(getTrackDurationSeconds({ startedAt: trackRecording.startedAt, stoppedAt: new Date().toISOString() })));
+      if ($('trackDistanceValue')) setText('trackDistanceValue', formatTrackDistance(stats.distanceMeters));
+      if ($('trackPointCountValue')) setText('trackPointCountValue', String(stats.pointCount));
+    }, 1000);
+  }
+  if (!trackRecording.active && routeRecordingUiTimer != null) {
+    clearInterval(routeRecordingUiTimer);
+    routeRecordingUiTimer = null;
+  }
+}
+
+function renderGlobalRouteRecordingBar() {
+  const bar = $('routeRecordingBar');
+  if (!bar) return;
+  const wasHidden = bar.hidden;
+  bar.hidden = !trackRecording.active;
+  document.body.classList.toggle('route-recording-active', trackRecording.active);
+  syncRouteRecordingUiTimer();
+  if (!trackRecording.active) {
+    if (!wasHidden) scheduleRouteRecordingLayout();
+    return;
+  }
+  const stats = getTrackDisplayStats(trackRecording.points);
+  const duration = getTrackDurationSeconds({ startedAt: trackRecording.startedAt, stoppedAt: new Date().toISOString() });
+  setText('routeRecordingTitle', trackRecording.lastError ? 'Маршрут записывается · GPS требует внимания' : 'Записывается маршрут');
+  setText('routeRecordingSummary', `${formatTrackDuration(duration)} · ${formatTrackDistance(stats.distanceMeters)} · GPS-точек: ${stats.pointCount}`);
+  bar.dataset.originScreen = trackRecording.originScreen === 'offline' ? 'offline' : 'map';
+  if (wasHidden) scheduleRouteRecordingLayout();
+}
+
+function openActiveTrackRecordingWorkspace() {
+  if (!trackRecording.active) return false;
+  const target = trackRecording.originScreen === 'offline' ? 'offline' : 'map';
+  switchAppScreen(target, { persist: true, scrollTop: false });
+  window.setTimeout(() => {
+    const workspace = target === 'offline'
+      ? $('offlineMapWorkspace')
+      : document.querySelector('#screen-map .map-home-card');
+    workspace?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 0);
+  return true;
+}
+
 function renderTrackRecorderUi() {
+  renderGlobalRouteRecordingBar();
   if (!$('trackRecorderCard')) return;
   const activeStats = {
     ...getTrackDisplayStats(trackRecording.points),
@@ -12766,6 +12871,8 @@ function bindUi() {
   if ($('mapExpandBtn')) $('mapExpandBtn').onclick = withButtonDiagnostics('mapExpandBtn', toggleOnlineMapExpanded);
   if ($('startTrackBtn')) $('startTrackBtn').onclick = withButtonDiagnostics('startTrackBtn', startTrackRecording);
   if ($('stopTrackBtn')) $('stopTrackBtn').onclick = withButtonDiagnostics('stopTrackBtn', stopTrackRecording);
+  if ($('routeRecordingOpenBtn')) $('routeRecordingOpenBtn').onclick = withButtonDiagnostics('routeRecordingOpenBtn', openActiveTrackRecordingWorkspace);
+  if ($('routeRecordingStopBtn')) $('routeRecordingStopBtn').onclick = withButtonDiagnostics('routeRecordingStopBtn', stopTrackRecording);
   $('saveSpotBtn').onclick = withButtonDiagnostics('saveSpotBtn', saveSmartSpot);
   if ($('saveCurrentGpsOnlyBtn')) $('saveCurrentGpsOnlyBtn').onclick = withButtonDiagnostics('saveCurrentGpsOnlyBtn', saveCurrentSpot);
   if ($('savePickedMapPointBtn')) $('savePickedMapPointBtn').onclick = withButtonDiagnostics('savePickedMapPointBtn', savePickedMapPoint);
@@ -12968,9 +13075,9 @@ function bindUi() {
   window.addEventListener('popstate', handleSpotHistoryPopState);
   window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderMapObjectPanel(); renderOfflineMapObjectPanel(); updateSectionStatuses(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
   window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderMapObjectPanel(); renderOfflineMapObjectPanel(); updateSectionStatuses(); updateMapDebugUi(true); });
-  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); scheduleMapWorkspaceClearance(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); scheduleOfflineMapObjectSheetLayout(); });
-  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); scheduleMapWorkspaceClearance(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); scheduleOfflineMapObjectSheetLayout(); });
-  window.addEventListener('scroll', () => { scheduleMapWorkspaceClearance(); scheduleOfflineMapObjectSheetLayout(); }, { passive: true });
+  window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); scheduleMapWorkspaceClearance(); scheduleRouteRecordingLayout(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); scheduleOfflineMapObjectSheetLayout(); });
+  window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); scheduleMapWorkspaceClearance(); scheduleRouteRecordingLayout(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); scheduleOfflineMapObjectSheetLayout(); });
+  window.addEventListener('scroll', () => { scheduleMapWorkspaceClearance(); scheduleRouteRecordingLayout(); scheduleOfflineMapObjectSheetLayout(); }, { passive: true });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       safeInvalidateMap(250, 'visibilitychange');
@@ -13008,6 +13115,8 @@ async function init() {
   renderOnlineMapExpandButton();
   renderOfflineMapExpandButton();
   updateOnlineMapExpandInsets();
+  renderGlobalRouteRecordingBar();
+  scheduleRouteRecordingLayout();
   scheduleMapWorkspaceClearance();
   updateOfflineWorkspaceStatus();
   offlineMapManifest.url = getConfiguredOfflineMapManifestUrl();
