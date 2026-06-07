@@ -406,7 +406,7 @@ function checkSharedSectionStatusContract() {
   assertIncludes(app, "setHidden('saveFlowState', true);", 'map status replaces save-flow guidance while visible');
   assertIncludes(app, "setHidden('saveFlowState', false);", 'map save-flow guidance returns when status clears');
   assertIncludes(app, "setSectionStatus('group', groupStatus);", 'group section status integration');
-  assertIncludes(app, "setSectionStatus('offline', currentOfflineSectionStatus());", 'offline section status integration');
+  assertIncludes(app, "setSectionStatus('offline', currentShareAvailabilityStatus('offline') || currentOfflineSectionStatus());", 'offline section status integration');
   assertIncludes(e2e, 'shared section status is uniform and hidden until a section needs action', 'shared section status structure E2E oracle');
   assertIncludes(e2e, 'offline section status explains catalog failure without blocking local map tools', 'offline section status E2E oracle');
   assertIncludes(e2e, 'settings section status keeps a dismissed PWA update discoverable', 'settings update section status E2E oracle');
@@ -417,6 +417,30 @@ function checkSharedSectionStatusContract() {
   assertIncludes(app, 'async function ensureOfflineMapWorkspaceVisibleOnOpen', 'offline active map restore transition');
   assertIncludes(app, "void ensureOfflineMapWorkspaceVisibleOnOpen('offline screen navigation');", 'offline screen automatic map restore integration');
   assertIncludes(e2e, 'opening offline screen restores the last active installed map automatically', 'offline active map restore E2E oracle');
+}
+
+function checkExactShareAvailabilityContract() {
+  const app = read('app.js');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(app, 'function getShareAvailability()', 'canonical share availability decision');
+  for (const reason of ['offline', 'missing-profile', 'missing-config', 'not-in-group', 'chat-unavailable', 'ready']) {
+    assertIncludes(app, `reason: '${reason}'`, `share availability reason ${reason}`);
+  }
+  assertIncludes(app, 'function shareAvailabilityStatusSpec', 'context-aware share availability presentation');
+  assertIncludes(app, 'function showShareAvailabilityReason', 'share availability section-status integration');
+  assertIncludes(app, "setSectionStatus('map', currentShareAvailabilityStatus('map') || mapStatus);", 'Map share reason integration');
+  assertIncludes(app, "setSectionStatus('spots', currentShareAvailabilityStatus('spots'));", 'Spots share reason integration');
+  assertIncludes(app, "setSectionStatus('offline', currentShareAvailabilityStatus('offline') || currentOfflineSectionStatus());", 'Offline share reason integration');
+  assertIncludes(app, 'showSaveShareUnavailable(spot, availability, context);', 'local save survives unavailable share');
+  assertIncludes(e2e, 'share action distinguishes not-in-group and moves the user to group entry', 'not-in-group E2E oracle');
+  assertIncludes(e2e, 'share action distinguishes missing Supabase configuration from missing profile', 'missing configuration E2E oracle');
+  assertIncludes(e2e, 'share action explains offline mode while local save remains available', 'offline share E2E oracle');
+  assertIncludes(e2e, 'save and share still saves locally when connectivity disappears before submit', 'save-before-share E2E oracle');
+  assertIncludes(e2e, 'saved spot share uses the same missing-profile reason in the spots section', 'saved spot canonical reason E2E oracle');
+  if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
+    assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.59 — Exact Share Availability Reasons — completed', 'completed share availability roadmap marker');
+  }
 }
 
 function checkControlledPwaUpdateContract() {
@@ -521,6 +545,7 @@ checkGpsDesktopFallbackContract();
 checkServiceWorkerCacheRules();
 checkControlledPwaUpdateContract();
 checkSharedSectionStatusContract();
+checkExactShareAvailabilityContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();

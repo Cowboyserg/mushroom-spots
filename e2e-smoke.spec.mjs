@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.4$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.5$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -620,7 +620,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.4');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.5');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1861,7 +1861,7 @@ test('online map expand button fills app workspace while keeping bottom navigati
   await expect(page.locator('body')).not.toHaveClass(/online-map-expanded/);
 });
 
-test('picked map point context sheet exposes object actions without app-nav duplicates', async ({ page }) => {
+test('picked map point share action explains the missing profile without adding navigation controls', async ({ page }) => {
   await bootApp(page);
   await pickMapPoint(page);
 
@@ -1882,7 +1882,13 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await expect(page.locator('#mapObjectDetails')).toContainText('ещё не сохранено');
   await expect(page.locator('#mapObjectPrimaryBtn')).toHaveText('☆ Сохранить');
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
-  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('hidden', '');
+  await expect(page.locator('#mapObjectSecondaryBtn')).toBeVisible();
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('data-share-reason', 'missing-profile');
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#sectionStatusMap')).toBeVisible();
+  await expect(page.locator('#sectionStatusMap')).toHaveAttribute('data-reason', 'missing-profile');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Укажи имя профиля');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Точку можно сохранить на устройстве');
   await expect(page.locator('#mapObjectClearBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectCloseBtn')).toBeVisible();
   await expect(page.locator('#mapObjectCloseBtn')).toHaveText('×');
@@ -1912,7 +1918,7 @@ test('picked map point context sheet exposes object actions without app-nav dupl
   await expect(page.locator('#saveFlowTitle')).toContainText('Выбери место или включи GPS');
 });
 
-test('picked map point context sheet enables share action only when group chat is ready', async ({ page }) => {
+test('picked map point context sheet sends through the same share action when group chat is ready', async ({ page }) => {
   await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-context-sheet-group' });
 
   await page.getByRole('button', { name: 'Группа' }).click();
@@ -1927,11 +1933,102 @@ test('picked map point context sheet enables share action only when group chat i
   await expect(page.locator('.map-wrap-home #mapObjectCard')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toBeVisible();
   await expect(page.locator('#mapObjectSecondaryBtn')).toHaveText('Сохранить и поделиться');
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('data-share-reason', 'ready');
   await page.locator('#mapObjectSecondaryBtn').click();
   await expect(page.locator('#mapObjectTitle')).toHaveText('Карточка выбранной точки');
   await expect(page.locator('#savePlaceDialog')).toBeVisible();
   await expect(page.locator('#savePlaceDialogTitle')).toHaveText('Сохранить выбранную точку');
   await expect(page.locator('#savePlaceDialogSaveBtn')).toHaveText('Сохранить и поделиться');
+});
+
+test('share action distinguishes not-in-group and moves the user to group entry', async ({ page }) => {
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-share-needs-join' });
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+  await expect(page.locator('#groupId')).toHaveValue('e2e-share-needs-join');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await pickMapPoint(page);
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('data-share-reason', 'not-in-group');
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#sectionStatusMap')).toHaveAttribute('data-reason', 'not-in-group');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Войди в группу');
+  await page.locator('#sectionStatusMap .section-status-action').click();
+  await expect(page.locator('#screen-group')).toBeVisible();
+  await expect(page.locator('#groupId')).toBeFocused();
+});
+
+test('share action distinguishes missing Supabase configuration from missing profile', async ({ page }) => {
+  await bootApp(page, { path: '/?group=e2e-share-no-config' });
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await pickMapPoint(page);
+  await expect(page.locator('#mapObjectSecondaryBtn')).toHaveAttribute('data-share-reason', 'missing-config');
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#sectionStatusMap')).toHaveAttribute('data-reason', 'missing-config');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Группы не подключены');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Точку можно сохранить на устройстве');
+});
+
+test('share action explains offline mode while local save remains available', async ({ page, context }) => {
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-share-offline' });
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#joinGroupBtn').click();
+  await expectJoinedGroupReady(page, 'e2e-share-offline');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await pickMapPoint(page);
+  await context.setOffline(true);
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#sectionStatusMap')).toHaveAttribute('data-reason', 'offline');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Нет соединения');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Точку можно сохранить на устройстве');
+  await expect(page.locator('#mapObjectPrimaryBtn')).toBeVisible();
+  await expect(page.locator('#mapObjectPrimaryBtn')).toBeEnabled();
+});
+
+test('save and share still saves locally when connectivity disappears before submit', async ({ page, context }) => {
+  await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-share-lost-before-submit' });
+  await page.getByRole('button', { name: 'Группа' }).click();
+  await page.locator('#liveName').fill('E2E пользователь');
+  await page.locator('#joinGroupBtn').click();
+  await expectJoinedGroupReady(page, 'e2e-share-lost-before-submit');
+
+  await page.getByRole('button', { name: 'Карта' }).click();
+  await pickMapPoint(page);
+  await page.locator('#mapObjectSecondaryBtn').click();
+  await expect(page.locator('#savePlaceDialog')).toBeVisible();
+  await page.locator('#spotName').fill('Точка без сети после диалога');
+  await context.setOffline(true);
+  await page.locator('#savePlaceDialogSaveBtn').click();
+
+  await expect(page.locator('#savePlaceDialog')).toBeHidden();
+  await expect(page.locator('#saveResultCard')).toBeVisible();
+  await expect(page.locator('#saveResultTitle')).toContainText('Точка сохранена, но не отправлена в чат');
+  await expect(page.locator('#sectionStatusMap')).toHaveAttribute('data-reason', 'offline');
+  const state = await readLocalBackupState(page);
+  expect(state.spots.some((spot) => spot.name === 'Точка без сети после диалога')).toBe(true);
+});
+
+test('saved spot share uses the same missing-profile reason in the spots section', async ({ page }) => {
+  await bootApp(page);
+  await seedSpots(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await page.locator('.spot-folder-card').filter({ hasText: 'Грибные места' }).click();
+  await page.locator('.spot-item').filter({ hasText: 'Белые у ручья' }).locator('.spot-item-main').click();
+  await expect(page.locator('#spotListSendToChatBtn')).toBeVisible();
+  await expect(page.locator('#spotListSendToChatBtn')).toHaveAttribute('data-share-reason', 'missing-profile');
+  await page.locator('#spotListSendToChatBtn').click();
+  await expect(page.locator('#sectionStatusSpots')).toHaveAttribute('data-reason', 'missing-profile');
+  await expect(page.locator('#sectionStatusSpots')).toContainText('Укажи имя профиля');
+  await expect(page.locator('#sectionStatusSpots')).toContainText('Сохранённая точка останется на устройстве');
 });
 
 
@@ -2404,7 +2501,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.4');
+  expect(backup.appVersion).toBe('0.8.5');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2535,7 +2632,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.4',
+    appVersion: '0.8.5',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

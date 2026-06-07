@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.4';
+const APP_VERSION = '0.8.5';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -193,6 +193,7 @@ let selectedSpotId = null;
 let lastSavedSpotId = null;
 let savePlaceDialogState = null;
 let selectedMapObject = null;
+let shareAvailabilityNotice = null;
 let mapObjectSheetCollapsed = false;
 let pickedSaveEditorOpen = false;
 let pickedSaveShareAfterSave = false;
@@ -1030,6 +1031,7 @@ function clearSectionStatus(section) {
     scheduleMapWorkspaceClearance();
   }
   root.removeAttribute('data-state');
+  root.removeAttribute('data-reason');
   const action = root.querySelector('.section-status-action');
   if (action) {
     action.hidden = true;
@@ -1058,6 +1060,8 @@ function setSectionStatus(section, spec = null) {
     scheduleMapWorkspaceClearance();
   }
   root.dataset.state = spec.state;
+  if (spec.reason) root.dataset.reason = String(spec.reason);
+  else root.removeAttribute('data-reason');
   if (icon) icon.textContent = SECTION_STATUS_ICONS[spec.state] || 'ⓘ';
   if (title) title.textContent = String(spec.title || '');
   if (description) {
@@ -1080,6 +1084,146 @@ function focusGroupEntryFromSectionStatus() {
     target?.focus();
     target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
+}
+
+function getShareAvailability() {
+  if (navigator.onLine === false) {
+    return { available: false, reason: 'offline' };
+  }
+  if (!currentLiveName()) {
+    return { available: false, reason: 'missing-profile' };
+  }
+  if (!getSupabaseConfig()) {
+    return { available: false, reason: 'missing-config' };
+  }
+  if (!currentGroupId() || !groupJoined) {
+    return { available: false, reason: 'not-in-group' };
+  }
+  if (chatSendPending) {
+    return { available: false, reason: 'chat-unavailable' };
+  }
+  return { available: true, reason: 'ready' };
+}
+
+function shareAvailabilityContextSection(context = activeAppScreen) {
+  if (context === 'offline') return 'offline';
+  if (context === 'spots') return 'spots';
+  if (context === 'group') return 'group';
+  return 'map';
+}
+
+function shareAvailabilityContextCopy(context = activeAppScreen, options = {}) {
+  const section = shareAvailabilityContextSection(context);
+  const saved = Boolean(options.saved);
+  if (section === 'spots') {
+    return saved
+      ? 'Сохранённая точка останется на устройстве.'
+      : 'Точка всё равно сохранится на устройстве.';
+  }
+  if (section === 'offline') {
+    return saved
+      ? 'Сохранённая точка останется доступна на онлайн- и офлайн-карте.'
+      : 'Точку можно сохранить локально на офлайн-карте.';
+  }
+  return saved
+    ? 'Сохранённая точка останется на устройстве.'
+    : 'Точку можно сохранить на устройстве без отправки.';
+}
+
+function shareAvailabilityStatusSpec(availability, context = activeAppScreen, options = {}) {
+  if (!availability || availability.available) return null;
+  const localCopy = shareAvailabilityContextCopy(context, options);
+  if (availability.reason === 'offline') {
+    return {
+      state: 'offline',
+      reason: availability.reason,
+      title: 'Нет соединения',
+      description: `${localCopy} Отправка в группу временно недоступна.`
+    };
+  }
+  if (availability.reason === 'missing-profile') {
+    return {
+      state: 'action-needed',
+      reason: availability.reason,
+      title: 'Укажи имя профиля',
+      description: `${localCopy} Имя нужно для подписи точки в группе.`,
+      actionLabel: 'Указать имя',
+      action: focusGroupEntryFromSectionStatus
+    };
+  }
+  if (availability.reason === 'missing-config') {
+    return {
+      state: 'degraded',
+      reason: availability.reason,
+      title: 'Группы не подключены',
+      description: `${localCopy} Отправка недоступна без подключения приложения к БД.`
+    };
+  }
+  if (availability.reason === 'not-in-group') {
+    return {
+      state: 'action-needed',
+      reason: availability.reason,
+      title: 'Войди в группу',
+      description: `${localCopy} После входа точку можно будет отправить участникам.`,
+      actionLabel: 'Открыть группу',
+      action: focusGroupEntryFromSectionStatus
+    };
+  }
+  return {
+    state: 'working',
+    reason: 'chat-unavailable',
+    title: 'Отправка уже выполняется',
+    description: `${localCopy} Дождись завершения текущей отправки.`
+  };
+}
+
+function currentShareAvailabilityStatus(section) {
+  if (!shareAvailabilityNotice || shareAvailabilityNotice.section !== section) return null;
+  const availability = getShareAvailability();
+  if (availability.available) {
+    shareAvailabilityNotice = null;
+    return null;
+  }
+  return shareAvailabilityStatusSpec(availability, shareAvailabilityNotice.context, shareAvailabilityNotice);
+}
+
+function clearShareAvailabilityNotice() {
+  if (!shareAvailabilityNotice) return false;
+  shareAvailabilityNotice = null;
+  updateSectionStatuses();
+  return true;
+}
+
+function showShareAvailabilityReason(context = activeAppScreen, options = {}) {
+  const availability = getShareAvailability();
+  if (availability.available) {
+    clearShareAvailabilityNotice();
+    return true;
+  }
+  const section = shareAvailabilityContextSection(context);
+  shareAvailabilityNotice = {
+    section,
+    context,
+    saved: Boolean(options.saved),
+    reason: availability.reason,
+    shownAt: new Date().toISOString()
+  };
+  markButtonBlocked(`отправка недоступна: ${availability.reason}`);
+  updateSectionStatuses();
+  return false;
+}
+
+function activeShareContext() {
+  return shareAvailabilityContextSection(activeAppScreen);
+}
+
+function applyShareActionHint(element, context = activeAppScreen, options = {}) {
+  if (!element) return;
+  const availability = getShareAvailability();
+  element.dataset.shareReason = availability.reason;
+  element.title = availability.available
+    ? 'Отправить точку в чат группы'
+    : shareAvailabilityStatusSpec(availability, context, options)?.title || 'Отправка временно недоступна';
 }
 
 function currentOfflineSectionStatus() {
@@ -1157,11 +1301,11 @@ function updateSectionStatuses() {
   } else if (navigator.onLine === false) {
     mapStatus = { state: 'offline', title: 'Нет соединения', description: 'GPS, сохранённые точки и установленные офлайн-карты продолжают работать.' };
   }
-  setSectionStatus('map', mapStatus);
+  setSectionStatus('map', currentShareAvailabilityStatus('map') || mapStatus);
 
-  // The spots catalog is local-first. No status is shown while it works normally,
-  // including when the browser is offline.
-  clearSectionStatus('spots');
+  // The spots catalog is local-first. It stays quiet while normal local work is
+  // possible, but an explicit share attempt may expose one precise prerequisite.
+  setSectionStatus('spots', currentShareAvailabilityStatus('spots'));
 
   let groupStatus = null;
   if (!currentLiveName()) {
@@ -1193,7 +1337,7 @@ function updateSectionStatuses() {
   }
   setSectionStatus('group', groupStatus);
 
-  setSectionStatus('offline', currentOfflineSectionStatus());
+  setSectionStatus('offline', currentShareAvailabilityStatus('offline') || currentOfflineSectionStatus());
 
   if (pendingAppUpdateWorker) {
     setSectionStatus('settings', {
@@ -1499,7 +1643,6 @@ function updateActionButtonsUi() {
   const hasPosition = Boolean(currentPosition);
   const hasPickedMapPoint = Boolean(pickedMapPoint);
   const hasSelected = Boolean(selectedSpotId);
-  const canUseChat = canSendSpotToChat();
   const canRequestGps = Boolean(navigator.geolocation);
 
   setDisabled('startTrackBtn', trackRecording.active || !canRequestGps);
@@ -1508,7 +1651,7 @@ function updateActionButtonsUi() {
   setDisabled('saveCurrentGpsOnlyBtn', !hasPosition);
   setDisabled('savePickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('savePlaceDialogSaveBtn', !savePlaceDialogState?.position);
-  setDisabled('sharePickedMapPointToChatBtn', !hasPickedMapPoint || !canUseChat);
+  setDisabled('sharePickedMapPointToChatBtn', !hasPickedMapPoint);
   setDisabled('clearPickedMapPointBtn', !hasPickedMapPoint);
   setDisabled('averageBtn', !navigator.geolocation);
   setDisabled('centerMeBtn', !hasPosition && !navigator.geolocation);
@@ -1521,11 +1664,15 @@ function updateActionButtonsUi() {
   setDisabled('spotListShowOnMapBtn', !hasSelected || spotListEditing);
   setDisabled('navigateBtn', !hasSelected || !hasPosition);
   setDisabled('shareSpotBtn', !hasSelected);
-  setDisabled('sendSelectedSpotToChatBtn', !hasSelected || !canUseChat);
-  setDisabled('spotListSendToChatBtn', !hasSelected || spotListEditing || !canUseChat);
-  setDisabled('saveResultShareBtn', !lastSavedSpotId || !canUseChat);
-  setHidden('sendSelectedSpotToChatBtn', !canUseChat);
-  setHidden('saveResultShareBtn', !canUseChat);
+  setDisabled('sendSelectedSpotToChatBtn', !hasSelected);
+  setDisabled('spotListSendToChatBtn', !hasSelected || spotListEditing);
+  setDisabled('saveResultShareBtn', !lastSavedSpotId);
+  setHidden('sendSelectedSpotToChatBtn', !hasSelected);
+  setHidden('saveResultShareBtn', !lastSavedSpotId);
+  applyShareActionHint($('sharePickedMapPointToChatBtn'), 'map', { saved: false });
+  applyShareActionHint($('sendSelectedSpotToChatBtn'), activeShareContext(), { saved: true });
+  applyShareActionHint($('spotListSendToChatBtn'), 'spots', { saved: true });
+  applyShareActionHint($('saveResultShareBtn'), 'map', { saved: true });
   setDisabled('spotListEditBtn', !hasSelected || spotListEditing);
   setDisabled('spotListDeleteBtn', !hasSelected || spotListEditing);
   setDisabled('spotListSaveEditBtn', !spotListEditing);
@@ -7763,6 +7910,10 @@ function distanceFromCurrentPositionLine(target) {
 
 function setSelectedMapObject(kind, payload = {}) {
   const previous = selectedMapObject;
+  const clearedShareNotice = Boolean(
+    shareAvailabilityNotice && (!previous || previous.kind !== kind || previous.id !== payload.id)
+  );
+  if (clearedShareNotice) shareAvailabilityNotice = null;
   selectedMapObject = { kind, ...payload, selectedAt: new Date().toISOString() };
   mapObjectSheetCollapsed = false;
   if (kind !== 'picked') {
@@ -7775,10 +7926,13 @@ function setSelectedMapObject(kind, payload = {}) {
   renderMapObjectPanel();
   renderOfflineMapObjectPanel();
   updateSavedSpotMarkerStates();
+  if (clearedShareNotice) updateSectionStatuses();
 }
 
 function clearSelectedMapObjectOnly() {
+  const clearedShareNotice = Boolean(shareAvailabilityNotice);
   selectedMapObject = null;
+  shareAvailabilityNotice = null;
   mapObjectSheetCollapsed = false;
   pickedSaveEditorOpen = false;
   pickedSaveShareAfterSave = false;
@@ -7787,6 +7941,7 @@ function clearSelectedMapObjectOnly() {
   renderMapObjectPanel();
   renderOfflineMapObjectPanel();
   updateSavedSpotMarkerStates();
+  if (clearedShareNotice) updateSectionStatuses();
 }
 
 function clearChatPreviewPoint(showStatus = false) {
@@ -7831,7 +7986,7 @@ function describeSelectedMapObject() {
       title: 'Сохранённая точка',
       subtitle: spot.name || 'Грибная точка',
       pill: 'сохранена',
-      secondaryVisible: canSendSpotToChat(),
+      secondaryVisible: true,
       editVisible: false,
       dangerVisible: false,
       primary: 'Открыть в точках',
@@ -7856,7 +8011,7 @@ function describeSelectedMapObject() {
       subtitle: 'Мини-инфо по точке. Нажми ☆, чтобы сохранить её в папку.',
       pill: 'выбрано',
       saveEditorVisible: false,
-      secondaryVisible: canSendSpotToChat(),
+      secondaryVisible: true,
       editVisible: false,
       dangerVisible: false,
       primary: '☆ Сохранить',
@@ -7956,6 +8111,7 @@ function renderMapObjectPanel() {
   setText('mapObjectDangerBtn', model.danger || 'Удалить');
   setHidden('mapObjectEditBtn', !model.editVisible);
   setHidden('mapObjectSecondaryBtn', !model.secondaryVisible);
+  applyShareActionHint($('mapObjectSecondaryBtn'), 'map', { saved: model.kind === 'saved' });
   setHidden('mapObjectClearBtn', !model.clearVisible);
   setHidden('mapObjectDangerBtn', !model.dangerVisible);
   const collapseBtn = $('mapObjectCollapseBtn');
@@ -7996,10 +8152,11 @@ function updateOfflineWorkspaceStatus() {
   setText('offlineTrackStatus', trackRecording.active
     ? `Запись идёт · GPS-точек: ${trackRecording.points.length}`
     : (tracks.length ? `Сохранено маршрутов: ${tracks.length}` : 'Маршрут не записывается.'));
-  const shareReady = Boolean(navigator.onLine && canSendSpotToChat());
-  setText('offlineConnectivityStatus', shareReady
+  const availability = getShareAvailability();
+  const shareSpec = shareAvailabilityStatusSpec(availability, 'offline', { saved: false });
+  setText('offlineConnectivityStatus', availability.available
     ? 'Точки хранятся локально и одинаковы на обеих картах. Группа доступна: точку можно сохранить и поделиться.'
-    : 'Точки хранятся локально и одинаковы на обеих картах. Сейчас доступно локальное сохранение; отправка в группу недоступна.');
+    : `Точки хранятся локально и одинаковы на обеих картах. ${shareSpec?.title || 'Отправка недоступна'}: ${shareSpec?.description || 'доступно локальное сохранение.'}`);
 }
 
 function scheduleOfflineMapObjectSheetLayout() {
@@ -8055,10 +8212,10 @@ function renderOfflineMapObjectPanel() {
   const details = $('offlineMapObjectDetails');
   if (details) details.innerHTML = model.rows.map(([label, value]) => mapObjectDetailRow(label, value)).join('');
 
-  const isOnlineShareReady = Boolean(navigator.onLine && canSendSpotToChat());
   setText('offlineMapObjectPrimaryBtn', model.kind === 'picked' ? '☆ Сохранить' : (model.primary || 'Открыть'));
   setText('offlineMapObjectSecondaryBtn', model.kind === 'picked' ? 'Сохранить и поделиться' : 'Поделиться в группе');
-  setHidden('offlineMapObjectSecondaryBtn', !((model.kind === 'picked' || model.kind === 'saved') && isOnlineShareReady));
+  setHidden('offlineMapObjectSecondaryBtn', !(model.kind === 'picked' || model.kind === 'saved'));
+  applyShareActionHint($('offlineMapObjectSecondaryBtn'), 'offline', { saved: model.kind === 'saved' });
   setHidden('offlineMapObjectNavigateBtn', !getSelectedMapObjectTargetPoint());
   setText('offlineMapObjectClearBtn', model.kind === 'picked' ? 'Сбросить выбор' : 'Закрыть');
 
@@ -8088,9 +8245,9 @@ function runOfflineMapObjectPrimaryAction() {
 }
 
 function runOfflineMapObjectSecondaryAction() {
-  if (!navigator.onLine || !canSendSpotToChat()) return false;
+  if (!showShareAvailabilityReason('offline', { saved: selectedMapObject?.kind === 'saved' })) return false;
   if (selectedMapObject?.kind === 'picked') return openSavePlaceDialog('offline-map-picked', { shareAfterSave: true });
-  if (selectedMapObject?.kind === 'saved') return sendSelectedSpotToChat();
+  if (selectedMapObject?.kind === 'saved') return sendSelectedSpotToChat('offline');
   return false;
 }
 
@@ -8229,6 +8386,8 @@ function openSavePlaceDialog(source, { shareAfterSave = false } = {}) {
     else alert('Сначала зажми место на карте пальцем примерно на секунду.');
     return false;
   }
+  const shareContext = String(source || '').startsWith('offline-') ? 'offline' : 'map';
+  if (shareAfterSave && !showShareAvailabilityReason(shareContext, { saved: false })) return false;
   savePlaceDialogState = {
     source: target.source,
     position: { ...target.position },
@@ -8269,15 +8428,20 @@ async function submitSavePlaceDialog() {
     closeSavePlaceDialog();
     return false;
   }
-  if (savePlaceDialogState.shareAfterSave && !requireGroupChatReady()) return false;
   const state = { ...savePlaceDialogState, position: { ...savePlaceDialogState.position } };
   const spot = await saveSpotFromPosition(state.position, state.source, readSavePlaceDialogFormData());
   if (!spot) return false;
   closeSavePlaceDialog({ reset: true });
   if (state.shareAfterSave) {
     selectedSpotId = spot.id;
+    const context = String(state.source || '').startsWith('offline-') ? 'offline' : 'map';
+    const availability = getShareAvailability();
+    if (!availability.available) {
+      showSaveShareUnavailable(spot, availability, context);
+      return true;
+    }
     try {
-      return await sendSelectedSpotToChat();
+      return await sendSelectedSpotToChat(context);
     } catch (err) {
       showSaveShareFailure(spot, err);
       return false;
@@ -8395,14 +8559,18 @@ async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
     return false;
   }
   const shouldShare = Boolean(shareAfterSave || pickedSaveShareAfterSave);
-  if (shouldShare && !requireGroupChatReady()) return false;
   const spot = await saveSpotFromPosition(pickedMapPoint, 'map-picked', readMapObjectSpotFormData());
   resetMapObjectSaveEditor();
   if (!spot) return false;
   if (shouldShare) {
     selectedSpotId = spot.id;
+    const availability = getShareAvailability();
+    if (!availability.available) {
+      showSaveShareUnavailable(spot, availability, 'map');
+      return true;
+    }
     try {
-      return await sendSelectedSpotToChat();
+      return await sendSelectedSpotToChat('map');
     } catch (err) {
       showSaveShareFailure(spot, err);
       return false;
@@ -8436,7 +8604,8 @@ function runSelectedMapObjectPrimaryAction() {
 
 function runSelectedMapObjectSecondaryAction() {
   if (!selectedMapObject) return false;
-  if (selectedMapObject.kind === 'saved') return sendSelectedSpotToChat();
+  if (!showShareAvailabilityReason('map', { saved: selectedMapObject.kind === 'saved' })) return false;
+  if (selectedMapObject.kind === 'saved') return sendSelectedSpotToChat('map');
   if (selectedMapObject.kind === 'picked') {
     return openSavePlaceDialog('map-picked', { shareAfterSave: true });
   }
@@ -9436,9 +9605,25 @@ function showSaveShareFailure(spot, err) {
   updateActionButtonsUi();
 }
 
+function showSaveShareUnavailable(spot, availability, context = activeAppScreen) {
+  const spec = shareAvailabilityStatusSpec(availability, context, { saved: true });
+  const card = $('saveResultCard');
+  if (card) {
+    card.hidden = false;
+    card.dataset.shareState = 'blocked';
+  }
+  setText('saveResultTitle', 'Точка сохранена, но не отправлена в чат');
+  setText('saveResultText', `“${spot?.name || 'Точка'}” сохранена локально. ${spec?.title || 'Отправка недоступна'}. ${spec?.description || ''}`.trim());
+  const shareBtn = $('saveResultShareBtn');
+  if (shareBtn) shareBtn.textContent = 'Поделиться в группе';
+  showShareAvailabilityReason(context, { saved: true });
+  updateActionButtonsUi();
+}
+
 function hideSaveResult() {
   const card = $('saveResultCard');
   if (card) card.hidden = true;
+  clearShareAvailabilityNotice();
 }
 
 function showLastSavedSpotOnMap() {
@@ -9455,8 +9640,10 @@ function showLastSavedSpotInList() {
 async function shareLastSavedSpotToChat() {
   if (!lastSavedSpotId) { markButtonBlocked('нет последней сохранённой точки'); return false; }
   selectSpot(lastSavedSpotId, false);
+  const context = activeShareContext();
+  if (!showShareAvailabilityReason(context, { saved: true })) return false;
   try {
-    const sent = await sendSelectedSpotToChat();
+    const sent = await sendSelectedSpotToChat(context);
     if (sent && $('saveResultShareBtn')) $('saveResultShareBtn').textContent = 'Поделиться в группе';
     return sent;
   } catch (err) {
@@ -9497,7 +9684,7 @@ async function savePickedMapPoint() {
 }
 
 async function savePickedMapPointAndShare() {
-  if (!requireGroupChatReady()) return false;
+  if (!showShareAvailabilityReason('map', { saved: false })) return false;
   return openSavePlaceDialog('map-picked', { shareAfterSave: true });
 }
 
@@ -9615,7 +9802,7 @@ function renderMarkers() {
 }
 
 function canSendSpotToChat() {
-  return Boolean(getSupabaseConfig() && currentGroupId() && groupJoined);
+  return getShareAvailability().available;
 }
 
 function normalizedSpotType(spot) {
@@ -10229,7 +10416,7 @@ function buildSpotCardMeta(spot) {
   return parts.join(' · ');
 }
 
-function renderSpotListItem(spot, canUseChat) {
+function renderSpotListItem(spot) {
   const item = document.createElement('article');
   item.className = `spot-item ${spot.id === selectedSpotId ? 'active' : ''}`;
   item.dataset.spotId = spot.id;
@@ -10271,8 +10458,8 @@ function renderSpotListItem(spot, canUseChat) {
   shareBtn.type = 'button';
   shareBtn.className = 'secondary btn-secondary';
   shareBtn.textContent = 'Отправить в чат';
-  shareBtn.disabled = !canUseChat;
-  shareBtn.title = canUseChat ? 'Отправить метку в чат группы' : 'Группа или чат пока не готовы';
+  shareBtn.disabled = false;
+  applyShareActionHint(shareBtn, 'spots', { saved: true });
   shareBtn.onclick = withButtonDiagnostics('spotItemShareBtn', () => {
     selectedSpotId = spot.id;
     menu.open = false;
@@ -10523,7 +10710,6 @@ function renderList() {
   const sortMode = $('spotSortSelect')?.value || 'recent';
   const list = $('spotsList');
   const summary = $('spotsListSummary');
-  const canUseChat = canSendSpotToChat();
   const counts = getSpotCollectionUsageCounts();
   if (!list) return;
 
@@ -10575,7 +10761,7 @@ function renderList() {
     list.appendChild(empty);
     return;
   }
-  for (const spot of filtered) list.appendChild(renderSpotListItem(spot, canUseChat));
+  for (const spot of filtered) list.appendChild(renderSpotListItem(spot));
 }
 
 async function refreshSpots() {
@@ -10612,14 +10798,13 @@ function populateSpotListEditor(spot) {
 function renderSpotListDetailsState() {
   const spot = getSelectedSpot();
   const editing = Boolean(spot && spotListEditorOpen);
-  const canChat = canSendSpotToChat();
 
   setHidden('spotListEditor', !editing);
   setHidden('spotListDetails', editing || !spot);
 
   // View state: actions that operate on the saved spot as an existing object.
   setHidden('spotListShowOnMapBtn', editing || !spot);
-  setHidden('spotListSendToChatBtn', editing || !spot || !canChat);
+  setHidden('spotListSendToChatBtn', editing || !spot);
   setHidden('spotListEditBtn', editing || !spot);
   setHidden('spotListDeleteBtn', editing || !spot);
   setHidden('spotListCloseDetailsBtn', editing || !spot);
@@ -10630,7 +10815,8 @@ function renderSpotListDetailsState() {
   setHidden('spotListCancelEditBtn', !editing);
 
   setDisabled('spotListShowOnMapBtn', !spot || editing);
-  setDisabled('spotListSendToChatBtn', !spot || editing || !canChat);
+  setDisabled('spotListSendToChatBtn', !spot || editing);
+  applyShareActionHint($('spotListSendToChatBtn'), 'spots', { saved: true });
   setDisabled('spotListEditBtn', !spot || editing);
   setDisabled('spotListDeleteBtn', !spot || editing);
   setDisabled('spotListCloseDetailsBtn', !spot || editing);
@@ -11822,20 +12008,20 @@ function parseSpotChatBody(body) {
   }
 }
 
-function requireGroupChatReady(actionLabel = 'Отправка точки в чат') {
-  if (!getSupabaseConfig()) { markButtonBlocked('БД не настроена'); alert('Отправка точки в чат сейчас недоступна: нет подключения к БД.'); return false; }
-  if (!currentGroupId()) { markButtonBlocked('нет кода группы'); alert('Сначала создай группу или вставь код/ссылку от друга.'); return false; }
-  if (!groupJoined) { markButtonBlocked('чат доступен только после входа в группу'); alert('Сначала войди в группу.'); return false; }
-  return true;
+function requireGroupChatReady(actionLabel = 'Отправка точки в чат', context = activeShareContext(), options = {}) {
+  const availability = getShareAvailability();
+  if (availability.available) return true;
+  markButtonBlocked(`${actionLabel}: ${availability.reason}`);
+  showShareAvailabilityReason(context, options);
+  return false;
 }
 
-async function sendSpotPayloadToChat(payload, sourceLabel) {
+async function sendSpotPayloadToChat(payload, sourceLabel, context = activeShareContext()) {
   if (chatSendPending) {
-    markButtonBlocked('сообщение уже отправляется');
-    setChatHint('Дождись завершения текущей отправки.', true);
+    showShareAvailabilityReason(context, { saved: sourceLabel === 'Сохранённая точка' });
     return false;
   }
-  if (!requireGroupChatReady()) return false;
+  if (!requireGroupChatReady('Отправка точки в чат', context, { saved: sourceLabel === 'Сохранённая точка' })) return false;
   const body = encodeSpotChatBody(payload);
   const name = currentChatName();
   if ($('liveName') && !$('liveName').value.trim()) {
@@ -11848,6 +12034,7 @@ async function sendSpotPayloadToChat(payload, sourceLabel) {
   try {
     await createChatMessage(body, name);
     sent = true;
+    shareAvailabilityNotice = null;
     await refreshGroupChat(false);
     startChatAutoRefresh();
     return true;
@@ -11860,13 +12047,13 @@ async function sendSpotPayloadToChat(payload, sourceLabel) {
 
 async function sendPickedMapPointToChat() {
   if (!pickedMapPoint) { markButtonBlocked('точка на карте не выбрана'); alert('Сначала зажми место на карте пальцем примерно на секунду.'); return false; }
-  return sendSpotPayloadToChat(buildSpotChatPayloadFromPickedPoint(), 'Выбранная точка');
+  return sendSpotPayloadToChat(buildSpotChatPayloadFromPickedPoint(), 'Выбранная точка', activeShareContext());
 }
 
-async function sendSelectedSpotToChat() {
+async function sendSelectedSpotToChat(context = activeShareContext()) {
   const spot = spots.find(s => s.id === selectedSpotId);
   if (!spot) { markButtonBlocked('сохранённая точка не выбрана'); alert('Сначала выбери сохранённую точку.'); return false; }
-  return sendSpotPayloadToChat(buildSpotChatPayloadFromSpot(spot), 'Сохранённая точка');
+  return sendSpotPayloadToChat(buildSpotChatPayloadFromSpot(spot), 'Сохранённая точка', context);
 }
 
 function showChatSpotOnMap(payload) {
@@ -12695,8 +12882,8 @@ function bindUi() {
   bindKebabMenuBehavior();
 
   window.addEventListener('popstate', handleSpotHistoryPopState);
-  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateSectionStatuses(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
-  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateSectionStatuses(); updateMapDebugUi(true); });
+  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderMapObjectPanel(); renderOfflineMapObjectPanel(); updateSectionStatuses(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
+  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderMapObjectPanel(); renderOfflineMapObjectPanel(); updateSectionStatuses(); updateMapDebugUi(true); });
   window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); scheduleMapWorkspaceClearance(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); scheduleOfflineMapObjectSheetLayout(); });
   window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); scheduleMapWorkspaceClearance(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); scheduleOfflineMapObjectSheetLayout(); });
   window.addEventListener('scroll', () => { scheduleMapWorkspaceClearance(); scheduleOfflineMapObjectSheetLayout(); }, { passive: true });
