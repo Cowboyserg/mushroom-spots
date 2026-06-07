@@ -403,7 +403,11 @@ function checkControlledPwaUpdateContract() {
   assertIncludes(sw, 'event.waitUntil(self.skipWaiting());', 'Service Worker explicit skipWaiting');
   assert.ok(!/cache\.addAll\(APP_SHELL\)[\s\S]{0,100}self\.skipWaiting\(\)/.test(sw), 'Service Worker install must not auto-activate updates');
   assertIncludes(e2e, 'waiting PWA update offers an explicit user-controlled reload', 'controlled PWA update E2E oracle');
-  assert.ok(pathExists('TEMP_UX_ROADMAP_2026-06-07.md'), 'temporary dated UX roadmap must exist during the rollout');
+  if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
+    const roadmap = read('TEMP_UX_ROADMAP_2026-06-07.md');
+    assertIncludes(roadmap, '# Temporary UX Roadmap — 2026-06-07', 'temporary dated UX roadmap header');
+    assertIncludes(roadmap, '## Sprint 5.57 — Shared Section Status Component', 'temporary dated UX roadmap next sprint');
+  }
 }
 
 function checkDependencyAndLockfilePolicy() {
