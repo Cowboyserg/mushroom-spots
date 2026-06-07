@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.10$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.11$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -323,6 +323,23 @@ async function bootApp(page, options = {}) {
 }
 
 
+
+async function createLocalDeviceProfile(page, name, options = {}) {
+  const { otherPerson = false } = options;
+  if (await page.locator('#screen-group').isHidden()) {
+    await page.getByRole('button', { name: 'Группа' }).click();
+  }
+  const trigger = otherPerson ? page.locator('#newPersonProfileBtn') : page.locator('#createDeviceProfileBtn');
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(page.locator('#deviceProfileDialog')).toBeVisible();
+  await page.locator('#deviceProfileNameInput').fill(name);
+  await page.locator('#deviceProfileSaveBtn').click();
+  await expect(page.locator('#deviceProfileDialog')).toBeHidden();
+  await expect(page.locator('#liveName')).toHaveValue(name);
+  await expect(page.locator('#groupProfileName')).toHaveText(name);
+}
+
 async function openOfflineCountryFolder(page, countryId = 'russia') {
   const folder = page.locator(`.offline-country-folder[data-country-id="${countryId}"]`);
   await expect(folder).toHaveCount(1);
@@ -496,7 +513,7 @@ async function seedSingleTrack(page) {
           endedAt: '2026-06-07T08:01:00.000Z',
           createdAt: '2026-06-07T08:01:00.000Z',
           updatedAt: '2026-06-07T08:01:00.000Z',
-          appVersion: '0.8.10'
+          appVersion: '0.8.11'
         });
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error || new Error('Track seed failed'));
@@ -656,7 +673,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.10');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.11');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -722,9 +739,10 @@ test('shared section status is uniform and hidden until a section needs action',
   const groupStatus = page.locator('#sectionStatusGroup');
   await expect(groupStatus).toBeVisible();
   await expect(groupStatus).toHaveAttribute('data-state', 'action-needed');
-  await expect(groupStatus).toContainText('Выбери профиль на этом устройстве');
-  await groupStatus.getByRole('button', { name: 'Указать имя' }).click();
-  await expect(page.locator('#liveName')).toBeFocused();
+  await expect(groupStatus).toContainText('Создай профиль на этом устройстве');
+  await groupStatus.getByRole('button', { name: 'Создать профиль' }).click();
+  await expect(page.locator('#deviceProfileDialog')).toBeVisible();
+  await expect(page.locator('#deviceProfileNameInput')).toBeFocused();
 });
 
 test('offline section status explains catalog failure without blocking local map tools', async ({ page, context }) => {
@@ -1517,11 +1535,10 @@ test('group screen separates entry actions from group features', async ({ page }
   await expect(page.locator('#groupStatus')).toContainText('не в группе');
   await expect(page.locator('#liveStatus')).toBeHidden();
   await expect(page.locator('#myLiveStateBox')).toBeHidden();
-  await expect(page.locator('#groupCreatePanel')).toBeVisible();
-  await expect(page.locator('#groupJoinPanel')).toBeVisible();
-  await expect(page.getByText('Код вводить не нужно')).toBeVisible();
-  await expect(page.getByLabel('Профиль на этом устройстве')).toBeVisible();
-  await expect(page.getByLabel('Код или ссылка группы')).toBeVisible();
+  await expect(page.locator('#createDeviceProfileBtn')).toBeVisible();
+  await expect(page.locator('#groupCreatePanel')).toBeHidden();
+  await expect(page.locator('#groupJoinPanel')).toBeHidden();
+  await expect(page.locator('#groupProfileName')).toHaveText('Профиль не создан');
   await expect(page.locator('#copyInviteBtn')).toBeHidden();
   await expect(page.locator('#leaveGroupBtn')).toBeHidden();
   await expect(page.locator('#groupLockedPreview')).toBeHidden();
@@ -1529,7 +1546,10 @@ test('group screen separates entry actions from group features', async ({ page }
   await expect(page.locator('#liveLocationsCard')).toBeHidden();
   await expect(page.locator('#groupChatCard')).toBeHidden();
 
-  await page.getByLabel('Профиль на этом устройстве').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
+  await expect(page.locator('#groupCreatePanel')).toBeVisible();
+  await expect(page.locator('#groupJoinPanel')).toBeVisible();
+  await expect(page.getByText('Код вводить не нужно')).toBeVisible();
   await expect(page.locator('#createGroupBtn')).toBeEnabled();
   await expect(page.locator('#joinGroupBtn')).toBeDisabled();
   await page.getByLabel('Код или ссылка группы').fill('e2e-entry-ux');
@@ -1680,11 +1700,61 @@ test('map participant labels use unique name prefixes and shared semantic colors
   expect(result.spotIcon).toContain('>Б<');
   expect(result.chatIcon).toContain('>Т<');
 });
+test('group profile creation uses an explanatory local-device dialog', async ({ page }) => {
+  await bootApp(page);
+  await page.getByRole('button', { name: 'Группа' }).click();
+
+  await expect(page.locator('#createDeviceProfileBtn')).toBeVisible();
+  await expect(page.locator('#groupEntryPanels')).toBeHidden();
+  await page.locator('#createDeviceProfileBtn').click();
+  const dialog = page.locator('#deviceProfileDialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Это локальный профиль, а не аккаунт с паролем');
+  await expect(dialog).toContainText('обычное обновление приложения профиль не удаляет');
+  await expect(dialog).toContainText('Очистка данных сайта удалит локальную идентичность');
+
+  await page.locator('#deviceProfileNameInput').fill('Локальный пользователь');
+  await page.locator('#deviceProfileSaveBtn').click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#groupProfileName')).toHaveText('Локальный пользователь');
+  await expect(page.locator('#groupEntryPanels')).toBeVisible();
+  await expect(page.locator('#createGroupBtn')).toBeEnabled();
+
+  const stored = await page.evaluate(() => ({
+    activeId: localStorage.getItem('mushroom_active_profile_id'),
+    profiles: JSON.parse(localStorage.getItem('mushroom_people_profiles_v1') || '[]')
+  }));
+  const active = stored.profiles.find((profile) => profile.id === stored.activeId);
+  expect(active?.displayName).toBe('Локальный пользователь');
+});
+
+test('editing a local device profile keeps the same identity', async ({ page }) => {
+  await bootApp(page);
+  await createLocalDeviceProfile(page, 'Первое имя');
+  const beforeId = await page.evaluate(() => localStorage.getItem('mushroom_active_profile_id'));
+
+  await page.locator('#groupProfileEditBtn').click();
+  await expect(page.locator('#deviceProfileDialog')).toBeVisible();
+  await expect(page.locator('#deviceProfileNameInput')).toHaveValue('Первое имя');
+  await page.locator('#deviceProfileNameInput').fill('Новое имя');
+  await page.locator('#deviceProfileSaveBtn').click();
+
+  await expect(page.locator('#groupProfileName')).toHaveText('Новое имя');
+  const after = await page.evaluate(() => ({
+    activeId: localStorage.getItem('mushroom_active_profile_id'),
+    legacyId: localStorage.getItem('mushroom_live_user_id'),
+    profiles: JSON.parse(localStorage.getItem('mushroom_people_profiles_v1') || '[]')
+  }));
+  expect(after.activeId).toBe(beforeId);
+  expect(after.legacyId).toBe(beforeId);
+  expect(after.profiles.find((profile) => profile.id === beforeId)?.displayName).toBe('Новое имя');
+});
+
 test('group join accepts retargeted WebKit click by button geometry', async ({ page }) => {
   await bootApp(page);
 
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await page.locator('#groupId').fill('e2e-retargeted-join');
   await expect(page.locator('#joinGroupBtn')).toBeEnabled();
 
@@ -1720,7 +1790,7 @@ test('fresh invite link requires a local profile before group join', async ({ pa
   expect(beforeProfile.persistedGroup).toBeNull();
   expect(beforeProfile.profiles.every((profile) => !profile.lastGroupId)).toBeTruthy();
 
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await expect(page.locator('#joinGroupBtn')).toBeEnabled();
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-invite-needs-profile');
@@ -1730,15 +1800,11 @@ test('new local person does not inherit the previous group code', async ({ page 
   await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-old-person-group' });
 
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('Первый пользователь');
+  await createLocalDeviceProfile(page, 'Первый пользователь');
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-old-person-group');
 
-  page.once('dialog', async (dialog) => {
-    expect(dialog.type()).toBe('prompt');
-    await dialog.accept('Другой пользователь');
-  });
-  await page.locator('#newPersonProfileBtn').click();
+  await createLocalDeviceProfile(page, 'Другой пользователь', { otherPerson: true });
 
   await expect(page.locator('#groupStateText')).toContainText('Ты не в группе');
   await expect(page.locator('#liveName')).toHaveValue('Другой пользователь');
@@ -1779,7 +1845,7 @@ test('group chat disables duplicate send and clears composer after success', asy
 
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupId')).toHaveValue('e2e-chat-guard');
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-chat-guard');
 
@@ -1810,7 +1876,7 @@ test('leaving group clears persisted group after reload', async ({ page }) => {
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupId')).toHaveValue('e2e-leave-group');
 
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-leave-group');
 
@@ -2063,7 +2129,7 @@ test('picked map point share action explains the missing profile without adding 
   await page.locator('#mapObjectSecondaryBtn').click();
   await expect(page.locator('#sectionStatusMap')).toBeVisible();
   await expect(page.locator('#sectionStatusMap')).toHaveAttribute('data-reason', 'missing-profile');
-  await expect(page.locator('#sectionStatusMap')).toContainText('Укажи имя профиля');
+  await expect(page.locator('#sectionStatusMap')).toContainText('Создай профиль на этом устройстве');
   await expect(page.locator('#sectionStatusMap')).toContainText('Точку можно сохранить на устройстве');
   await expect(page.locator('#mapObjectClearBtn')).toHaveAttribute('hidden', '');
   await expect(page.locator('#mapObjectCloseBtn')).toBeVisible();
@@ -2099,7 +2165,7 @@ test('picked map point context sheet sends through the same share action when gr
 
   await page.getByRole('button', { name: 'Группа' }).click();
   await expect(page.locator('#groupId')).toHaveValue('e2e-context-sheet-group');
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await expect(page.locator('#joinGroupBtn')).toBeEnabled();
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-context-sheet-group');
@@ -2121,7 +2187,7 @@ test('share action distinguishes not-in-group and moves the user to group entry'
   await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-share-needs-join' });
 
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await expect(page.locator('#groupId')).toHaveValue('e2e-share-needs-join');
 
   await page.getByRole('button', { name: 'Карта' }).click();
@@ -2144,7 +2210,7 @@ test('e2e boot neutralizes repository Supabase config unless fake Supabase is re
 test('share action distinguishes missing Supabase configuration from missing profile', async ({ page }) => {
   await bootApp(page, { path: '/?group=e2e-share-no-config' });
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
 
   await page.getByRole('button', { name: 'Карта' }).click();
   await pickMapPoint(page);
@@ -2158,7 +2224,7 @@ test('share action distinguishes missing Supabase configuration from missing pro
 test('share action explains offline mode while local save remains available', async ({ page, context }) => {
   await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-share-offline' });
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-share-offline');
 
@@ -2176,7 +2242,7 @@ test('share action explains offline mode while local save remains available', as
 test('save and share still saves locally when connectivity disappears before submit', async ({ page, context }) => {
   await bootApp(page, { fakeSupabase: true, path: '/?group=e2e-share-lost-before-submit' });
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-share-lost-before-submit');
 
@@ -2209,7 +2275,7 @@ test('saved spot share uses the same missing-profile reason in the spots section
   await expect(page.locator('#spotListSendToChatBtn')).toHaveAttribute('data-share-reason', 'missing-profile');
   await page.locator('#spotListSendToChatBtn').click();
   await expect(page.locator('#sectionStatusSpots')).toHaveAttribute('data-reason', 'missing-profile');
-  await expect(page.locator('#sectionStatusSpots')).toContainText('Укажи имя профиля');
+  await expect(page.locator('#sectionStatusSpots')).toContainText('Создай профиль на этом устройстве');
   await expect(page.locator('#sectionStatusSpots')).toContainText('Сохранённая точка останется на устройстве');
 });
 
@@ -2238,7 +2304,7 @@ test('save and share keeps the saved spot when chat send fails and offers retry'
   });
 
   await page.getByRole('button', { name: 'Группа' }).click();
-  await page.locator('#liveName').fill('E2E пользователь');
+  await createLocalDeviceProfile(page, 'E2E пользователь');
   await page.locator('#joinGroupBtn').click();
   await expectJoinedGroupReady(page, 'e2e-share-retry');
 
@@ -2744,7 +2810,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.10');
+  expect(backup.appVersion).toBe('0.8.11');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2875,7 +2941,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.10',
+    appVersion: '0.8.11',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

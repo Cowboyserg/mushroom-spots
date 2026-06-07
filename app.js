@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.10';
+const APP_VERSION = '0.8.11';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -380,6 +380,7 @@ let activeButtonDiagnostics = null;
 let peopleProfiles = [];
 let activeProfileId = null;
 let groupEntryDraft = { liveName: '', groupId: '' };
+let deviceProfileDialogState = { mode: 'create' };
 let groupJoinActivationInFlight = false;
 let memberSyncPending = false;
 let memberSyncTimer = null;
@@ -422,6 +423,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   groupProfileEditBtn: 'Изменить профиль',
   savePersonProfileBtn: 'Переименовать профиль',
   newPersonProfileBtn: 'Другой человек',
+  createDeviceProfileBtn: 'Создать профиль на этом устройстве',
+  deviceProfileSaveBtn: 'Сохранить локальный профиль',
+  deviceProfileCancelBtn: 'Отменить создание профиля',
   profileQuickLoginBtn: 'Войти как сохранённый человек',
   joinGroupBtn: 'Войти в группу',
   leaveGroupBtn: 'Выйти из группы',
@@ -652,63 +656,146 @@ function switchActiveProfile(profileId, options = {}) {
   return true;
 }
 
+function hasNamedLocalProfile() {
+  return Boolean(getActiveProfile()?.displayName?.trim() || currentLiveName());
+}
+
 function renderPeopleProfiles() {
   const wrap = $('peopleProfiles');
   const hint = $('peopleHint');
   const active = getActiveProfile();
+  const hasNamedProfile = Boolean(active?.displayName?.trim());
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  for (const profile of peopleProfiles) {
+  for (const profile of peopleProfiles.filter(item => item.displayName?.trim())) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = profile.id === activeProfileId ? 'profile-chip active' : 'profile-chip secondary';
-    btn.textContent = `${profile.id === activeProfileId ? '✓ ' : ''}${profile.displayName || 'Без имени'}`;
-    btn.title = profile.lastGroupId ? `Последняя группа: ${profile.lastGroupId}` : 'Локальный профиль на этом устройстве';
+    btn.textContent = `${profile.id === activeProfileId ? '✓ ' : ''}${profile.displayName}`;
+    btn.title = profile.lastGroupId ? `Последняя группа: ${profile.lastGroupId}` : 'Профиль хранится только на этом устройстве';
     btn.onclick = withButtonDiagnostics('profileQuickLoginBtn', () => switchActiveProfile(profile.id, { keepCurrentGroup: true, joinAfterSwitch: Boolean(currentGroupId()) }));
     wrap.appendChild(btn);
   }
 
+  setText('groupProfileName', hasNamedProfile ? active.displayName : 'Профиль не создан');
+  setText('groupProfileSummary', hasNamedProfile
+    ? 'Этот профиль хранится в этом браузере или установленном PWA. Он используется для имени в группе и подписей на карте.'
+    : 'Создай локальный профиль перед входом в группу. Пароль не нужен.');
+  setHidden('createDeviceProfileBtn', hasNamedProfile);
+  setHidden('groupProfileExistingTools', !hasNamedProfile);
+  setHidden('groupEntryPanels', groupJoined || !hasNamedProfile);
+
   if (hint) {
-    if (active) {
+    if (hasNamedProfile) {
       const group = active.lastGroupId || currentGroupId() || '—';
-      hint.textContent = `Текущий профиль: ${active.displayName || 'Без имени'}. Последняя группа: ${group}.`;
+      hint.textContent = `Текущий профиль: ${active.displayName}. Последняя группа: ${group}.`;
     } else {
       hint.textContent = 'Профиль на этом устройстве ещё не создан.';
     }
   }
-  const saveBtn = $('savePersonProfileBtn');
-  if (saveBtn) saveBtn.disabled = !($('liveName')?.value?.trim());
+}
+
+function openDeviceProfileDialog(mode = 'create') {
+  const dialog = $('deviceProfileDialog');
+  const input = $('deviceProfileNameInput');
+  if (!dialog || !input) return false;
+  const active = getActiveProfile();
+  const normalizedMode = ['create', 'edit', 'new'].includes(mode) ? mode : 'create';
+  deviceProfileDialogState = { mode: normalizedMode };
+  const copy = {
+    create: {
+      title: 'Создать профиль на этом устройстве',
+      action: 'Создать профиль',
+      value: active?.displayName || ''
+    },
+    edit: {
+      title: 'Изменить имя профиля',
+      action: 'Сохранить имя',
+      value: active?.displayName || currentLiveName() || ''
+    },
+    new: {
+      title: 'Добавить другого человека',
+      action: 'Создать другой профиль',
+      value: ''
+    }
+  }[normalizedMode];
+  setText('deviceProfileDialogTitle', copy.title);
+  setText('deviceProfileSaveBtn', copy.action);
+  input.value = copy.value;
+  setText('deviceProfileValidation', '');
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', '');
+  window.requestAnimationFrame(() => {
+    input.focus();
+    if (normalizedMode === 'edit' && typeof input.select === 'function') input.select();
+  });
+  return true;
+}
+
+function closeDeviceProfileDialog() {
+  const dialog = $('deviceProfileDialog');
+  if (!dialog) return;
+  if (dialog.open && typeof dialog.close === 'function') dialog.close();
+  else dialog.removeAttribute('open');
+}
+
+function commitDeviceProfileDialog() {
+  const input = $('deviceProfileNameInput');
+  const name = String(input?.value || '').trim();
+  if (!name) {
+    setText('deviceProfileValidation', 'Укажи имя, которое увидят участники группы.');
+    input?.focus();
+    markButtonBlocked('пустое имя профиля');
+    return false;
+  }
+
+  const mode = deviceProfileDialogState.mode;
+  if (mode === 'new') {
+    resetRuntimeGroupSession();
+    const profile = makeLocalProfile(name, '');
+    peopleProfiles.push(profile);
+    activeProfileId = profile.id;
+    userId = profile.id;
+    savePeopleProfiles();
+    if ($('groupId')) $('groupId').value = '';
+    groupEntryDraft.groupId = '';
+    localStorage.removeItem('mushroom_live_group_id');
+    clearGroupInviteFromUrl();
+    applyProfileToInputs(profile, false);
+    if ($('liveHint')) $('liveHint').textContent = `Создан профиль на этом устройстве: ${name}. Открой приглашение или вставь код группы вручную, затем нажми “Войти в группу”.`;
+  } else {
+    let profile = getActiveProfile();
+    if (!profile) {
+      profile = makeLocalProfile('', '');
+      peopleProfiles.push(profile);
+      activeProfileId = profile.id;
+      userId = profile.id;
+    }
+    profile.displayName = name;
+    profile.updatedAt = new Date().toISOString();
+    if ($('liveName')) $('liveName').value = name;
+    groupEntryDraft.liveName = name;
+    savePeopleProfiles();
+    applyProfileToInputs(profile, true);
+    if ($('liveHint')) $('liveHint').textContent = mode === 'edit'
+      ? `Имя профиля изменено: ${name}.`
+      : `Профиль на этом устройстве создан: ${name}. Теперь можно создать группу или войти по коду.`;
+  }
+
+  closeDeviceProfileDialog();
+  renderPeopleProfiles();
+  updateLiveUi();
+  updateActionButtonsUi();
+  return true;
 }
 
 function saveCurrentPersonProfile() {
-  const name = $('liveName')?.value?.trim();
-  if (!name) { markButtonBlocked('пустое имя'); alert('Сначала укажи имя.'); return false; }
-  const profile = updateActiveProfileFromInputs();
-  renderPeopleProfiles();
-  $('liveHint').textContent = `Локальный человек сохранён: ${profile.displayName}.`;
-  return true;
+  return openDeviceProfileDialog(hasNamedLocalProfile() ? 'edit' : 'create');
 }
 
 function createNewPersonProfile() {
-  const typed = prompt('Имя нового человека на этом телефоне:', '');
-  const name = String(typed || '').trim();
-  if (!name) { markButtonCancelled('новый человек не создан'); return false; }
-  resetRuntimeGroupSession();
-  const profile = makeLocalProfile(name, '');
-  peopleProfiles.push(profile);
-  activeProfileId = profile.id;
-  userId = profile.id;
-  savePeopleProfiles();
-  if ($('groupId')) $('groupId').value = '';
-  groupEntryDraft.groupId = '';
-  localStorage.removeItem('mushroom_live_group_id');
-  clearGroupInviteFromUrl();
-  applyProfileToInputs(profile, false);
-  renderPeopleProfiles();
-  updateLiveUi();
-  $('liveHint').textContent = `Создан профиль на этом устройстве: ${name}. Открой приглашение или вставь код группы вручную, затем нажми “Войти в группу”.`;
-  return true;
+  return openDeviceProfileDialog('new');
 }
 
 function groupMembersCacheKey(group) {
@@ -1095,7 +1182,11 @@ function setSectionStatus(section, spec = null) {
 function focusGroupEntryFromSectionStatus() {
   switchAppScreen('group');
   window.requestAnimationFrame(() => {
-    const target = currentLiveName() ? $('groupId') : $('liveName');
+    if (!currentLiveName()) {
+      openDeviceProfileDialog('create');
+      return;
+    }
+    const target = $('groupId');
     target?.focus();
     target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
@@ -1160,9 +1251,9 @@ function shareAvailabilityStatusSpec(availability, context = activeAppScreen, op
     return {
       state: 'action-needed',
       reason: availability.reason,
-      title: 'Укажи имя профиля',
-      description: `${localCopy} Имя нужно для подписи точки в группе.`,
-      actionLabel: 'Указать имя',
+      title: 'Создай профиль на этом устройстве',
+      description: `${localCopy} Имя хранится локально и нужно для подписи точки в группе.`,
+      actionLabel: 'Создать профиль',
       action: focusGroupEntryFromSectionStatus
     };
   }
@@ -1326,9 +1417,9 @@ function updateSectionStatuses() {
   if (!currentLiveName()) {
     groupStatus = {
       state: 'action-needed',
-      title: 'Выбери профиль на этом устройстве',
-      description: 'Имя нужно для входа в группу и подписи на карте.',
-      actionLabel: 'Указать имя',
+      title: 'Создай профиль на этом устройстве',
+      description: 'Имя хранится только в этом браузере или PWA и нужно для входа в группу.',
+      actionLabel: 'Создать профиль',
       action: focusGroupEntryFromSectionStatus
     };
   } else if (!getSupabaseConfig()) {
@@ -6905,6 +6996,7 @@ function switchAppScreen(screen, options = {}) {
     maybeAutoLoadOfflineCatalogOnOpen();
     void ensureOfflineMapWorkspaceVisibleOnOpen('offline screen navigation');
   }
+  if (next === 'group') renderPeopleProfiles();
   updateSectionStatuses();
   if (next === 'map') scheduleMapWorkspaceClearance();
   renderSettingsDiagnostics();
@@ -11643,7 +11735,7 @@ function loadLiveInputs() {
 }
 
 function showGroupInviteAuthorizationRequired(group = currentGroupId()) {
-  const message = 'Вы должны быть авторизованы, чтобы войти в группу. Укажи профиль на этом устройстве и нажми “Войти в группу”.';
+  const message = 'Вы должны быть авторизованы, чтобы войти в группу. В этом MVP сначала создай профиль на этом устройстве, затем нажми “Войти в группу”.';
   groupJoined = false;
   joinedGroupId = '';
   setMemberSyncPending(false, 'invite requires local profile');
@@ -11973,7 +12065,9 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
   }
   if ($('groupStateHint')) {
     if (!groupJoined) {
-      $('groupStateHint').textContent = 'Создай группу или вставь код/ссылку от друга.';
+      $('groupStateHint').textContent = hasNamedLocalProfile()
+        ? 'Создай группу или вставь код/ссылку от друга.'
+        : 'Сначала создай профиль на этом устройстве. После этого станут доступны создание группы и вход по коду.';
     } else if (!hasSupabase) {
       $('groupStateHint').textContent = 'Группа открыта локально, но синхронизация участников и чат сейчас недоступны без подключения к БД.';
     } else {
@@ -11993,7 +12087,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
       $('myLiveStateHint').textContent = '';
     }
   }
-  setHidden('groupEntryPanels', groupJoined);
+  setHidden('groupEntryPanels', groupJoined || !hasNamedLocalProfile());
   setHidden('groupJoinedActions', !groupJoined);
   setHidden('groupLockedPreview', true);
   setHidden('groupMembersCard', !groupJoined);
@@ -12005,7 +12099,9 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
   if ($('groupHint')) {
     $('groupHint').textContent = groupJoined
       ? 'Группа активна. Участники, координаты и чат теперь доступны ниже.'
-      : 'Создание группы не требует кода. Вход в существующую группу требует код или ссылку.';
+      : hasNamedLocalProfile()
+        ? 'Создание группы не требует кода. Вход в существующую группу требует код или ссылку.'
+        : 'Создание и вход в группу откроются после создания профиля на этом устройстве.';
   }
   if ($('groupMembersStatus')) {
     if (memberCount === null) {
@@ -12995,15 +13091,18 @@ function bindUi() {
   $('groupId').onblur = () => { updateActionButtonsUi(); };
   $('createGroupBtn').onclick = withButtonDiagnostics('createGroupBtn', createGroup);
   $('copyInviteBtn').onclick = withButtonDiagnostics('copyInviteBtn', copyInvite);
-  if ($('groupProfileEditBtn')) $('groupProfileEditBtn').onclick = withButtonDiagnostics('groupProfileEditBtn', () => {
-    const input = $('liveName');
-    if (!input) return false;
-    input.focus();
-    if (typeof input.select === 'function') input.select();
-    return true;
-  });
+  if ($('createDeviceProfileBtn')) $('createDeviceProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', () => openDeviceProfileDialog('create'));
+  if ($('groupProfileEditBtn')) $('groupProfileEditBtn').onclick = withButtonDiagnostics('groupProfileEditBtn', () => openDeviceProfileDialog('edit'));
   if ($('savePersonProfileBtn')) $('savePersonProfileBtn').onclick = withButtonDiagnostics('savePersonProfileBtn', saveCurrentPersonProfile);
   if ($('newPersonProfileBtn')) $('newPersonProfileBtn').onclick = withButtonDiagnostics('newPersonProfileBtn', createNewPersonProfile);
+  if ($('deviceProfileCancelBtn')) $('deviceProfileCancelBtn').onclick = withButtonDiagnostics('deviceProfileCancelBtn', () => { closeDeviceProfileDialog(); return true; });
+  if ($('deviceProfileForm')) {
+    const saveDeviceProfile = withButtonDiagnostics('deviceProfileSaveBtn', commitDeviceProfileDialog);
+    $('deviceProfileForm').onsubmit = (event) => {
+      event.preventDefault();
+      saveDeviceProfile.call($('deviceProfileSaveBtn'), event);
+    };
+  }
   {
     const joinGroupBtn = $('joinGroupBtn');
     const joinGroupHandler = withButtonDiagnostics('joinGroupBtn', triggerJoinGroupFromUi);

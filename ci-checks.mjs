@@ -558,6 +558,27 @@ function checkControlledPwaUpdateContract() {
   }
 }
 
+
+function checkLocalProfileClarityContract() {
+  const app = read('app.js');
+  const indexHtml = read('index.html');
+  const styles = read('styles.css');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(indexHtml, 'id="createDeviceProfileBtn"', 'local profile creation action');
+  assertIncludes(indexHtml, 'id="deviceProfileDialog"', 'local profile explanatory dialog');
+  assertIncludes(indexHtml, 'Это локальный профиль, а не аккаунт с паролем.', 'local profile account distinction');
+  assertIncludes(indexHtml, 'Очистка данных сайта удалит локальную идентичность', 'local profile site-data warning');
+  assertIncludes(app, 'function openDeviceProfileDialog(', 'shared local profile dialog opener');
+  assertIncludes(app, 'function commitDeviceProfileDialog()', 'shared local profile commit flow');
+  assertIncludes(app, "openDeviceProfileDialog('new')", 'another local person dialog flow');
+  assertIncludes(app, "setHidden('groupEntryPanels', groupJoined || !hasNamedLocalProfile())", 'group actions gated by named local profile');
+  assertIncludes(styles, '.device-profile-dialog', 'responsive local profile dialog styling');
+  assertIncludes(e2e, 'group profile creation uses an explanatory local-device dialog', 'local profile creation E2E oracle');
+  assertIncludes(e2e, 'editing a local device profile keeps the same identity', 'local profile rename identity E2E oracle');
+  assert.ok(!pathExists('TEMP_UX_ROADMAP_2026-06-07.md'), 'temporary UX roadmap must be removed after Sprint 5.63');
+}
+
 function checkDependencyAndLockfilePolicy() {
   const packageJson = JSON.parse(read('package.json'));
   const hasDependencies = Boolean(
@@ -638,6 +659,7 @@ checkDestructiveActionConsequenceContract();
 checkMobileGpsPromptLayoutContract();
 checkGlobalRouteRecordingIndicatorContract();
 checkSharedMapLegendContract();
+checkLocalProfileClarityContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();

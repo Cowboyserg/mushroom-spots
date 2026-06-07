@@ -4370,3 +4370,73 @@ body.offline-map-expanded .bottom-nav {
     max-height: calc(100vh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 }
+
+/* Sprint 5.63 — Local Profile Clarity. */
+.group-profile-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.group-profile-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.group-profile-heading strong {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  color: var(--green);
+}
+.group-profile-create-btn {
+  justify-self: start;
+  min-height: 46px;
+}
+.device-profile-dialog {
+  width: min(520px, calc(100vw - 24px));
+  max-width: 520px;
+}
+.device-profile-dialog .compact-title {
+  align-items: flex-start;
+}
+.device-profile-dialog .compact-title > div {
+  min-width: 0;
+}
+.device-profile-dialog .compact-title h2,
+.device-profile-dialog .compact-title p {
+  overflow-wrap: anywhere;
+}
+.device-profile-explanation {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid rgba(36, 75, 47, 0.16);
+  border-radius: 14px;
+  background: rgba(244, 248, 241, 0.72);
+}
+.device-profile-explanation p {
+  margin: 0;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+#deviceProfileValidation:empty {
+  display: none;
+}
+@media (max-width: 460px) {
+  .group-profile-heading {
+    align-items: center;
+  }
+  .group-profile-create-btn {
+    width: 100%;
+  }
+  .device-profile-dialog {
+    width: calc(100vw - 16px);
+    padding: 14px;
+  }
+  .device-profile-dialog .compact-title {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+}
