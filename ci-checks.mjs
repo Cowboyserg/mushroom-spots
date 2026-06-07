@@ -508,6 +508,29 @@ function checkGlobalRouteRecordingIndicatorContract() {
   }
 }
 
+
+function checkSharedMapLegendContract() {
+  const app = read('app.js');
+  const indexHtml = read('index.html');
+  const styles = read('styles.css');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(indexHtml, 'id="mapLegendBtn"', 'online map legend action');
+  assertIncludes(indexHtml, 'id="offlineMapLegendBtn"', 'offline map legend action');
+  assertIncludes(indexHtml, 'id="mapLegendDialog"', 'shared map legend dialog');
+  assertIncludes(indexHtml, 'id="mapLegendList"', 'shared map legend list');
+  assertIncludes(app, 'const MAP_LEGEND_ITEMS = Object.freeze([', 'single map legend semantics source');
+  assertIncludes(app, 'function renderMapLegend()', 'shared map legend renderer');
+  assertIncludes(app, "openMapLegend('online')", 'online legend shared opener');
+  assertIncludes(app, "openMapLegend('offline')", 'offline legend shared opener');
+  assertIncludes(styles, '.map-legend-dialog', 'responsive shared map legend styling');
+  assertIncludes(styles, '.map-legend-swatch', 'semantic legend swatches');
+  assertIncludes(e2e, 'online and offline maps share one mobile-safe marker legend', 'shared map legend E2E oracle');
+  if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
+    assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.62 — Shared Map Legend — completed', 'completed shared map legend roadmap marker');
+  }
+}
+
 function checkControlledPwaUpdateContract() {
   const app = read('app.js');
   const indexHtml = read('index.html');
@@ -614,6 +637,7 @@ checkExactShareAvailabilityContract();
 checkDestructiveActionConsequenceContract();
 checkMobileGpsPromptLayoutContract();
 checkGlobalRouteRecordingIndicatorContract();
+checkSharedMapLegendContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();

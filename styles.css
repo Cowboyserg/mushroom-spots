@@ -4246,3 +4246,127 @@ body.offline-map-expanded .bottom-nav {
     font-size: 12px;
   }
 }
+
+
+/* Sprint 5.62 — one discoverable marker legend shared by online and offline maps. */
+.map-fab-stack > .map-legend-btn {
+  width: 54px;
+  min-width: 54px;
+  justify-self: end;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.map-legend-dialog {
+  width: min(440px, calc(100% - 24px));
+  max-width: 440px;
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding: 0;
+  border: 1px solid rgba(36, 75, 47, .18);
+  border-radius: 22px;
+  background: #fffdf6;
+  box-shadow: 0 24px 70px rgba(20, 40, 27, .28);
+  color: var(--ink);
+  overflow: auto;
+}
+
+.map-legend-dialog::backdrop {
+  background: rgba(16, 28, 20, .46);
+  backdrop-filter: blur(2px);
+}
+
+.map-legend-dialog > form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  min-width: 0;
+}
+
+.map-legend-heading {
+  align-items: start;
+  margin: 0;
+}
+
+.map-legend-heading > div {
+  min-width: 0;
+}
+
+.map-legend-close-icon {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.map-legend-list {
+  display: grid;
+  gap: 8px;
+}
+
+.map-legend-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(36, 75, 47, .12);
+  border-radius: 16px;
+  background: rgba(250, 248, 239, .86);
+}
+
+.map-legend-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--map-legend-color);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .22);
+}
+
+.map-legend-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-legend-copy strong,
+.map-legend-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.map-legend-copy span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+@media (max-width: 560px) {
+  .map-fab-stack > .map-legend-btn {
+    width: 48px;
+    min-width: 48px;
+  }
+  .map-legend-dialog {
+    width: calc(100% - 16px);
+    max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    border-radius: 18px;
+  }
+  .map-legend-dialog > form {
+    padding: 14px;
+    gap: 12px;
+  }
+  .map-legend-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 10px;
+  }
+}
+
+@supports not (height: 100dvh) {
+  .map-legend-dialog {
+    max-height: calc(100vh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}

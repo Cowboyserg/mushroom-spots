@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.9$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.10$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -496,7 +496,7 @@ async function seedSingleTrack(page) {
           endedAt: '2026-06-07T08:01:00.000Z',
           createdAt: '2026-06-07T08:01:00.000Z',
           updatedAt: '2026-06-07T08:01:00.000Z',
-          appVersion: '0.8.9'
+          appVersion: '0.8.10'
         });
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error || new Error('Track seed failed'));
@@ -656,7 +656,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.9');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.10');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1567,6 +1567,58 @@ test('group screen separates entry actions from group features', async ({ page }
   await expect(page.getByRole('heading', { name: 'Чат' })).toBeVisible();
 });
 
+
+
+test('online and offline maps share one mobile-safe marker legend', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 700 });
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  const legend = page.locator('#mapLegendDialog');
+  const expectedLabels = ['Вы', 'Участник группы', 'Сохранённая точка', 'Выбранное место', 'Точка из чата'];
+  await expect(legend).toBeHidden();
+  await page.locator('#mapLegendBtn').click();
+  await expect(legend).toBeVisible();
+  await expect(legend).toHaveAttribute('data-map-source', 'online');
+  await expect(page.locator('#mapLegendList .map-legend-row')).toHaveCount(5);
+  await expect(page.locator('#mapLegendList .map-legend-copy strong')).toHaveText(expectedLabels);
+
+  const onlineLegend = await page.locator('#mapLegendList .map-legend-row').evaluateAll((rows) => rows.map((row) => ({
+    kind: row.dataset.mapLegendKind,
+    label: row.querySelector('strong')?.textContent || '',
+    color: getComputedStyle(row.querySelector('.map-legend-swatch')).backgroundColor
+  })));
+  const onlineBox = await legend.boundingBox();
+  expect(onlineBox).not.toBeNull();
+  expect(onlineBox.x).toBeGreaterThanOrEqual(0);
+  expect(onlineBox.x + onlineBox.width).toBeLessThanOrEqual(361);
+  expect(onlineBox.y).toBeGreaterThanOrEqual(0);
+  expect(onlineBox.y + onlineBox.height).toBeLessThanOrEqual(701);
+  await page.locator('#closeMapLegendBtn').click();
+  await expect(legend).toBeHidden();
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'legend-test.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+  await expect(page.locator('#appToast')).toContainText('Карта импортирована');
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await page.locator('#offlineMapLegendBtn').click();
+  await expect(legend).toBeVisible();
+  await expect(legend).toHaveAttribute('data-map-source', 'offline');
+
+  const offlineLegend = await page.locator('#mapLegendList .map-legend-row').evaluateAll((rows) => rows.map((row) => ({
+    kind: row.dataset.mapLegendKind,
+    label: row.querySelector('strong')?.textContent || '',
+    color: getComputedStyle(row.querySelector('.map-legend-swatch')).backgroundColor
+  })));
+  expect(offlineLegend).toEqual(onlineLegend);
+  await page.locator('#closeMapLegendIconBtn').click();
+  await expect(legend).toBeHidden();
+});
 
 
 test('map participant labels use unique name prefixes and shared semantic colors', async ({ page }) => {
@@ -2692,7 +2744,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.9');
+  expect(backup.appVersion).toBe('0.8.10');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2823,7 +2875,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.9',
+    appVersion: '0.8.10',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

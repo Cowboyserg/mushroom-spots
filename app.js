@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.9';
+const APP_VERSION = '0.8.10';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -57,6 +57,13 @@ const MAP_MARKER_COLORS = Object.freeze({
   picked: '#d97706',
   chat: '#7c3aed'
 });
+const MAP_LEGEND_ITEMS = Object.freeze([
+  { kind: 'user', label: 'Вы', description: 'Текущая GPS-позиция на этом устройстве.' },
+  { kind: 'friend', label: 'Участник группы', description: 'Последняя доступная позиция другого участника.' },
+  { kind: 'spot', label: 'Сохранённая точка', description: 'Точка из общего локального хранилища приложения.' },
+  { kind: 'picked', label: 'Выбранное место', description: 'Координата выбрана, но ещё не сохранена.' },
+  { kind: 'chat', label: 'Точка из чата', description: 'Место, открытое из сообщения группы.' }
+]);
 const PMTILES_SAMPLE_URL = './offline-test.pmtiles';
 const PMTILES_DEFAULT_URL = PMTILES_SAMPLE_URL;
 const OFFLINE_MAP_MANIFEST_URL = './offline-map-packages.json';
@@ -380,6 +387,7 @@ let memberSyncTimer = null;
 const BUTTON_DIAGNOSTIC_LABELS = {
   startGpsBtn: 'Включить GPS',
   centerMeBtn: 'Ко мне',
+  mapLegendBtn: 'Открыть обозначения онлайн-карты',
   mapExpandBtn: 'Развернуть карту',
   repairMapBtn: 'Починить карту',
   startBboxExportBtn: 'Выбрать прямоугольник региона',
@@ -447,6 +455,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   previewPmtilesBtn: 'Предпросмотр офлайн-карты',
   replaceLocalPmtilesBtn: 'Заменить файл карты',
   centerPmtilesOnMeBtn: 'Показать меня на офлайн-карте',
+  offlineMapLegendBtn: 'Открыть обозначения офлайн-карты',
   renameRememberedPmtilesMapBtn: 'Сохранить название карты',
   forgetRememberedPmtilesMapBtn: 'Забыть карту',
   offlineDeleteMapConfirmBtn: 'Удалить карту',
@@ -461,7 +470,9 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   copyMapDebugBtn: 'Скопировать диагностику',
   closeMapDebugBtn: 'Закрыть диагностику',
   installHelpBtn: 'Открыть помощь',
-  closeHelpBtn: 'Закрыть помощь'
+  closeHelpBtn: 'Закрыть помощь',
+  closeMapLegendBtn: 'Закрыть обозначения карты',
+  closeMapLegendIconBtn: 'Закрыть обозначения карты'
 };
 
 const $ = (id) => document.getElementById(id);
@@ -7903,6 +7914,45 @@ function mapMarkerColor(kind) {
   return MAP_MARKER_COLORS[kind] || '#475569';
 }
 
+function renderMapLegend() {
+  const list = $('mapLegendList');
+  if (!list) return;
+  list.innerHTML = '';
+  for (const item of MAP_LEGEND_ITEMS) {
+    const row = document.createElement('div');
+    row.className = 'map-legend-row';
+    row.dataset.mapLegendKind = item.kind;
+
+    const swatch = document.createElement('span');
+    swatch.className = 'map-legend-swatch';
+    swatch.style.setProperty('--map-legend-color', mapMarkerColor(item.kind));
+    swatch.setAttribute('aria-hidden', 'true');
+
+    const copy = document.createElement('div');
+    copy.className = 'map-legend-copy';
+    const title = document.createElement('strong');
+    title.textContent = item.label;
+    const description = document.createElement('span');
+    description.textContent = item.description;
+    copy.append(title, description);
+    row.append(swatch, copy);
+    list.append(row);
+  }
+}
+
+function openMapLegend(source = 'online') {
+  renderMapLegend();
+  const dialog = $('mapLegendDialog');
+  if (dialog) dialog.dataset.mapSource = source === 'offline' ? 'offline' : 'online';
+  showDialogSafely('mapLegendDialog');
+  return true;
+}
+
+function closeMapLegend() {
+  closeDialogSafely('mapLegendDialog');
+  return true;
+}
+
 function currentSelfMapLabel() {
   const id = String(userId || '').trim();
   return (id && mapPersonLabels.get(id)) || shortMapObjectLabel(currentChatName(), '?');
@@ -12868,6 +12918,7 @@ function bindUi() {
   bindAppNavigationShell();
   $('startGpsBtn').onclick = withButtonDiagnostics('startGpsBtn', () => startGps(true));
   $('centerMeBtn').onclick = withButtonDiagnostics('centerMeBtn', () => currentPosition && canUseMapRuntime() ? map.setView([currentPosition.lat, currentPosition.lon], 16) : startGps(true));
+  if ($('mapLegendBtn')) $('mapLegendBtn').onclick = withButtonDiagnostics('mapLegendBtn', () => openMapLegend('online'));
   if ($('mapExpandBtn')) $('mapExpandBtn').onclick = withButtonDiagnostics('mapExpandBtn', toggleOnlineMapExpanded);
   if ($('startTrackBtn')) $('startTrackBtn').onclick = withButtonDiagnostics('startTrackBtn', startTrackRecording);
   if ($('stopTrackBtn')) $('stopTrackBtn').onclick = withButtonDiagnostics('stopTrackBtn', stopTrackRecording);
@@ -13048,6 +13099,7 @@ function bindUi() {
   if ($('offlineMapExpandBtn')) $('offlineMapExpandBtn').onclick = withButtonDiagnostics('offlineMapExpandBtn', toggleOfflineMapExpanded);
   if ($('offlineStartGpsBtn')) $('offlineStartGpsBtn').onclick = withButtonDiagnostics('offlineStartGpsBtn', startOfflineGps);
   if ($('centerPmtilesOnMeBtn')) $('centerPmtilesOnMeBtn').onclick = withButtonDiagnostics('centerPmtilesOnMeBtn', centerPmtilesPreviewOnMe);
+  if ($('offlineMapLegendBtn')) $('offlineMapLegendBtn').onclick = withButtonDiagnostics('offlineMapLegendBtn', () => openMapLegend('offline'));
   if ($('offlineStartTrackBtn')) $('offlineStartTrackBtn').onclick = withButtonDiagnostics('offlineStartTrackBtn', startTrackRecording);
   if ($('offlineStopTrackBtn')) $('offlineStopTrackBtn').onclick = withButtonDiagnostics('offlineStopTrackBtn', stopTrackRecording);
   if ($('offlineMapObjectPrimaryBtn')) $('offlineMapObjectPrimaryBtn').onclick = withButtonDiagnostics('offlineMapObjectPrimaryBtn', runOfflineMapObjectPrimaryAction);
@@ -13096,6 +13148,10 @@ function bindUi() {
   $('groupId').onchange = handleGroupIdInputCommitted;
   $('installHelpBtn').onclick = withButtonDiagnostics('installHelpBtn', () => $('helpDialog').showModal());
   $('closeHelpBtn').onclick = withButtonDiagnostics('closeHelpBtn', () => $('helpDialog').close());
+  if ($('closeMapLegendBtn')) $('closeMapLegendBtn').onclick = withButtonDiagnostics('closeMapLegendBtn', closeMapLegend);
+  if ($('closeMapLegendIconBtn')) $('closeMapLegendIconBtn').onclick = withButtonDiagnostics('closeMapLegendIconBtn', closeMapLegend);
+  const mapLegendDialog = $('mapLegendDialog');
+  if (mapLegendDialog) mapLegendDialog.addEventListener('cancel', (event) => { event.preventDefault(); closeMapLegend(); });
 }
 
 async function init() {

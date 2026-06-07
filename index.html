@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.8.9" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.8.9" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.8.10" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.8.10" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.8.9" />
+  <link rel="stylesheet" href="styles.css?v=0.8.10" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.8.9</p>
+      <p id="appVersion">v0.8.10</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -63,6 +63,7 @@
             <div class="map-fab-stack" aria-label="Быстрые действия карты">
               <button id="startGpsBtn" class="map-fab map-control-btn primary-fab btn-primary" type="button" aria-label="GPS" title="GPS">GPS</button>
               <button id="centerMeBtn" class="map-fab map-control-btn secondary btn-secondary" type="button" aria-label="Ко мне" title="Ко мне">◎</button>
+              <button id="mapLegendBtn" class="map-fab map-control-btn secondary btn-secondary map-legend-btn" type="button" aria-label="Обозначения карты" title="Обозначения карты">ⓘ</button>
             </div>
             <section class="card map-object-card map-object-sheet" id="mapObjectCard" hidden aria-label="Контекст выбранного объекта на карте">
               <div class="section-title compact-title map-object-heading">
@@ -535,6 +536,7 @@
               <div class="map-fab-stack offline-map-fab-stack" aria-label="Быстрые действия офлайн-карты">
                 <button id="offlineStartGpsBtn" class="map-fab map-control-btn primary-fab btn-primary" type="button" aria-label="GPS" title="GPS">GPS</button>
                 <button id="centerPmtilesOnMeBtn" class="map-fab map-control-btn secondary btn-secondary" type="button" aria-label="Ко мне" title="Ко мне">◎</button>
+                <button id="offlineMapLegendBtn" class="map-fab map-control-btn secondary btn-secondary map-legend-btn" type="button" aria-label="Обозначения карты" title="Обозначения карты">ⓘ</button>
               </div>
               <section class="card map-object-card map-object-sheet offline-map-object-sheet" id="offlineMapObjectCard" hidden aria-label="Контекст выбранного объекта на офлайн-карте">
                 <div class="section-title compact-title map-object-heading">
@@ -747,7 +749,7 @@
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.8.9</span>
+          <span class="pill">v0.8.10</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -763,8 +765,8 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.8.9</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.8.9</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.8.10</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.8.10</strong></div>
         </div>
       </section>
 
@@ -1186,6 +1188,22 @@
     </form>
   </dialog>
 
+  <dialog id="mapLegendDialog" class="map-legend-dialog" aria-labelledby="mapLegendTitle">
+    <form method="dialog">
+      <div class="section-title compact-title map-legend-heading">
+        <div>
+          <h2 id="mapLegendTitle">Обозначения карты</h2>
+          <p class="hint">Цвет показывает тип объекта, подпись — его имя.</p>
+        </div>
+        <button id="closeMapLegendIconBtn" class="secondary btn-secondary map-legend-close-icon" type="button" aria-label="Закрыть обозначения карты">×</button>
+      </div>
+      <div id="mapLegendList" class="map-legend-list" aria-label="Легенда обозначений карты"></div>
+      <menu class="dialog-actions">
+        <button id="closeMapLegendBtn" class="secondary btn-secondary" type="button">Закрыть</button>
+      </menu>
+    </form>
+  </dialog>
+
   <dialog id="helpDialog">
     <h2>Как установить</h2>
     <p><strong>iPhone:</strong> открой ссылку в Safari → Поделиться → На экран «Домой».</p>
@@ -1208,10 +1226,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.8.9"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.8.10"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.8.9"></script>
-  <script src="app.js?v=0.8.9"></script>
+  <script src="config.js?v=0.8.10"></script>
+  <script src="app.js?v=0.8.10"></script>
 </body>
 </html>
