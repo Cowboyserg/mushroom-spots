@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.3$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.4$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -620,7 +620,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.3');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.4');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1107,6 +1107,39 @@ test('manual offline map import can be canceled without adding a partial map', a
   await expect(page.locator('#offlineImportNameDialog')).toBeHidden();
 });
 
+
+
+test('opening offline screen restores the last active installed map automatically', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  for (const fileName of ['north.pmtiles', 'south.pmtiles']) {
+    await page.locator('#localPmtilesFileInput').setInputFiles({
+      name: fileName,
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from(`PMTiles fake ${fileName} ${'x'.repeat(256)}`)
+    });
+    await expect(page.locator('#appToast')).toContainText('Карта импортирована');
+    await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+    await page.locator('#offlineImportNameKeepBtn').click();
+  }
+
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('2 офлайн-карты');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('south');
+
+  await page.getByRole('button', { name: 'Карта', exact: true }).click();
+  await expect(page.locator('#screen-map')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  await expect(page.locator('#screen-map')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('2 офлайн-карты');
+  await expect(page.locator('#pmtilesPreviewPanel')).toBeVisible();
+  await expect(page.locator('#pmtilesPreviewMap')).toHaveAttribute('data-fake-maplibre', 'ready');
+  await expect(page.locator('#currentOfflineMapStatus')).toContainText('south');
+});
 
 test('offline map preview builds an OpenMapTiles compatible style for Planetiler metadata', async ({ page }) => {
   await bootApp(page, { fakePmtilesRuntime: true });
@@ -2371,7 +2404,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.3');
+  expect(backup.appVersion).toBe('0.8.4');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2502,7 +2535,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.3',
+    appVersion: '0.8.4',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

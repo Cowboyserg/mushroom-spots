@@ -414,6 +414,9 @@ function checkSharedSectionStatusContract() {
   assertIncludes(app, 'function scheduleMapWorkspaceClearance()', 'scheduled map workspace clearance');
   assertIncludes(styles, '--map-workspace-height', 'runtime map workspace height override');
   assertIncludes(e2e, 'map workspace recomputes bottom-nav clearance when section status changes', 'map workspace clearance E2E oracle');
+  assertIncludes(app, 'async function ensureOfflineMapWorkspaceVisibleOnOpen', 'offline active map restore transition');
+  assertIncludes(app, "void ensureOfflineMapWorkspaceVisibleOnOpen('offline screen navigation');", 'offline screen automatic map restore integration');
+  assertIncludes(e2e, 'opening offline screen restores the last active installed map automatically', 'offline active map restore E2E oracle');
 }
 
 function checkControlledPwaUpdateContract() {

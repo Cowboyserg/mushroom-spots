@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mushroom-spots-v0.8.3';
-const APP_ASSET_VERSION = '0.8.3';
+const CACHE_NAME = 'mushroom-spots-v0.8.4';
+const APP_ASSET_VERSION = '0.8.4';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.

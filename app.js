@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.3';
+const APP_VERSION = '0.8.4';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -168,6 +168,7 @@ let activeAppScreen = 'map';
 let showMapAdvancedControls = false;
 let onlineMapExpanded = false;
 let offlineMapExpanded = false;
+let offlineMapAutoOpenPromise = null;
 let offlineMapObjectSheetCollapsed = false;
 let offlineMapObjectSheetLayoutFrame = 0;
 let offlineMapLongPressTimer = null;
@@ -6609,6 +6610,65 @@ function maybeAutoLoadOfflineCatalogOnOpen() {
   }, 0);
 }
 
+
+async function ensureOfflineMapWorkspaceVisibleOnOpen(reason = 'offline screen opened') {
+  if (activeAppScreen !== 'offline') return false;
+  const maps = rememberedPmtilesMapsState.maps || [];
+  if (!maps.length) return false;
+
+  if (pmtilesPreviewState.visible && pmtilesPreviewMap && pmtilesPreviewState.status === 'loaded') {
+    updatePmtilesPreviewUi();
+    resizePmtilesPreviewMap(0, reason);
+    resizePmtilesPreviewMap(250, `${reason} delayed`);
+    return true;
+  }
+
+  if (offlineMapAutoOpenPromise) return offlineMapAutoOpenPromise;
+
+  offlineMapAutoOpenPromise = (async () => {
+    const selected = getSelectedRememberedPmtilesMap() || maps[0] || null;
+    if (!selected) return false;
+
+    if (rememberedPmtilesMapsState.selectedId !== selected.id) {
+      rememberedPmtilesMapsState.selectedId = selected.id;
+      saveRememberedPmtilesMaps('offline screen selected last remembered map');
+    }
+
+    let activePackage = getSelectedOfflineMapPackage(false);
+    const activeSourceMatches = localPmtilesFileState.status === 'selected'
+      && localPmtilesFileState.rememberedId === selected.id
+      && activePackage?.id === localPmtilesFileState.packageId;
+    if (!activeSourceMatches) activePackage = null;
+
+    if (!activePackage && selected.persistent && selected.storageName) {
+      activePackage = await activatePersistedPmtilesMap(selected, false);
+    }
+
+    if (!activePackage || activeAppScreen !== 'offline') {
+      renderRememberedPmtilesMapsUi();
+      return false;
+    }
+
+    await showPmtilesPreviewMap();
+    if (activeAppScreen !== 'offline') return false;
+    resizePmtilesPreviewMap(0, reason);
+    resizePmtilesPreviewMap(250, `${reason} delayed`);
+    recordMapDebug('offline screen automatically opened remembered map', {
+      reason,
+      rememberedId: selected.id,
+      title: selected.title
+    });
+    return true;
+  })().catch((err) => {
+    recordMapDebug('offline screen automatic map open failed', err?.message || String(err));
+    return false;
+  }).finally(() => {
+    offlineMapAutoOpenPromise = null;
+  });
+
+  return offlineMapAutoOpenPromise;
+}
+
 function switchAppScreen(screen, options = {}) {
   const next = normalizeAppScreen(screen);
   const { persist = true, scrollTop = true } = options;
@@ -6639,7 +6699,10 @@ function switchAppScreen(screen, options = {}) {
   }
 
   resizeActiveScreenMaps(`active screen: ${next}`);
-  if (next === 'offline') maybeAutoLoadOfflineCatalogOnOpen();
+  if (next === 'offline') {
+    maybeAutoLoadOfflineCatalogOnOpen();
+    void ensureOfflineMapWorkspaceVisibleOnOpen('offline screen navigation');
+  }
   updateSectionStatuses();
   if (next === 'map') scheduleMapWorkspaceClearance();
   renderSettingsDiagnostics();
@@ -12684,7 +12747,7 @@ async function init() {
   loadRememberedPmtilesMaps();
   await activatePersistedPmtilesMap(getSelectedRememberedPmtilesMap(), false);
   if ($('screen-offline') && !$('screen-offline').hidden && localPmtilesFileState.status === 'selected') {
-    showPmtilesPreviewMap().catch((err) => recordMapDebug('persistent PMTiles preview startup failed', err?.message || String(err)));
+    void ensureOfflineMapWorkspaceVisibleOnOpen('offline startup restore');
   }
   recordMapDebug('app initialized');
   const groupFromUrl = loadLiveInputs();
