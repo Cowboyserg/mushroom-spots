@@ -1963,13 +1963,25 @@ select {
     font-size: 18px;
   }
 
+  .save-flow-state-top > div:last-child {
+    min-width: 0;
+  }
+
+  .save-flow-state-top strong,
+  .save-flow-state-top .hint,
+  .save-flow-state-top .save-flow-coords {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
   .save-flow-state-top .hint {
     margin: 2px 0 0;
     font-size: 12px;
     line-height: 1.25;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .save-flow-state-top .save-flow-coords {

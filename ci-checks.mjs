@@ -472,6 +472,20 @@ function checkDestructiveActionConsequenceContract() {
   }
 }
 
+
+function checkMobileGpsPromptLayoutContract() {
+  const styles = read('styles.css');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(styles, '.save-flow-state-top > div:last-child', 'mobile GPS prompt constrained grid copy');
+  assertIncludes(styles, 'overflow-wrap: anywhere;', 'mobile GPS prompt long text wrapping');
+  assertIncludes(styles, 'white-space: normal;', 'mobile GPS prompt multiline description');
+  assertIncludes(e2e, 'mobile GPS-ready guidance wraps inside its green container', 'mobile GPS prompt overflow E2E oracle');
+  if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
+    assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.60.1 — Mobile GPS Guidance Wrap Hotfix — completed', 'completed mobile GPS layout roadmap marker');
+  }
+}
+
 function checkControlledPwaUpdateContract() {
   const app = read('app.js');
   const indexHtml = read('index.html');
@@ -576,6 +590,7 @@ checkControlledPwaUpdateContract();
 checkSharedSectionStatusContract();
 checkExactShareAvailabilityContract();
 checkDestructiveActionConsequenceContract();
+checkMobileGpsPromptLayoutContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();

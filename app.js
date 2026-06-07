@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.7';
+const APP_VERSION = '0.8.8';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';

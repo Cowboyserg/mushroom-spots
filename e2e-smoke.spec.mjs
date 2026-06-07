@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.7$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.8$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -496,7 +496,7 @@ async function seedSingleTrack(page) {
           endedAt: '2026-06-07T08:01:00.000Z',
           createdAt: '2026-06-07T08:01:00.000Z',
           updatedAt: '2026-06-07T08:01:00.000Z',
-          appVersion: '0.8.7'
+          appVersion: '0.8.8'
         });
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error || new Error('Track seed failed'));
@@ -656,7 +656,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.7');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.8');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1806,6 +1806,50 @@ test('map screen keeps GPS controls but does not duplicate bottom navigation in 
 });
 
 
+
+test('mobile GPS-ready guidance wraps inside its green container', async ({ page, context }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 56.9496, longitude: 24.1052, accuracy: 12 });
+  await bootApp(page);
+
+  const state = page.locator('#saveFlowState');
+  const description = page.locator('#saveFlowDescription');
+  await expect(state).toBeVisible();
+  await expect(state).toHaveClass(/save-flow-ready/);
+  await expect(description).toContainText('GPS уже активен');
+  await expect(description).toContainText('Можно добавить название, тип, заметку или фото');
+
+  const layout = await page.evaluate(() => {
+    const container = document.querySelector('#saveFlowState');
+    const text = document.querySelector('#saveFlowDescription');
+    const copy = text?.parentElement;
+    if (!container || !text || !copy) return null;
+    const containerBox = container.getBoundingClientRect();
+    const textBox = text.getBoundingClientRect();
+    const copyBox = copy.getBoundingClientRect();
+    const style = getComputedStyle(text);
+    return {
+      containerBox: { left: containerBox.left, right: containerBox.right },
+      textBox: { left: textBox.left, right: textBox.right },
+      copyBox: { left: copyBox.left, right: copyBox.right },
+      containerScrollWidth: container.scrollWidth,
+      containerClientWidth: container.clientWidth,
+      copyScrollWidth: copy.scrollWidth,
+      copyClientWidth: copy.clientWidth,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+
+  expect(layout, 'GPS guidance layout must be measurable').not.toBeNull();
+  expect(layout.whiteSpace).toBe('normal');
+  expect(layout.containerScrollWidth).toBeLessThanOrEqual(layout.containerClientWidth + 1);
+  expect(layout.copyScrollWidth).toBeLessThanOrEqual(layout.copyClientWidth + 1);
+  expect(layout.textBox.left).toBeGreaterThanOrEqual(layout.containerBox.left - 1);
+  expect(layout.textBox.right).toBeLessThanOrEqual(layout.containerBox.right + 1);
+  expect(layout.copyBox.right).toBeLessThanOrEqual(layout.containerBox.right + 1);
+});
+
 test('online map floating controls use one square touch target system', async ({ page }) => {
   await bootApp(page);
 
@@ -2606,7 +2650,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.7');
+  expect(backup.appVersion).toBe('0.8.8');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2737,7 +2781,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.7',
+    appVersion: '0.8.8',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
