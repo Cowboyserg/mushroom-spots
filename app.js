@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.8.1';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -27,6 +27,16 @@ const BBOX_EXPORT_MAX_ZOOM = 14;
 const APP_SCREEN_STORAGE_KEY = 'mushroom_active_app_screen_v1';
 const APP_ADVANCED_MODE_KEY = 'mushroom_advanced_mode_v1';
 const APP_SCREENS = ['map', 'spots', 'group', 'offline', 'settings'];
+const SECTION_STATUS_STATES = new Set(['working', 'offline', 'degraded', 'action-needed', 'error', 'success', 'info']);
+const SECTION_STATUS_ICONS = Object.freeze({
+  working: '◌',
+  offline: '⚠',
+  degraded: '⚠',
+  'action-needed': 'ⓘ',
+  error: '!',
+  success: '✓',
+  info: 'ⓘ'
+});
 const APP_CACHE_RESET_MARKER_KEY = 'mushroom_app_cache_reset_marker_v1';
 const SPOT_DEFAULT_COLLECTION = 'Грибные места';
 const SPOT_COLLECTIONS = [SPOT_DEFAULT_COLLECTION, 'Разведка', 'Ягоды', 'Парковка', 'Другое'];
@@ -167,6 +177,8 @@ let offlineNavigationTarget = null;
 let watchId = null;
 let gpsRequestInFlight = null;
 let gpsCenterRequested = false;
+let gpsSectionStatusState = 'idle';
+let gpsSectionStatusError = '';
 let spots = [];
 let customSpotCollections = [];
 let deletedSpotCollections = [];
@@ -968,6 +980,189 @@ function showAppToast(message, mode = 'info') {
   }, 3200);
 }
 
+function sectionStatusElement(section) {
+  return document.querySelector(`[data-section-status="${section}"]`);
+}
+
+function clearSectionStatus(section) {
+  const root = sectionStatusElement(section);
+  if (!root) return;
+  root.hidden = true;
+  root.removeAttribute('data-state');
+  const action = root.querySelector('.section-status-action');
+  if (action) {
+    action.hidden = true;
+    action.disabled = false;
+    action.textContent = '';
+    action.onclick = null;
+  }
+}
+
+function setSectionStatus(section, spec = null) {
+  const root = sectionStatusElement(section);
+  if (!root) return;
+  if (!spec || !SECTION_STATUS_STATES.has(spec.state)) {
+    clearSectionStatus(section);
+    return;
+  }
+
+  const icon = root.querySelector('.section-status-icon');
+  const title = root.querySelector('.section-status-title');
+  const description = root.querySelector('.section-status-description');
+  const action = root.querySelector('.section-status-action');
+
+  root.hidden = false;
+  root.dataset.state = spec.state;
+  if (icon) icon.textContent = SECTION_STATUS_ICONS[spec.state] || 'ⓘ';
+  if (title) title.textContent = String(spec.title || '');
+  if (description) {
+    description.textContent = String(spec.description || '');
+    description.hidden = !spec.description;
+  }
+  if (action) {
+    const hasAction = Boolean(spec.actionLabel && typeof spec.action === 'function');
+    action.hidden = !hasAction;
+    action.disabled = Boolean(spec.actionDisabled);
+    action.textContent = hasAction ? String(spec.actionLabel) : '';
+    action.onclick = hasAction ? spec.action : null;
+  }
+}
+
+function focusGroupEntryFromSectionStatus() {
+  switchAppScreen('group');
+  window.requestAnimationFrame(() => {
+    const target = currentLiveName() ? $('groupId') : $('liveName');
+    target?.focus();
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+function currentOfflineSectionStatus() {
+  const importState = localPmtilesImportProgressState;
+  if (['copying', 'switching-storage', 'verifying', 'canceling'].includes(importState.status)) {
+    const percent = localPmtilesImportPercent(importState);
+    return {
+      state: 'working',
+      title: importState.status === 'verifying' ? 'Проверяю импортированную карту…' : `Импортируется карта · ${percent}%`,
+      description: importState.fileName ? `${importState.fileName} · ${formatBytes(importState.receivedBytes || 0)} из ${formatBytes(importState.totalBytes || 0)}` : '',
+      actionLabel: ['copying', 'switching-storage'].includes(importState.status) ? 'Отменить' : '',
+      action: ['copying', 'switching-storage'].includes(importState.status) ? cancelLocalPmtilesImport : null
+    };
+  }
+  if (importState.status === 'error') {
+    return {
+      state: 'error',
+      title: 'Файл карты не импортирован',
+      description: importState.error || 'Выбери файл ещё раз или попробуй другой .pmtiles.'
+    };
+  }
+  if (offlineMapManifest.status === 'loading') {
+    return { state: 'working', title: 'Загружаю каталог регионов…', description: 'Установленные карты и ручной импорт остаются доступны.' };
+  }
+  if (offlineMapManifest.status === 'stale-cache') {
+    return {
+      state: 'degraded',
+      title: 'Показан последний сохранённый каталог',
+      description: 'Обновить список сейчас не удалось. Установленные карты продолжают работать.',
+      actionLabel: navigator.onLine === false ? '' : 'Повторить',
+      action: navigator.onLine === false ? null : refreshOfflineRegionCatalogFromUi
+    };
+  }
+  if (offlineMapManifest.status === 'offline-empty') {
+    return {
+      state: 'offline',
+      title: 'Каталог регионов недоступен без сети',
+      description: 'Установленные карты и ручной импорт продолжают работать.'
+    };
+  }
+  if (offlineMapManifest.status === 'error') {
+    return {
+      state: 'error',
+      title: 'Каталог регионов не загрузился',
+      description: 'Установленные карты не затронуты. Можно повторить загрузку или импортировать файл вручную.',
+      actionLabel: 'Повторить',
+      action: refreshOfflineRegionCatalogFromUi
+    };
+  }
+  return null;
+}
+
+function updateSectionStatuses() {
+  let mapStatus = null;
+  if (gpsSectionStatusState === 'requesting') {
+    mapStatus = { state: 'working', title: 'Определяем местоположение…', description: 'Карту и сохранённые точки можно использовать уже сейчас.' };
+  } else if (gpsSectionStatusState === 'denied') {
+    mapStatus = {
+      state: 'degraded',
+      title: 'Доступ к геопозиции запрещён',
+      description: 'Можно выбрать место на карте вручную или повторить запрос после изменения разрешения браузера.',
+      actionLabel: 'Повторить',
+      action: () => startGps(false, { silent: false, reason: 'section-status' })
+    };
+  } else if (gpsSectionStatusState === 'unsupported') {
+    mapStatus = { state: 'degraded', title: 'Геопозиция недоступна', description: 'Выбирай точки на карте вручную.' };
+  } else if (gpsSectionStatusState === 'error') {
+    mapStatus = {
+      state: 'degraded',
+      title: 'Не удалось определить местоположение',
+      description: gpsSectionStatusError || 'Попробуй ещё раз или выбери точку на карте вручную.',
+      actionLabel: 'Повторить',
+      action: () => startGps(false, { silent: false, reason: 'section-status' })
+    };
+  } else if (navigator.onLine === false) {
+    mapStatus = { state: 'offline', title: 'Нет соединения', description: 'GPS, сохранённые точки и установленные офлайн-карты продолжают работать.' };
+  }
+  setSectionStatus('map', mapStatus);
+
+  // The spots catalog is local-first. No status is shown while it works normally,
+  // including when the browser is offline.
+  clearSectionStatus('spots');
+
+  let groupStatus = null;
+  if (!currentLiveName()) {
+    groupStatus = {
+      state: 'action-needed',
+      title: 'Выбери профиль на этом устройстве',
+      description: 'Имя нужно для входа в группу и подписи на карте.',
+      actionLabel: 'Указать имя',
+      action: focusGroupEntryFromSectionStatus
+    };
+  } else if (!getSupabaseConfig()) {
+    groupStatus = { state: 'degraded', title: 'Группы не подключены', description: 'Локальные точки и карты работают, но участники и чат недоступны без подключения к БД.' };
+  } else if (navigator.onLine === false) {
+    groupStatus = {
+      state: 'offline',
+      title: 'Нет соединения',
+      description: groupJoined ? 'Список может показываться из кэша. Новые сообщения и live-позиции временно не отправляются.' : 'Вход и создание группы требуют соединения.'
+    };
+  } else if (!groupJoined) {
+    groupStatus = {
+      state: 'action-needed',
+      title: 'Войди в группу, чтобы делиться точками',
+      description: 'Создай новую группу или вставь код/ссылку от друга.',
+      actionLabel: 'Открыть вход',
+      action: focusGroupEntryFromSectionStatus
+    };
+  } else if (memberSyncPending) {
+    groupStatus = { state: 'working', title: 'Вход сохранён локально', description: 'Синхронизирую участника с группой…' };
+  }
+  setSectionStatus('group', groupStatus);
+
+  setSectionStatus('offline', currentOfflineSectionStatus());
+
+  if (pendingAppUpdateWorker) {
+    setSectionStatus('settings', {
+      state: appUpdateReloadRequested ? 'working' : 'action-needed',
+      title: appUpdateReloadRequested ? 'Применяю новую версию…' : 'Доступна новая версия приложения',
+      description: getAppUpdateBlockReason() || 'Обновление перезагрузит приложение, но не удалит локальные данные.',
+      actionLabel: appUpdateReloadRequested ? '' : 'Обновить',
+      action: appUpdateReloadRequested ? null : applyPendingAppUpdate
+    });
+  } else {
+    clearSectionStatus('settings');
+  }
+}
+
 function getAppUpdateBlockReason() {
   if (localPmtilesImportController && !localPmtilesImportController.signal.aborted) {
     return 'Дождись завершения импорта офлайн-карты или отмени его.';
@@ -982,6 +1177,7 @@ function hideAppUpdateBanner({ dismiss = false } = {}) {
   if (dismiss) appUpdateDismissedForSession = true;
   const banner = $('appUpdateBanner');
   if (banner) banner.hidden = true;
+  updateSectionStatuses();
 }
 
 function renderAppUpdateBanner() {
@@ -989,7 +1185,10 @@ function renderAppUpdateBanner() {
   if (!banner) return;
   const shouldShow = Boolean(pendingAppUpdateWorker) && !appUpdateDismissedForSession;
   banner.hidden = !shouldShow;
-  if (!shouldShow) return;
+  if (!shouldShow) {
+    updateSectionStatuses();
+    return;
+  }
 
   const blockReason = getAppUpdateBlockReason();
   setText(
@@ -1001,6 +1200,7 @@ function renderAppUpdateBanner() {
     updateBtn.disabled = false;
     updateBtn.textContent = 'Обновить';
   }
+  updateSectionStatuses();
 }
 
 function offerAppUpdate(worker) {
@@ -1030,6 +1230,7 @@ function applyPendingAppUpdate() {
   }
 
   appUpdateReloadRequested = true;
+  updateSectionStatuses();
   const updateBtn = $('applyAppUpdateBtn');
   if (updateBtn) {
     updateBtn.disabled = true;
@@ -1047,6 +1248,7 @@ function applyPendingAppUpdate() {
       updateBtn.textContent = 'Повторить';
     }
     setText('appUpdateMessage', 'Не удалось активировать обновление. Закрой и снова открой приложение или повтори попытку.');
+    updateSectionStatuses();
   }, 12000);
   return true;
 }
@@ -1923,6 +2125,7 @@ function setLocalPmtilesImportProgressState(patch = {}) {
     ...patch
   };
   renderLocalPmtilesImportProgressUi();
+  updateSectionStatuses();
   return localPmtilesImportProgressState;
 }
 
@@ -3278,6 +3481,7 @@ function renderCurrentOfflineMapSummary() {
 
 function renderRememberedPmtilesMapsList() {
   const list = $('rememberedPmtilesMapsList');
+  updateSectionStatuses();
   if (!list) return;
   list.innerHTML = '';
   const maps = rememberedPmtilesMapsState.maps || [];
@@ -4042,6 +4246,7 @@ function renderOfflineRegionCatalogUi() {
     }
   }
 
+  updateSectionStatuses();
   if (!list) return;
   list.innerHTML = '';
   if (!remotePackages.length) {
@@ -6392,6 +6597,7 @@ function switchAppScreen(screen, options = {}) {
 
   resizeActiveScreenMaps(`active screen: ${next}`);
   if (next === 'offline') maybeAutoLoadOfflineCatalogOnOpen();
+  updateSectionStatuses();
   renderSettingsDiagnostics();
   return next;
 }
@@ -8417,6 +8623,9 @@ function updateUserPosition(pos, center=false) {
     satellites: null
   };
   updateGpsStatusPanel(currentPosition);
+  gpsSectionStatusState = 'ready';
+  gpsSectionStatusError = '';
+  updateSectionStatuses();
   recordTrackPointFromCurrentPosition(currentPosition);
   updateActionButtonsUi();
 
@@ -8671,6 +8880,7 @@ function renderTrackRecorderUi() {
   setDisabled('startTrackBtn', trackRecording.active || !navigator.geolocation);
   setDisabled('stopTrackBtn', !trackRecording.active);
   updateOfflineWorkspaceStatus();
+  updateSectionStatuses();
   if (trackRecording.active) {
     setText('trackStatusText', trackRecording.lastError
       ? `Запись активна, но GPS сообщил ошибку: ${trackRecording.lastError}`
@@ -8837,12 +9047,18 @@ function startGps(center=true, options={}) {
   const reason = options.reason === 'startup' ? 'GPS startup permission/current position' : 'GPS permission/current position';
   if (!navigator.geolocation) {
     gpsCenterRequested = false;
+    gpsSectionStatusState = 'unsupported';
+    gpsSectionStatusError = 'Геолокация не поддерживается этим браузером.';
     if ($('gpsStatus')) $('gpsStatus').textContent = 'недоступен';
+    updateSectionStatuses();
     updateOfflineWorkspaceStatus();
     if (!silent) alert('Геолокация не поддерживается этим браузером.');
     return Promise.resolve(false);
   }
   if (currentPosition) {
+    gpsSectionStatusState = 'ready';
+    gpsSectionStatusError = '';
+    updateSectionStatuses();
     ensureGpsWatch();
     if (gpsCenterRequested && canUseMapRuntime()) map.setView([currentPosition.lat, currentPosition.lon], Math.max(map.getZoom(), 16));
     gpsCenterRequested = false;
@@ -8850,7 +9066,10 @@ function startGps(center=true, options={}) {
   }
   if (gpsRequestInFlight) return gpsRequestInFlight;
 
+  gpsSectionStatusState = 'requesting';
+  gpsSectionStatusError = '';
   $('gpsStatus').textContent = 'запрос разрешения…';
+  updateSectionStatuses();
   const requestId = beginApiRequest('Geolocation.getCurrentPosition', 'BROWSER', reason);
   gpsRequestInFlight = requestCurrentPositionWithDesktopFallback()
     .then(({ position, fallbackUsed }) => {
@@ -8862,7 +9081,10 @@ function startGps(center=true, options={}) {
     })
     .catch((err) => {
       finishApiRequest(requestId, 'ошибка', err.message);
+      gpsSectionStatusState = err.code === 1 ? 'denied' : 'error';
+      gpsSectionStatusError = err?.message || '';
       $('gpsStatus').textContent = err.code === 1 ? 'доступ запрещён' : 'ошибка';
+      updateSectionStatuses();
       setText('saveFlowDescription', err.code === 1 ? 'GPS запрещён в браузере. Можно сохранить выбранную точку вручную: зажми место на карте примерно на секунду.' : 'GPS не дал координаты. Можно попробовать ещё раз или выбрать точку на карте вручную.');
       gpsCenterRequested = false;
       updateOfflineWorkspaceStatus();
@@ -11296,6 +11518,7 @@ function updateGroupScreenUi(memberCount = null, activeLocationCount = null, fro
       ? '<p class="hint">Нет активных live-локаций. Участники без live-координат не создают маркеры на карте.</p>'
       : '<p class="hint">Live-локации появятся после входа в группу и запуска передачи позиции у участников.</p>';
   }
+  updateSectionStatuses();
 }
 
 function setChatHint(text, isError = false) {
@@ -11367,6 +11590,7 @@ function updateChatUi() {
   } else if (!chatMessages.length) {
     setChatHint('Чат готов. Сообщения хранятся в БД и привязаны к текущему коду группы.');
   }
+  updateSectionStatuses();
 }
 
 function resetChatComposer(clearText = false) {
@@ -12364,8 +12588,8 @@ function bindUi() {
   bindKebabMenuBehavior();
 
   window.addEventListener('popstate', handleSpotHistoryPopState);
-  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
-  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateMapDebugUi(true); });
+  window.addEventListener('online', () => { mountMapProvider(MAP_PROVIDER_ONLINE_RASTER, 'browser online'); repairMap(); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateSectionStatuses(); retryMemberSync('online').catch(console.warn); if (groupJoined) refreshGroupChat(false).catch(console.warn); });
+  window.addEventListener('offline', () => { if (!keepOnlineRasterLayerForOfflineTransition('browser offline')) activateNoBasemapFallback('browser offline without loaded raster tiles'); updateOfflineWorkspaceStatus(); renderOfflineMapObjectPanel(); updateSectionStatuses(); updateMapDebugUi(true); });
   window.addEventListener('resize', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(150, 'resize'); resizePmtilesPreviewMap(150, 'resize'); scheduleOfflineMapObjectSheetLayout(); });
   window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); scheduleOfflineMapObjectSheetLayout(); });
   window.addEventListener('scroll', scheduleOfflineMapObjectSheetLayout, { passive: true });
@@ -12380,10 +12604,10 @@ function bindUi() {
     void checkForAppUpdate();
   });
 
-  $('liveName').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); };
+  $('liveName').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); updateSectionStatuses(); };
   $('liveName').onchange = saveLiveInputs;
   $('liveName').onblur = () => { updateActionButtonsUi(); };
-  $('groupId').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); };
+  $('groupId').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); updateDbCleanupUi(); updateChatUi(); updateActionButtonsUi(); renderPeopleProfiles(); updateSectionStatuses(); };
   $('groupId').onchange = handleGroupIdInputCommitted;
   $('installHelpBtn').onclick = withButtonDiagnostics('installHelpBtn', () => $('helpDialog').showModal());
   $('closeHelpBtn').onclick = withButtonDiagnostics('closeHelpBtn', () => $('helpDialog').close());

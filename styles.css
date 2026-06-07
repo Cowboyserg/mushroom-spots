@@ -4013,3 +4013,110 @@ body.offline-map-expanded .bottom-nav {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Shared section status: hidden in normal state, visible only when the user
+   needs context or a next action. */
+.section-status {
+  --section-status-accent: #2563eb;
+  --section-status-bg: #eff6ff;
+  --section-status-border: #bfdbfe;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--section-status-border);
+  border-radius: 14px;
+  background: var(--section-status-bg);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.section-status[hidden] { display: none !important; }
+
+.section-status[data-state="working"] {
+  --section-status-accent: #475569;
+  --section-status-bg: #f8fafc;
+  --section-status-border: #cbd5e1;
+}
+
+.section-status[data-state="offline"],
+.section-status[data-state="degraded"] {
+  --section-status-accent: #b45309;
+  --section-status-bg: #fffbeb;
+  --section-status-border: #fde68a;
+}
+
+.section-status[data-state="action-needed"],
+.section-status[data-state="info"] {
+  --section-status-accent: #1d4ed8;
+  --section-status-bg: #eff6ff;
+  --section-status-border: #bfdbfe;
+}
+
+.section-status[data-state="error"] {
+  --section-status-accent: #b91c1c;
+  --section-status-bg: #fef2f2;
+  --section-status-border: #fecaca;
+}
+
+.section-status[data-state="success"] {
+  --section-status-accent: #15803d;
+  --section-status-bg: #f0fdf4;
+  --section-status-border: #bbf7d0;
+}
+
+.section-status-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--section-status-accent);
+  color: #fff;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.section-status[data-state="working"] .section-status-icon {
+  animation: section-status-pulse 1.25s ease-in-out infinite;
+}
+
+.section-status-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.section-status-title {
+  color: #172033;
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.section-status-description {
+  color: #526075;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.section-status-action {
+  white-space: nowrap;
+  min-height: 38px;
+  padding-inline: 14px;
+}
+
+@keyframes section-status-pulse {
+  0%, 100% { opacity: 0.62; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 620px) {
+  .section-status {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .section-status-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

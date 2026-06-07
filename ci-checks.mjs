@@ -387,6 +387,29 @@ function checkMapMarkerIdentityContract() {
   assertIncludes(e2e, 'map participant labels use unique name prefixes and shared semantic colors', 'marker identity E2E oracle');
 }
 
+function checkSharedSectionStatusContract() {
+  const app = read('app.js');
+  const indexHtml = read('index.html');
+  const styles = read('styles.css');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  for (const section of ['Map', 'Spots', 'Group', 'Offline', 'Settings']) {
+    assertIncludes(indexHtml, `id="sectionStatus${section}"`, `${section} shared section status`);
+  }
+  assertIncludes(indexHtml, 'class="section-status"', 'shared section status markup');
+  assertIncludes(styles, '.section-status[hidden]', 'ready-state section status hiding');
+  assertIncludes(styles, '.section-status[data-state="working"]', 'working section status styling');
+  assertIncludes(styles, '.section-status[data-state="offline"]', 'offline section status styling');
+  assertIncludes(styles, '.section-status[data-state="error"]', 'error section status styling');
+  assertIncludes(app, 'function setSectionStatus(section, spec = null)', 'shared section status renderer');
+  assertIncludes(app, 'function updateSectionStatuses()', 'shared section status decision layer');
+  assertIncludes(app, "setSectionStatus('group', groupStatus);", 'group section status integration');
+  assertIncludes(app, "setSectionStatus('offline', currentOfflineSectionStatus());", 'offline section status integration');
+  assertIncludes(e2e, 'shared section status is uniform and hidden until a section needs action', 'shared section status structure E2E oracle');
+  assertIncludes(e2e, 'offline section status explains catalog failure without blocking local map tools', 'offline section status E2E oracle');
+  assertIncludes(e2e, 'settings section status keeps a dismissed PWA update discoverable', 'settings update section status E2E oracle');
+}
+
 function checkControlledPwaUpdateContract() {
   const app = read('app.js');
   const indexHtml = read('index.html');
@@ -488,6 +511,7 @@ checkMapMarkerIdentityContract();
 checkGpsDesktopFallbackContract();
 checkServiceWorkerCacheRules();
 checkControlledPwaUpdateContract();
+checkSharedSectionStatusContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();

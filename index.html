@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#244b2f" />
   <title>Грибные места</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.8.0" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.8.0" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.8.1" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.svg?v=0.8.1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQX1ROw9UgGBoXaDNI6wAqsrZ6c+4s=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=0.8.0" />
+  <link rel="stylesheet" href="styles.css?v=0.8.1" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Грибные места</h1>
-      <p id="appVersion">v0.8.0</p>
+      <p id="appVersion">v0.8.1</p>
     </div>
     <div class="topbar-actions">
       <button id="mapDebugBtn" class="ghost danger-ghost btn-ghost" title="Диагностика карты и API">!</button>
@@ -29,6 +29,14 @@
         <p class="hint">Главный экран: увидеть себя и одним понятным действием сохранить грибное место.</p>
       </div>
 
+      <div id="sectionStatusMap" class="section-status" data-section-status="map" role="status" aria-live="polite" hidden>
+        <span class="section-status-icon" aria-hidden="true"></span>
+        <div class="section-status-copy">
+          <strong class="section-status-title"></strong>
+          <span class="section-status-description" hidden></span>
+        </div>
+        <button class="section-status-action secondary btn-secondary" type="button" hidden></button>
+      </div>
       <div class="save-flow-state save-flow-state-top" id="saveFlowState" aria-live="polite">
         <div class="save-flow-icon" aria-hidden="true">📍</div>
         <div>
@@ -221,6 +229,14 @@
         <h2 id="screenTitleSpots">Точки</h2>
         <p class="hint">Каталог сохранённых мест: сначала выбери папку, затем открой метку или управляй ею через меню ⋯.</p>
       </div>
+      <div id="sectionStatusSpots" class="section-status" data-section-status="spots" role="status" aria-live="polite" hidden>
+        <span class="section-status-icon" aria-hidden="true"></span>
+        <div class="section-status-copy">
+          <strong class="section-status-title"></strong>
+          <span class="section-status-description" hidden></span>
+        </div>
+        <button class="section-status-action secondary btn-secondary" type="button" hidden></button>
+      </div>
     <section class="card spots-catalog-card">
       <div class="section-title">
         <h2>Мои места</h2>
@@ -348,6 +364,14 @@
       <div class="screen-heading">
         <h2 id="screenTitleGroup">Группа</h2>
         <p class="hint">Профиль, создание группы и вход по коду без лишнего шума.</p>
+      </div>
+      <div id="sectionStatusGroup" class="section-status" data-section-status="group" role="status" aria-live="polite" hidden>
+        <span class="section-status-icon" aria-hidden="true"></span>
+        <div class="section-status-copy">
+          <strong class="section-status-title"></strong>
+          <span class="section-status-description" hidden></span>
+        </div>
+        <button class="section-status-action secondary btn-secondary" type="button" hidden></button>
       </div>
       <section class="card live-card group-overview-card" aria-labelledby="groupOverviewTitle">
         <div class="section-title">
@@ -485,6 +509,14 @@
       <div class="screen-heading">
         <h2 id="screenTitleOffline">Офлайн-карты</h2>
         <p class="hint">Установи готовый регион или импортируй свой .pmtiles-файл, чтобы карта, GPS и точки работали даже при слабом интернете.</p>
+      </div>
+      <div id="sectionStatusOffline" class="section-status" data-section-status="offline" role="status" aria-live="polite" hidden>
+        <span class="section-status-icon" aria-hidden="true"></span>
+        <div class="section-status-copy">
+          <strong class="section-status-title"></strong>
+          <span class="section-status-description" hidden></span>
+        </div>
+        <button class="section-status-action secondary btn-secondary" type="button" hidden></button>
       </div>
       <section class="card offline-maps-card">
         <div class="section-title offline-manager-title">
@@ -704,10 +736,18 @@
         <p class="hint">Настройки приложения, диагностика и обслуживание без технического шума.</p>
       </div>
 
+      <div id="sectionStatusSettings" class="section-status" data-section-status="settings" role="status" aria-live="polite" hidden>
+        <span class="section-status-icon" aria-hidden="true"></span>
+        <div class="section-status-copy">
+          <strong class="section-status-title"></strong>
+          <span class="section-status-description" hidden></span>
+        </div>
+        <button class="section-status-action secondary btn-secondary" type="button" hidden></button>
+      </div>
       <section class="card settings-summary-card">
         <div class="section-title">
           <h2>Приложение</h2>
-          <span class="pill">v0.8.0</span>
+          <span class="pill">v0.8.1</span>
         </div>
         <p class="hint">Обычные настройки оставлены простыми. Технические действия не удалены: они доступны ниже через “Расширенный режим”. Debug “!” остаётся в верхней панели.</p>
         <div class="settings-info-grid">
@@ -723,8 +763,8 @@
           <span class="pill on">актуальная сборка</span>
         </div>
         <div class="storage-state">
-          <div><span class="label">Версия приложения</span><strong>v0.8.0</strong></div>
-          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.8.0</strong></div>
+          <div><span class="label">Версия приложения</span><strong>v0.8.1</strong></div>
+          <div><span class="label">Кэш приложения</span><strong id="settingsCacheStatus">mushroom-spots-v0.8.1</strong></div>
         </div>
       </section>
 
@@ -1141,10 +1181,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     if (!window.L) {
-      document.write('<script src="./leaflet-offline-lite.js?v=0.8.0"><\/script>');
+      document.write('<script src="./leaflet-offline-lite.js?v=0.8.1"><\/script>');
     }
   </script>
-  <script src="config.js?v=0.8.0"></script>
-  <script src="app.js?v=0.8.0"></script>
+  <script src="config.js?v=0.8.1"></script>
+  <script src="app.js?v=0.8.1"></script>
 </body>
 </html>

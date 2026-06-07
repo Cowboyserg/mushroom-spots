@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.0$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.1$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -620,7 +620,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.0');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.1');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -666,6 +666,58 @@ test('waiting PWA update offers an explicit user-controlled reload', async ({ pa
   await expect(page.locator('#applyAppUpdateBtn')).toHaveText('Обновляю…');
   await expect.poll(() => page.evaluate(() => window.__lastServiceWorkerMessage)).toEqual({ type: 'MUSHROOM_ACTIVATE_UPDATE' });
   await expect.poll(() => page.evaluate(() => localStorage.getItem('e2e-update-preserve'))).toBe('yes');
+});
+
+test('shared section status is uniform and hidden until a section needs action', async ({ page }) => {
+  await bootApp(page);
+
+  const statuses = page.locator('[data-section-status]');
+  await expect(statuses).toHaveCount(5);
+  expect(await page.evaluate(() => [...document.querySelectorAll('[data-app-screen]')].every((screen) => {
+    const heading = screen.querySelector(':scope > .screen-heading');
+    const status = screen.querySelector(':scope > [data-section-status]');
+    return Boolean(heading && status && heading.nextElementSibling === status);
+  }))).toBe(true);
+
+  await page.getByRole('button', { name: 'Точки' }).click();
+  await expect(page.locator('#sectionStatusSpots')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Группа' }).click();
+  const groupStatus = page.locator('#sectionStatusGroup');
+  await expect(groupStatus).toBeVisible();
+  await expect(groupStatus).toHaveAttribute('data-state', 'action-needed');
+  await expect(groupStatus).toContainText('Выбери профиль на этом устройстве');
+  await groupStatus.getByRole('button', { name: 'Указать имя' }).click();
+  await expect(page.locator('#liveName')).toBeFocused();
+});
+
+test('offline section status explains catalog failure without blocking local map tools', async ({ page, context }) => {
+  await bootApp(page);
+
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  const offlineStatus = page.locator('#sectionStatusOffline');
+  await expect(offlineStatus).toBeVisible();
+  await expect(offlineStatus).toHaveAttribute('data-state', 'offline');
+  await expect(offlineStatus).toContainText('Каталог регионов недоступен без сети');
+  await expect(offlineStatus).toContainText('Установленные карты и ручной импорт продолжают работать');
+  await expect(page.locator('#chooseLocalPmtilesBtn')).toBeVisible();
+  await context.setOffline(false);
+});
+
+test('settings section status keeps a dismissed PWA update discoverable', async ({ page }) => {
+  await bootApp(page, { fakeWaitingServiceWorker: true });
+
+  await page.locator('#dismissAppUpdateBtn').click();
+  await expect(page.locator('#appUpdateBanner')).toBeHidden();
+  await page.getByRole('button', { name: 'Настройки' }).click();
+
+  const settingsStatus = page.locator('#sectionStatusSettings');
+  await expect(settingsStatus).toBeVisible();
+  await expect(settingsStatus).toHaveAttribute('data-state', 'action-needed');
+  await expect(settingsStatus).toContainText('Доступна новая версия приложения');
+  await settingsStatus.getByRole('button', { name: 'Обновить' }).click();
+  await expect.poll(() => page.evaluate(() => window.__lastServiceWorkerMessage)).toEqual({ type: 'MUSHROOM_ACTIVATE_UPDATE' });
 });
 
 test('offline maps screen presents empty manager before a map is added', async ({ page }) => {
@@ -2278,7 +2330,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.0');
+  expect(backup.appVersion).toBe('0.8.1');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2409,7 +2461,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.0',
+    appVersion: '0.8.1',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
