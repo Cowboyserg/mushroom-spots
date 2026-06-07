@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.55-hotfix.1';
+const APP_VERSION = '0.7.56';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -279,6 +279,13 @@ let pendingOfflineRegionInstallPackageId = null;
 let pendingOfflineRegionManualPackageId = null;
 let pendingOfflineMapDeleteRecordId = null;
 let appToastTimer = null;
+let appServiceWorkerRegistration = null;
+let pendingAppUpdateWorker = null;
+let appUpdateReloadRequested = false;
+let appUpdateDismissedForSession = false;
+let appUpdateActivationTimer = null;
+let lastAppUpdateCheckAt = 0;
+const APP_UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
 const OFFLINE_IMPORT_TOAST_STEP_MS = 1200;
 const OFFLINE_IMPORT_RESULT_MODAL_DELAY_MS = 1600;
 const LOCAL_PMTILES_IMPORT_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -959,6 +966,140 @@ function showAppToast(message, mode = 'info') {
   appToastTimer = setTimeout(() => {
     toast.hidden = true;
   }, 3200);
+}
+
+function getAppUpdateBlockReason() {
+  if (localPmtilesImportController && !localPmtilesImportController.signal.aborted) {
+    return 'Дождись завершения импорта офлайн-карты или отмени его.';
+  }
+  if (trackRecording.active) {
+    return 'Сначала останови запись маршрута, чтобы не потерять текущий трек.';
+  }
+  return '';
+}
+
+function hideAppUpdateBanner({ dismiss = false } = {}) {
+  if (dismiss) appUpdateDismissedForSession = true;
+  const banner = $('appUpdateBanner');
+  if (banner) banner.hidden = true;
+}
+
+function renderAppUpdateBanner() {
+  const banner = $('appUpdateBanner');
+  if (!banner) return;
+  const shouldShow = Boolean(pendingAppUpdateWorker) && !appUpdateDismissedForSession;
+  banner.hidden = !shouldShow;
+  if (!shouldShow) return;
+
+  const blockReason = getAppUpdateBlockReason();
+  setText(
+    'appUpdateMessage',
+    blockReason || 'Обновление перезагрузит приложение, но не удалит локальные точки, карты, маршруты и профиль.'
+  );
+  const updateBtn = $('applyAppUpdateBtn');
+  if (updateBtn && !appUpdateReloadRequested) {
+    updateBtn.disabled = false;
+    updateBtn.textContent = 'Обновить';
+  }
+}
+
+function offerAppUpdate(worker) {
+  if (!worker) return;
+  const isNewWorker = pendingAppUpdateWorker !== worker;
+  pendingAppUpdateWorker = worker;
+  if (isNewWorker) appUpdateDismissedForSession = false;
+  renderAppUpdateBanner();
+}
+
+function clearAppUpdateActivationTimer() {
+  if (appUpdateActivationTimer) clearTimeout(appUpdateActivationTimer);
+  appUpdateActivationTimer = null;
+}
+
+function applyPendingAppUpdate() {
+  if (!pendingAppUpdateWorker) {
+    showAppToast('Новая версия ещё не готова к установке', 'warn');
+    return false;
+  }
+
+  const blockReason = getAppUpdateBlockReason();
+  if (blockReason) {
+    setText('appUpdateMessage', blockReason);
+    showAppToast(blockReason, 'warn');
+    return false;
+  }
+
+  appUpdateReloadRequested = true;
+  const updateBtn = $('applyAppUpdateBtn');
+  if (updateBtn) {
+    updateBtn.disabled = true;
+    updateBtn.textContent = 'Обновляю…';
+  }
+  setText('appUpdateMessage', 'Применяю новую версию и перезапускаю приложение…');
+  pendingAppUpdateWorker.postMessage({ type: 'MUSHROOM_ACTIVATE_UPDATE' });
+
+  clearAppUpdateActivationTimer();
+  appUpdateActivationTimer = setTimeout(() => {
+    if (!appUpdateReloadRequested) return;
+    appUpdateReloadRequested = false;
+    if (updateBtn) {
+      updateBtn.disabled = false;
+      updateBtn.textContent = 'Повторить';
+    }
+    setText('appUpdateMessage', 'Не удалось активировать обновление. Закрой и снова открой приложение или повтори попытку.');
+  }, 12000);
+  return true;
+}
+
+async function checkForAppUpdate(registration = appServiceWorkerRegistration, { force = false } = {}) {
+  if (!registration || typeof registration.update !== 'function') return false;
+  const now = Date.now();
+  if (!force && now - lastAppUpdateCheckAt < APP_UPDATE_CHECK_INTERVAL_MS) return false;
+  lastAppUpdateCheckAt = now;
+  try {
+    await registration.update();
+    if (registration.waiting && navigator.serviceWorker.controller) offerAppUpdate(registration.waiting);
+    return true;
+  } catch (err) {
+    console.warn('Service Worker update check failed:', err);
+    return false;
+  }
+}
+
+function observeServiceWorkerRegistration(registration) {
+  appServiceWorkerRegistration = registration;
+  if (registration.waiting && navigator.serviceWorker.controller) offerAppUpdate(registration.waiting);
+
+  registration.addEventListener?.('updatefound', () => {
+    const installing = registration.installing;
+    if (!installing) return;
+    installing.addEventListener?.('statechange', () => {
+      if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+        offerAppUpdate(registration.waiting || installing);
+      }
+    });
+  });
+}
+
+async function registerAppServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!appUpdateReloadRequested) return;
+    clearAppUpdateActivationTimer();
+    appUpdateReloadRequested = false;
+    window.location.reload();
+  });
+
+  try {
+    const registration = await navigator.serviceWorker.register('./sw.js');
+    observeServiceWorkerRegistration(registration);
+    void checkForAppUpdate(registration, { force: true });
+    return registration;
+  } catch (err) {
+    console.warn('Service Worker registration failed:', err);
+    return null;
+  }
 }
 
 function closeDialogSafely(id) {
@@ -12152,6 +12293,8 @@ function bindUi() {
   if ($('cleanCurrentGroupDbBtn')) $('cleanCurrentGroupDbBtn').onclick = withButtonDiagnostics('cleanCurrentGroupDbBtn', cleanCurrentGroupDbRows);
   if ($('cleanStaleGroupDbBtn')) $('cleanStaleGroupDbBtn').onclick = withButtonDiagnostics('cleanStaleGroupDbBtn', cleanStaleGroupDbRows);
   if ($('resetAppCacheBtn')) $('resetAppCacheBtn').onclick = withButtonDiagnostics('resetAppCacheBtn', resetAppCache);
+  if ($('dismissAppUpdateBtn')) $('dismissAppUpdateBtn').onclick = () => hideAppUpdateBanner({ dismiss: true });
+  if ($('applyAppUpdateBtn')) $('applyAppUpdateBtn').onclick = withButtonDiagnostics('applyAppUpdateBtn', applyPendingAppUpdate);
   if ($('clearOfflineMapFilesBtn')) $('clearOfflineMapFilesBtn').onclick = withButtonDiagnostics('clearOfflineMapFilesBtn', clearImportedOfflineMapFiles);
   if ($('loadOfflineManifestBtn')) $('loadOfflineManifestBtn').onclick = withButtonDiagnostics('loadOfflineManifestBtn', () => loadOfflineMapManifest(true));
   if ($('saveOfflineManifestUrlBtn')) $('saveOfflineManifestUrlBtn').onclick = withButtonDiagnostics('saveOfflineManifestUrlBtn', saveOfflineManifestUrlFromInput);
@@ -12227,9 +12370,15 @@ function bindUi() {
   window.addEventListener('orientationchange', () => { updateOnlineMapExpandInsets(); safeInvalidateMap(500, 'orientationchange'); resizePmtilesPreviewMap(500, 'orientationchange'); scheduleOfflineMapObjectSheetLayout(); });
   window.addEventListener('scroll', scheduleOfflineMapObjectSheetLayout, { passive: true });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) safeInvalidateMap(250, 'visibilitychange');
+    if (!document.hidden) {
+      safeInvalidateMap(250, 'visibilitychange');
+      void checkForAppUpdate();
+    }
   });
-  window.addEventListener('focus', () => safeInvalidateMap(250, 'focus'));
+  window.addEventListener('focus', () => {
+    safeInvalidateMap(250, 'focus');
+    void checkForAppUpdate();
+  });
 
   $('liveName').oninput = () => { rememberGroupEntryInputs(); updateActiveProfileFromInputs(); renderPeopleProfiles(); updateActionButtonsUi(); };
   $('liveName').onchange = saveLiveInputs;
@@ -12241,8 +12390,8 @@ function bindUi() {
 }
 
 async function init() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.55.1`;
+  void registerAppServiceWorker();
+  $('appVersion').textContent = `v${APP_VERSION} · Sprint 5.56`;
   db = await openDb();
   await loadSpotCollections();
   await restoreFolderHandle();

@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mushroom-spots-v0.7.55-hotfix.1';
-const APP_ASSET_VERSION = '0.7.55-hotfix.1';
+const CACHE_NAME = 'mushroom-spots-v0.7.56';
+const APP_ASSET_VERSION = '0.7.56';
 
 // Keep only the application shell in cache.
 // Do NOT intercept Supabase/API requests. Do NOT cache POST requests.
@@ -59,10 +59,11 @@ function networkRequestFor(req, url) {
 }
 
 self.addEventListener('install', (event) => {
+  // Keep an update in the waiting state while an older application page is open.
+  // The UI explicitly activates it after the user presses “Обновить”.
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -76,6 +77,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   const data = event.data || {};
+  if (data.type === 'MUSHROOM_ACTIVATE_UPDATE') {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   if (data.type === 'MUSHROOM_CLEAR_APP_CACHE') {
     event.waitUntil(clearAllVisibleCaches());
   }

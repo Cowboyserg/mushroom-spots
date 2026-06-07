@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /v0\.7\.55-hotfix\.1 · Sprint 5\.55\.1/;
+const EXPECTED_APP_VERSION = /v0\.7\.56 · Sprint 5\.56/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -15,6 +15,30 @@ const EXTERNAL_RUNTIME_HOSTS = [
 async function bootApp(page, options = {}) {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  if (options.fakeWaitingServiceWorker) {
+    await page.addInitScript(() => {
+      const waitingWorker = {
+        state: 'installed',
+        postMessage(message) {
+          window.__lastServiceWorkerMessage = message;
+        },
+        addEventListener() {}
+      };
+      const registration = new EventTarget();
+      registration.waiting = waitingWorker;
+      registration.installing = null;
+      registration.update = async () => undefined;
+
+      const serviceWorkerContainer = new EventTarget();
+      serviceWorkerContainer.controller = { scriptURL: 'fake-active-sw.js' };
+      serviceWorkerContainer.register = async () => registration;
+      Object.defineProperty(Navigator.prototype, 'serviceWorker', {
+        configurable: true,
+        get() { return serviceWorkerContainer; }
+      });
+    });
+  }
 
   if (options.forceNoOpfs) {
     await page.addInitScript(() => {
@@ -617,6 +641,28 @@ test('app loads and bottom navigation switches screens', async ({ page }) => {
   await page.getByRole('button', { name: 'Карта' }).click();
   await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('#screen-map .map-title-row')).toBeHidden();
+});
+
+test('waiting PWA update offers an explicit user-controlled reload', async ({ page }) => {
+  await bootApp(page, { fakeWaitingServiceWorker: true });
+
+  const banner = page.locator('#appUpdateBanner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('Доступна новая версия');
+  await expect(page.locator('#appUpdateMessage')).toContainText('не удалит локальные точки, карты, маршруты и профиль');
+
+  await page.locator('#dismissAppUpdateBtn').click();
+  await expect(banner).toBeHidden();
+
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+  await expect(banner).toBeVisible();
+
+  await page.evaluate(() => localStorage.setItem('e2e-update-preserve', 'yes'));
+  await page.locator('#applyAppUpdateBtn').click();
+  await expect(page.locator('#applyAppUpdateBtn')).toHaveText('Обновляю…');
+  await expect.poll(() => page.evaluate(() => window.__lastServiceWorkerMessage)).toEqual({ type: 'MUSHROOM_ACTIVATE_UPDATE' });
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('e2e-update-preserve'))).toBe('yes');
 });
 
 test('offline maps screen presents empty manager before a map is added', async ({ page }) => {
@@ -2228,7 +2274,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.7.55-hotfix.1');
+  expect(backup.appVersion).toBe('0.7.56');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2359,7 +2405,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.7.55-hotfix.1',
+    appVersion: '0.7.56',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

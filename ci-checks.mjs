@@ -384,6 +384,28 @@ function checkMapMarkerIdentityContract() {
   assertIncludes(e2e, 'map participant labels use unique name prefixes and shared semantic colors', 'marker identity E2E oracle');
 }
 
+function checkControlledPwaUpdateContract() {
+  const app = read('app.js');
+  const indexHtml = read('index.html');
+  const styles = read('styles.css');
+  const sw = read('sw.js');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(indexHtml, 'id="appUpdateBanner"', 'PWA update banner');
+  assertIncludes(indexHtml, 'id="applyAppUpdateBtn"', 'PWA update apply action');
+  assertIncludes(indexHtml, 'id="dismissAppUpdateBtn"', 'PWA update later action');
+  assertIncludes(styles, '.app-update-banner', 'PWA update banner styling');
+  assertIncludes(app, 'async function registerAppServiceWorker()', 'controlled Service Worker registration');
+  assertIncludes(app, "pendingAppUpdateWorker.postMessage({ type: 'MUSHROOM_ACTIVATE_UPDATE' });", 'explicit update activation message');
+  assertIncludes(app, "navigator.serviceWorker.addEventListener('controllerchange'", 'update controller handoff');
+  assertIncludes(app, 'void checkForAppUpdate();', 'foreground update recheck');
+  assertIncludes(sw, "data.type === 'MUSHROOM_ACTIVATE_UPDATE'", 'Service Worker activation message handler');
+  assertIncludes(sw, 'event.waitUntil(self.skipWaiting());', 'Service Worker explicit skipWaiting');
+  assert.ok(!/cache\.addAll\(APP_SHELL\)[\s\S]{0,100}self\.skipWaiting\(\)/.test(sw), 'Service Worker install must not auto-activate updates');
+  assertIncludes(e2e, 'waiting PWA update offers an explicit user-controlled reload', 'controlled PWA update E2E oracle');
+  assert.ok(pathExists('TEMP_UX_ROADMAP_2026-06-07.md'), 'temporary dated UX roadmap must exist during the rollout');
+}
+
 function checkDependencyAndLockfilePolicy() {
   const packageJson = JSON.parse(read('package.json'));
   const hasDependencies = Boolean(
@@ -457,6 +479,7 @@ checkOnlineMapControlsContract();
 checkMapMarkerIdentityContract();
 checkGpsDesktopFallbackContract();
 checkServiceWorkerCacheRules();
+checkControlledPwaUpdateContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();
