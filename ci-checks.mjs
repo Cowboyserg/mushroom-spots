@@ -433,6 +433,10 @@ function checkExactShareAvailabilityContract() {
   assertIncludes(app, "setSectionStatus('spots', currentShareAvailabilityStatus('spots'));", 'Spots share reason integration');
   assertIncludes(app, "setSectionStatus('offline', currentShareAvailabilityStatus('offline') || currentOfflineSectionStatus());", 'Offline share reason integration');
   assertIncludes(app, 'showSaveShareUnavailable(spot, availability, context);', 'local save survives unavailable share');
+  assertIncludes(app, "() => sendSelectedSpotToChat('spots')", 'Spots share action keeps explicit section context');
+  assertIncludes(e2e, "body: options.fakeSupabase", 'E2E config route branches only between fake and empty config');
+  assertIncludes(e2e, "'window.MUSHROOM_CONFIG = {};'", 'E2E boot neutralizes repository Supabase config');
+  assertIncludes(e2e, 'e2e boot neutralizes repository Supabase config unless fake Supabase is requested', 'Supabase config isolation E2E oracle');
   assertIncludes(e2e, 'share action distinguishes not-in-group and moves the user to group entry', 'not-in-group E2E oracle');
   assertIncludes(e2e, 'share action distinguishes missing Supabase configuration from missing profile', 'missing configuration E2E oracle');
   assertIncludes(e2e, 'share action explains offline mode while local save remains available', 'offline share E2E oracle');
@@ -440,6 +444,7 @@ function checkExactShareAvailabilityContract() {
   assertIncludes(e2e, 'saved spot share uses the same missing-profile reason in the spots section', 'saved spot canonical reason E2E oracle');
   if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
     assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.59 — Exact Share Availability Reasons — completed', 'completed share availability roadmap marker');
+    assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.59.1 — Share Reason Context Hotfix — completed', 'completed share reason context hotfix roadmap marker');
   }
 }
 

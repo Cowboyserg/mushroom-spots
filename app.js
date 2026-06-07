@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.5';
+const APP_VERSION = '0.8.6';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -12051,9 +12051,12 @@ async function sendPickedMapPointToChat() {
 }
 
 async function sendSelectedSpotToChat(context = activeShareContext()) {
+  const resolvedContext = typeof context === 'string'
+    ? shareAvailabilityContextSection(context)
+    : activeShareContext();
   const spot = spots.find(s => s.id === selectedSpotId);
   if (!spot) { markButtonBlocked('сохранённая точка не выбрана'); alert('Сначала выбери сохранённую точку.'); return false; }
-  return sendSpotPayloadToChat(buildSpotChatPayloadFromSpot(spot), 'Сохранённая точка', context);
+  return sendSpotPayloadToChat(buildSpotChatPayloadFromSpot(spot), 'Сохранённая точка', resolvedContext);
 }
 
 function showChatSpotOnMap(payload) {
@@ -12747,8 +12750,8 @@ function bindUi() {
   if ($('spotListCancelEditBtn')) $('spotListCancelEditBtn').onclick = withButtonDiagnostics('spotListCancelEditBtn', cancelSpotListEditor);
   $('navigateBtn').onclick = withButtonDiagnostics('navigateBtn', showNavigationLine);
   $('shareSpotBtn').onclick = withButtonDiagnostics('shareSpotBtn', exportSelected);
-  if ($('sendSelectedSpotToChatBtn')) $('sendSelectedSpotToChatBtn').onclick = withButtonDiagnostics('sendSelectedSpotToChatBtn', sendSelectedSpotToChat);
-  if ($('spotListSendToChatBtn')) $('spotListSendToChatBtn').onclick = withButtonDiagnostics('spotListSendToChatBtn', sendSelectedSpotToChat);
+  if ($('sendSelectedSpotToChatBtn')) $('sendSelectedSpotToChatBtn').onclick = withButtonDiagnostics('sendSelectedSpotToChatBtn', () => sendSelectedSpotToChat(activeShareContext()));
+  if ($('spotListSendToChatBtn')) $('spotListSendToChatBtn').onclick = withButtonDiagnostics('spotListSendToChatBtn', () => sendSelectedSpotToChat('spots'));
   $('exportAllBtn').onclick = withButtonDiagnostics('exportAllBtn', exportAll);
   $('importFile').onchange = async (e) => { try { await importJson(e.target.files[0]); } catch(err) { const message = formatBackupImportError(err); setBackupStatus(message); alert(message); } finally { e.target.value = ''; } };
   $('chooseFolderBtn').onclick = withButtonDiagnostics('chooseFolderBtn', chooseBackupFolder);

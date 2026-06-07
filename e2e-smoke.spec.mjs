@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.5$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.6$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -212,11 +212,13 @@ async function bootApp(page, options = {}) {
       return;
     }
 
-    if (options.fakeSupabase && url.pathname.endsWith('/config.js')) {
+    if (url.pathname.endsWith('/config.js')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/javascript',
-        body: `window.MUSHROOM_CONFIG = { SUPABASE_URL: 'https://fake.supabase.test', SUPABASE_ANON_KEY: 'fake-anon-key' };`
+        body: options.fakeSupabase
+          ? `window.MUSHROOM_CONFIG = { SUPABASE_URL: 'https://fake.supabase.test', SUPABASE_ANON_KEY: 'fake-anon-key' };`
+          : 'window.MUSHROOM_CONFIG = {};'
       });
       return;
     }
@@ -620,7 +622,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.5');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.6');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1959,6 +1961,12 @@ test('share action distinguishes not-in-group and moves the user to group entry'
   await expect(page.locator('#groupId')).toBeFocused();
 });
 
+test('e2e boot neutralizes repository Supabase config unless fake Supabase is requested', async ({ page }) => {
+  await bootApp(page, { path: '/?group=e2e-config-isolation' });
+  const config = await page.evaluate(() => window.MUSHROOM_CONFIG || null);
+  expect(config).toEqual({});
+});
+
 test('share action distinguishes missing Supabase configuration from missing profile', async ({ page }) => {
   await bootApp(page, { path: '/?group=e2e-share-no-config' });
   await page.getByRole('button', { name: 'Группа' }).click();
@@ -2501,7 +2509,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.5');
+  expect(backup.appVersion).toBe('0.8.6');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2632,7 +2640,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.5',
+    appVersion: '0.8.6',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {
