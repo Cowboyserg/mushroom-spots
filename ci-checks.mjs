@@ -403,13 +403,17 @@ function checkSharedSectionStatusContract() {
   assertIncludes(styles, '.section-status[data-state="error"]', 'error section status styling');
   assertIncludes(app, 'function setSectionStatus(section, spec = null)', 'shared section status renderer');
   assertIncludes(app, 'function updateSectionStatuses()', 'shared section status decision layer');
-  assertIncludes(app, "if (section === 'map') setHidden('saveFlowState', true);", 'map status replaces save-flow guidance while visible');
-  assertIncludes(app, "if (section === 'map') setHidden('saveFlowState', false);", 'map save-flow guidance returns when status clears');
+  assertIncludes(app, "setHidden('saveFlowState', true);", 'map status replaces save-flow guidance while visible');
+  assertIncludes(app, "setHidden('saveFlowState', false);", 'map save-flow guidance returns when status clears');
   assertIncludes(app, "setSectionStatus('group', groupStatus);", 'group section status integration');
   assertIncludes(app, "setSectionStatus('offline', currentOfflineSectionStatus());", 'offline section status integration');
   assertIncludes(e2e, 'shared section status is uniform and hidden until a section needs action', 'shared section status structure E2E oracle');
   assertIncludes(e2e, 'offline section status explains catalog failure without blocking local map tools', 'offline section status E2E oracle');
   assertIncludes(e2e, 'settings section status keeps a dismissed PWA update discoverable', 'settings update section status E2E oracle');
+  assertIncludes(app, 'function updateMapWorkspaceClearance()', 'map workspace bottom-navigation clearance');
+  assertIncludes(app, 'function scheduleMapWorkspaceClearance()', 'scheduled map workspace clearance');
+  assertIncludes(styles, '--map-workspace-height', 'runtime map workspace height override');
+  assertIncludes(e2e, 'map workspace recomputes bottom-nav clearance when section status changes', 'map workspace clearance E2E oracle');
 }
 
 function checkControlledPwaUpdateContract() {

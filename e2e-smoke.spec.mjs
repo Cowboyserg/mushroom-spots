@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.2$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.3$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -620,7 +620,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.2');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.3');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1679,11 +1679,13 @@ test('map screen keeps GPS controls but does not duplicate bottom navigation in 
   await expect(mapScreen.getByRole('button', { name: /^Ко мне$/ })).toBeVisible();
   await expect(page.locator('#mapObjectCard')).toBeHidden();
 
-  const saveStateBox = await page.locator('#saveFlowState').boundingBox();
+  const visibleMapPrompt = page.locator('#sectionStatusMap:visible, #saveFlowState:visible');
+  await expect(visibleMapPrompt).toHaveCount(1);
+  const promptBox = await visibleMapPrompt.first().boundingBox();
   const mapShellBox = await page.locator('.map-home-shell').boundingBox();
-  expect(saveStateBox, 'save/GPS prompt must be visible on map screen').not.toBeNull();
+  expect(promptBox, 'exactly one map guidance/status block must be visible').not.toBeNull();
   expect(mapShellBox, 'map shell must be visible on map screen').not.toBeNull();
-  expect(saveStateBox.y + saveStateBox.height, 'save/GPS prompt must sit above the map workspace').toBeLessThanOrEqual(mapShellBox.y + 1);
+  expect(promptBox.y + promptBox.height, 'map guidance/status must sit above the map workspace').toBeLessThanOrEqual(mapShellBox.y + 1);
 
   for (const forbiddenNavName of ['Точки', 'Группа', 'Офлайн', 'Настройки']) {
     await expect(mapScreen.getByRole('button', { name: new RegExp(`^${forbiddenNavName}$`) })).toHaveCount(0);
@@ -1745,8 +1747,38 @@ test('expanded map workspace keeps map as the primary viewport above bottom navi
   const navBox = await page.locator('.bottom-nav').boundingBox();
   expect(mapBox, 'expanded map workspace must have visible bounds').not.toBeNull();
   expect(navBox, 'bottom navigation must stay visible').not.toBeNull();
-  expect(mapBox.height, 'map should take most of the app workspace').toBeGreaterThan(page.viewportSize().height * 0.52);
-  expect(mapBox.y + mapBox.height, 'map must not overlap the bottom navigation').toBeLessThanOrEqual(navBox.y + 2);
+  const availableHeight = Math.max(0, navBox.y - mapBox.y - 8);
+  const expectedPrimaryHeight = Math.min(page.viewportSize().height * 0.52, availableHeight);
+  expect(mapBox.height, 'map should use the available primary workspace').toBeGreaterThanOrEqual(expectedPrimaryHeight - 2);
+  expect(mapBox.y + mapBox.height, 'map must not overlap the bottom navigation').toBeLessThanOrEqual(navBox.y - 6);
+});
+
+test('map workspace recomputes bottom-nav clearance when section status changes', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 56.9496, longitude: 24.1052, accuracy: 12 });
+  await bootApp(page);
+  await expect(page.locator('#saveFlowState')).toBeVisible();
+
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await expect(page.locator('#sectionStatusMap')).toBeVisible();
+
+  const offlineMapBox = await page.locator('.map-wrap-home').boundingBox();
+  const offlineNavBox = await page.locator('.bottom-nav').boundingBox();
+  expect(offlineMapBox, 'map must remain visible while offline status is shown').not.toBeNull();
+  expect(offlineNavBox, 'bottom navigation must remain visible').not.toBeNull();
+  expect(offlineMapBox.y + offlineMapBox.height).toBeLessThanOrEqual(offlineNavBox.y - 6);
+
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(page.locator('#sectionStatusMap')).toBeHidden();
+  await expect(page.locator('#saveFlowState')).toBeVisible();
+
+  const restoredMapBox = await page.locator('.map-wrap-home').boundingBox();
+  const restoredNavBox = await page.locator('.bottom-nav').boundingBox();
+  expect(restoredMapBox, 'map must remain visible after status clears').not.toBeNull();
+  expect(restoredNavBox, 'bottom navigation must remain visible after status clears').not.toBeNull();
+  expect(restoredMapBox.y + restoredMapBox.height).toBeLessThanOrEqual(restoredNavBox.y - 6);
 });
 
 test('online map expand button fills app workspace while keeping bottom navigation usable', async ({ page }) => {
@@ -2339,7 +2371,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.2');
+  expect(backup.appVersion).toBe('0.8.3');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2470,7 +2502,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.2',
+    appVersion: '0.8.3',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

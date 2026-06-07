@@ -1871,7 +1871,7 @@ select {
 }
 
 #screen-map .map-wrap-home {
-  height: clamp(360px, calc(100dvh - 320px), 700px);
+  height: var(--map-workspace-height, clamp(360px, calc(100dvh - 320px), 700px));
   min-height: 0;
   max-height: none;
   border-radius: 24px;
@@ -1924,7 +1924,7 @@ select {
 
 @media (min-width: 860px) {
   #screen-map .map-wrap-home {
-    height: clamp(380px, calc(100dvh - 320px), 700px);
+    height: var(--map-workspace-height, clamp(380px, calc(100dvh - 320px), 700px));
     min-height: 0;
   }
 }
@@ -1982,7 +1982,7 @@ select {
   }
 
   #screen-map .map-wrap-home {
-    height: clamp(348px, calc(100dvh - 340px - env(safe-area-inset-bottom)), 600px);
+    height: var(--map-workspace-height, clamp(348px, calc(100dvh - 340px - env(safe-area-inset-bottom)), 600px));
     min-height: 0;
     max-height: none;
     border-radius: 22px;
@@ -2003,16 +2003,16 @@ select {
 
 @supports not (height: 100dvh) {
   #screen-map .map-wrap-home {
-    height: clamp(360px, calc(100vh - 320px), 700px);
+    height: var(--map-workspace-height, clamp(360px, calc(100vh - 320px), 700px));
   }
   @media (min-width: 860px) {
     #screen-map .map-wrap-home {
-      height: clamp(380px, calc(100vh - 320px), 700px);
+      height: var(--map-workspace-height, clamp(380px, calc(100vh - 320px), 700px));
     }
   }
   @media (max-width: 560px) {
     #screen-map .map-wrap-home {
-      height: clamp(348px, calc(100vh - 340px - env(safe-area-inset-bottom)), 600px);
+      height: var(--map-workspace-height, clamp(348px, calc(100vh - 340px - env(safe-area-inset-bottom)), 600px));
     }
   }
 }
