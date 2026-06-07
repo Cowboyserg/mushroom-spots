@@ -21,26 +21,20 @@ function assertIncludes(text, expected, label) {
   );
 }
 
-function warnIfProjectPathVersionLooksStale({ version, sprint }) {
+function warnIfProjectPathVersionLooksStale({ version }) {
   let projectPath;
   try {
     projectPath = read('PROJECT_PATH.md');
   } catch {
-    console.warn('Version preflight warning: PROJECT_PATH.md is missing; runtime guards still passed.');
     return;
   }
 
   const line = projectPath
     .split(/\r?\n/)
     .find((candidate) => candidate.trim().startsWith('Current application version:'));
-  if (!line) {
-    console.warn('Version preflight warning: PROJECT_PATH.md has no Current application version line; runtime guards still passed.');
-    return;
-  }
-
-  if (!line.includes(version) || !line.includes(sprint)) {
+  if (!line || !line.includes(version)) {
     console.warn(
-      `Version preflight warning: PROJECT_PATH.md current version line looks stale: ${JSON.stringify(line.trim())}`
+      `Version preflight warning: PROJECT_PATH.md current version line looks stale: ${JSON.stringify((line || 'missing').trim())}`
     );
   }
 }
@@ -58,10 +52,10 @@ function parseProjectVersion() {
     /<p id="appVersion">([^<]+)<\/p>/,
     'index.html #appVersion label'
   ).trim();
-  const indexLabelMatch = indexLabel.match(/^v(.+?) · (Sprint [0-9.]+)$/);
+  const indexLabelMatch = indexLabel.match(/^v(.+)$/);
   assert.ok(indexLabelMatch, `version preflight: index appVersion has unexpected format: ${indexLabel}`);
   assert.equal(indexLabelMatch[1], appVersion, 'version preflight: index visible version must match app.js APP_VERSION');
-  return { version: appVersion, sprint: indexLabelMatch[2], label: indexLabel };
+  return { version: appVersion, label: indexLabel };
 }
 
 function parsePackageJson() {
@@ -115,7 +109,7 @@ function checkVersionedAssets({ version }) {
   }
 }
 
-function checkRuntimeAndSettingsLabels({ version, sprint, label }) {
+function checkRuntimeAndSettingsLabels({ version, label }) {
   const appJs = read('app.js');
   const indexHtml = read('index.html');
   const swJs = read('sw.js');
@@ -133,10 +127,11 @@ function checkRuntimeAndSettingsLabels({ version, sprint, label }) {
   assert.equal(lock.version, version, 'version preflight: package-lock root version must match package.json');
   assert.equal(lock.packages?.['']?.version, version, 'version preflight: package-lock package version must match package.json');
 
-  assertIncludes(appJs, `v\${APP_VERSION} · ${sprint}`, 'app.js runtime appVersion label');
-  assertIncludes(indexHtml, label, 'index.html visible appVersion label');
+  assertIncludes(appJs, "$('appVersion').textContent = `v${APP_VERSION}`;", 'app.js runtime version-only label');
+  assertIncludes(indexHtml, `<p id="appVersion">${label}</p>`, 'index.html visible appVersion label');
   assertIncludes(indexHtml, `v${version}`, 'settings version label');
-  assertIncludes(indexHtml, sprint, 'settings sprint label');
+  assert.ok(!indexHtml.includes('<span class="label">Спринт</span>'), 'version preflight: Sprint must not be rendered in the web UI');
+  assert.ok(!indexHtml.includes('· Sprint'), 'version preflight: public version labels must not include Sprint');
   assertIncludes(indexHtml, `mushroom-spots-v${version}`, 'settings cache label');
   assertIncludes(swJs, `mushroom-spots-v${version}`, 'service worker cache name');
 }
@@ -147,7 +142,7 @@ function main() {
   checkVersionedAssets(info);
   checkE2eVersionGuard(info);
   warnIfProjectPathVersionLooksStale(info);
-  console.log(`Version preflight passed for v${info.version} / ${info.sprint}`);
+  console.log(`Version preflight passed for v${info.version}`);
 }
 
 main();

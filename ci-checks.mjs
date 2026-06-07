@@ -152,7 +152,10 @@ function checkVersionConsistency() {
   assert.equal(packageJson.version, version, 'package.json version must match app.js APP_VERSION');
 
   assertIncludes(swJs, `mushroom-spots-v${version}`, 'Service Worker cache name');
-  assertIncludes(indexHtml, `v${version}`, 'index visible version');
+  assertIncludes(indexHtml, `<p id="appVersion">v${version}</p>`, 'index exact public version');
+  assert.ok(!indexHtml.includes('· Sprint'), 'public version labels must not include Sprint');
+  assert.ok(!indexHtml.includes('<span class="label">Спринт</span>'), 'settings must not render Sprint');
+  assertIncludes(read('app.js'), "$('appVersion').textContent = `v${APP_VERSION}`;", 'runtime version-only label');
 
   if (sprint) {
     assertIncludes(read('app.js'), sprint, 'app.js visible sprint label');
@@ -406,7 +409,8 @@ function checkControlledPwaUpdateContract() {
   if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
     const roadmap = read('TEMP_UX_ROADMAP_2026-06-07.md');
     assertIncludes(roadmap, '# Temporary UX Roadmap — 2026-06-07', 'temporary dated UX roadmap header');
-    assertIncludes(roadmap, '## Sprint 5.57 — Shared Section Status Component', 'temporary dated UX roadmap next sprint');
+    assertIncludes(roadmap, '## Sprint 5.57 — Offline Maps MVP Release', 'temporary dated UX roadmap release gate');
+    assertIncludes(roadmap, '## Sprint 5.58 — Shared Section Status Component', 'temporary dated UX roadmap next UX sprint');
   }
 }
 
