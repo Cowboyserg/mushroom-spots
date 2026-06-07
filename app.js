@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.6';
+const APP_VERSION = '0.8.7';
 const DB_NAME = 'mushroom-spots-db';
 const DB_VERSION = 4;
 const SPOTS_STORE = 'spots';
@@ -292,6 +292,7 @@ let offlineActiveMapRenameEditing = false;
 let pendingOfflineRegionInstallPackageId = null;
 let pendingOfflineRegionManualPackageId = null;
 let pendingOfflineMapDeleteRecordId = null;
+let destructiveActionDialogState = null;
 let appToastTimer = null;
 let appServiceWorkerRegistration = null;
 let pendingAppUpdateWorker = null;
@@ -447,6 +448,7 @@ const BUTTON_DIAGNOSTIC_LABELS = {
   renameRememberedPmtilesMapBtn: 'Сохранить название карты',
   forgetRememberedPmtilesMapBtn: 'Забыть карту',
   offlineDeleteMapConfirmBtn: 'Удалить карту',
+  destructiveActionConfirmBtn: 'Подтвердить удаление',
   exportAllBtn: 'Скачать backup JSON',
   chooseFolderBtn: 'Выбрать папку для backup',
   saveFolderBackupBtn: 'Сохранить backup в папку',
@@ -1506,6 +1508,37 @@ function showDialogSafely(id) {
   } else {
     dialog.hidden = false;
   }
+}
+
+function openDestructiveActionDialog(spec = {}) {
+  if (typeof spec.onConfirm !== 'function') return false;
+  destructiveActionDialogState = {
+    kind: String(spec.kind || 'item'),
+    onConfirm: spec.onConfirm
+  };
+  setText('destructiveActionTitle', String(spec.title || 'Удалить объект?'));
+  setText('destructiveActionDeleteText', String(spec.deleteText || 'Выбранный объект будет удалён.'));
+  setText('destructiveActionKeepText', String(spec.keepText || 'Остальные данные не изменятся.'));
+  setText('destructiveActionRestoreText', String(spec.restoreText || 'Это действие нельзя отменить из приложения.'));
+  setText('destructiveActionConfirmBtn', String(spec.confirmLabel || 'Удалить'));
+  const dialog = $('destructiveActionDialog');
+  if (dialog) dialog.dataset.deleteKind = destructiveActionDialogState.kind;
+  showDialogSafely('destructiveActionDialog');
+  return true;
+}
+
+function closeDestructiveActionDialog() {
+  destructiveActionDialogState = null;
+  closeDialogSafely('destructiveActionDialog');
+  return true;
+}
+
+async function confirmDestructiveActionDialog() {
+  const state = destructiveActionDialogState;
+  if (!state?.onConfirm) return false;
+  destructiveActionDialogState = null;
+  closeDialogSafely('destructiveActionDialog');
+  return state.onConfirm();
 }
 
 function closeOfflineImportDialogs() {
@@ -2868,11 +2901,18 @@ function resetOfflineMapRuntimeAfterFileClear() {
 
 async function clearImportedOfflineMapFiles() {
   const mapCount = (rememberedPmtilesMapsState.maps || []).length;
-  const message = mapCount
-    ? `Удалить все импортированные файлы офлайн-карт и ${mapCount} записей из “Мои карты”? Грибные точки, маршруты, backup JSON, группы и чат не будут удалены.`
-    : 'Удалить все файлы офлайн-карт из локального хранилища приложения? Грибные точки, маршруты, backup JSON, группы и чат не будут удалены.';
-  if (!confirm(message)) return false;
+  return openDestructiveActionDialog({
+    kind: 'all-offline-maps',
+    title: mapCount ? `Удалить все офлайн-карты (${mapCount})?` : 'Удалить все файлы офлайн-карт?',
+    deleteText: 'Будут удалены только файлы офлайн-карт и соответствующие записи из «Мои карты».',
+    keepText: 'Сохранённые точки, маршруты, папки, группы, чат и backup JSON останутся.',
+    restoreText: 'Карты можно скачать или импортировать повторно.',
+    confirmLabel: 'Удалить офлайн-карты',
+    onConfirm: performClearImportedOfflineMapFiles
+  });
+}
 
+async function performClearImportedOfflineMapFiles() {
   const statusEl = $('offlineMapFilesClearStatus');
   const setClearStatus = (text) => {
     if (!statusEl) return;
@@ -3986,7 +4026,7 @@ function openOfflineDeleteMapDialog(recordId) {
   }
   pendingOfflineMapDeleteRecordId = target.id;
   setText('offlineDeleteMapTitle', `Удалить карту “${target.title || 'без названия'}”?`);
-  setText('offlineDeleteMapText', `Будет удалён файл ${target.fileName || 'карты'} из хранилища приложения. Точки, маршруты, группы и backup не изменятся.`);
+  setText('offlineDeleteMapText', `Будет удалён только файл ${target.fileName || 'карты'} из хранилища приложения. Точки, маршруты, группы и backup JSON останутся. Карту можно скачать или импортировать повторно.`);
   showDialogSafely('offlineDeleteMapDialog');
   return true;
 }
@@ -8539,18 +8579,27 @@ async function deleteSelectedSpotFromMapSheet() {
   if (!selectedMapObject || selectedMapObject.kind !== 'saved') return false;
   const spot = spots.find((item) => item.id === selectedMapObject.id);
   if (!spot) return false;
-  if (!confirm(`Удалить точку «${spot.name || 'Грибная точка'}»?`)) return false;
-  await removeSpot(spot.id);
-  selectedSpotId = null;
-  selectedMapObject = null;
-  savedSpotEditorOpen = false;
-  if (navLine) { navLine.remove(); navLine = null; }
-  setHidden('selectedCard', true);
-  setHidden('spotListDetailsCard', true);
-  await afterDataChanged();
-  renderMapObjectPanel();
-  updateActionButtonsUi();
-  return true;
+  return openDestructiveActionDialog({
+    kind: 'spot',
+    title: `Удалить точку «${spot.name || 'Грибная точка'}»?`,
+    deleteText: 'Будет удалена только эта сохранённая точка.',
+    keepText: 'Офлайн-карты, маршруты, папки и другие точки останутся.',
+    restoreText: 'Восстановить точку можно только из ранее сохранённого backup JSON.',
+    confirmLabel: 'Удалить точку',
+    onConfirm: async () => {
+      await removeSpot(spot.id);
+      selectedSpotId = null;
+      selectedMapObject = null;
+      savedSpotEditorOpen = false;
+      if (navLine) { navLine.remove(); navLine = null; }
+      setHidden('selectedCard', true);
+      setHidden('spotListDetailsCard', true);
+      await afterDataChanged();
+      renderMapObjectPanel();
+      updateActionButtonsUi();
+      return true;
+    }
+  });
 }
 
 async function savePickedMapPointFromMapSheet(shareAfterSave = false) {
@@ -9256,11 +9305,20 @@ function showTrackOnMap(id) {
 async function deleteTrack(id) {
   const track = tracks.find((item) => item.id === id);
   if (!track) return false;
-  if (!confirm(`Удалить маршрут «${track.name}»?`)) return false;
-  await removeTrack(id);
-  await afterTrackDataChanged();
-  setText('trackStatusText', 'Маршрут удалён. Грибные точки не изменялись.');
-  return true;
+  return openDestructiveActionDialog({
+    kind: 'track',
+    title: `Удалить маршрут «${track.name || 'Без названия'}»?`,
+    deleteText: 'Будет удалён только этот записанный маршрут.',
+    keepText: 'Сохранённые точки, офлайн-карты и другие маршруты останутся.',
+    restoreText: 'Восстановить маршрут можно только из ранее сохранённого backup JSON.',
+    confirmLabel: 'Удалить маршрут',
+    onConfirm: async () => {
+      await removeTrack(id);
+      await afterTrackDataChanged();
+      setText('trackStatusText', 'Маршрут удалён. Грибные точки не изменялись.');
+      return true;
+    }
+  });
 }
 
 window.showTrackOnMap = showTrackOnMap;
@@ -10160,7 +10218,7 @@ function renderSpotFolderDeleteDialog() {
   const moveBtnLabel = count ? 'Удалить папку и перенести метки' : 'Удалить пустую папку';
   setText('spotFolderDeleteMoveBtn', moveBtnLabel);
   setDisabled('spotFolderDeleteMoveBtn', Boolean(count) && !canMove);
-  const dangerText = `Точно удалить папку «${collection}» и метки внутри: ${formatSpotCountLabel(count)}?`;
+  const dangerText = `Будут удалены папка «${collection}» и метки внутри: ${formatSpotCountLabel(count)}. Офлайн-карты, маршруты и остальные папки останутся. Восстановить метки можно только из ранее сохранённого backup JSON.`;
   setText('spotFolderDeleteDangerTitle', `Удалить папку и метки?`);
   setText('spotFolderDeleteDangerText', dangerText);
 }
@@ -10869,19 +10927,28 @@ async function saveSpotListEditorChanges() {
 async function deleteSelectedFromSpotList() {
   const spot = getSelectedSpot();
   if (!spot) return false;
-  if (!confirm(`Удалить точку «${spot.name || 'Грибная точка'}»?`)) return false;
-  await removeSpot(spot.id);
-  if (selectedMapObject?.kind === 'saved' && selectedMapObject.id === spot.id) selectedMapObject = null;
-  selectedSpotId = null;
-  spotListEditorOpen = false;
-  savedSpotEditorOpen = false;
-  if (navLine) { navLine.remove(); navLine = null; }
-  setHidden('selectedCard', true);
-  setHidden('spotListDetailsCard', true);
-  await afterDataChanged();
-  renderMapObjectPanel();
-  updateActionButtonsUi();
-  return true;
+  return openDestructiveActionDialog({
+    kind: 'spot',
+    title: `Удалить точку «${spot.name || 'Грибная точка'}»?`,
+    deleteText: 'Будет удалена только эта сохранённая точка.',
+    keepText: 'Офлайн-карты, маршруты, папки и другие точки останутся.',
+    restoreText: 'Восстановить точку можно только из ранее сохранённого backup JSON.',
+    confirmLabel: 'Удалить точку',
+    onConfirm: async () => {
+      await removeSpot(spot.id);
+      if (selectedMapObject?.kind === 'saved' && selectedMapObject.id === spot.id) selectedMapObject = null;
+      selectedSpotId = null;
+      spotListEditorOpen = false;
+      savedSpotEditorOpen = false;
+      if (navLine) { navLine.remove(); navLine = null; }
+      setHidden('selectedCard', true);
+      setHidden('spotListDetailsCard', true);
+      await afterDataChanged();
+      renderMapObjectPanel();
+      updateActionButtonsUi();
+      return true;
+    }
+  });
 }
 
 function showSelectedSpotOnMap() {
@@ -11154,17 +11221,27 @@ async function importJson(file) {
 
 async function deleteSelected() {
   const spot = spots.find(s => s.id === selectedSpotId);
-  if (!spot) return;
-  if (!confirm(`Удалить точку «${spot.name}»?`)) return;
-  await removeSpot(spot.id);
-  selectedSpotId = null;
-  if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
-  savedSpotEditorOpen = false;
-  spotListEditorOpen = false;
-  $('selectedCard').hidden = true;
-  setHidden('spotListDetailsCard', true);
-  if (navLine) { navLine.remove(); navLine = null; }
-  await afterDataChanged();
+  if (!spot) return false;
+  return openDestructiveActionDialog({
+    kind: 'spot',
+    title: `Удалить точку «${spot.name || 'Грибная точка'}»?`,
+    deleteText: 'Будет удалена только эта сохранённая точка.',
+    keepText: 'Офлайн-карты, маршруты, папки и другие точки останутся.',
+    restoreText: 'Восстановить точку можно только из ранее сохранённого backup JSON.',
+    confirmLabel: 'Удалить точку',
+    onConfirm: async () => {
+      await removeSpot(spot.id);
+      selectedSpotId = null;
+      if (selectedMapObject?.kind === 'saved') selectedMapObject = null;
+      savedSpotEditorOpen = false;
+      spotListEditorOpen = false;
+      $('selectedCard').hidden = true;
+      setHidden('spotListDetailsCard', true);
+      if (navLine) { navLine.remove(); navLine = null; }
+      await afterDataChanged();
+      return true;
+    }
+  });
 }
 
 async function verifyFolderPermission(handle, write = false) {
@@ -12846,6 +12923,10 @@ function bindUi() {
   if ($('cancelDuplicateOfflineMapBtn')) $('cancelDuplicateOfflineMapBtn').onclick = cancelDuplicateOfflineMap;
   if ($('offlineDeleteMapCancelBtn')) $('offlineDeleteMapCancelBtn').onclick = closeOfflineDeleteMapDialog;
   if ($('offlineDeleteMapConfirmBtn')) $('offlineDeleteMapConfirmBtn').onclick = withButtonDiagnostics('offlineDeleteMapConfirmBtn', confirmOfflineDeleteMapDialog);
+  if ($('destructiveActionCancelBtn')) $('destructiveActionCancelBtn').onclick = closeDestructiveActionDialog;
+  if ($('destructiveActionConfirmBtn')) $('destructiveActionConfirmBtn').onclick = withButtonDiagnostics('destructiveActionConfirmBtn', confirmDestructiveActionDialog);
+  const destructiveActionDialog = $('destructiveActionDialog');
+  if (destructiveActionDialog) destructiveActionDialog.addEventListener('close', () => { destructiveActionDialogState = null; });
   const offlineDeleteMapDialog = $('offlineDeleteMapDialog');
   if (offlineDeleteMapDialog) offlineDeleteMapDialog.addEventListener('close', () => { pendingOfflineMapDeleteRecordId = null; });
   if ($('offlineRegionInstallConfirmCancelBtn')) $('offlineRegionInstallConfirmCancelBtn').onclick = closeOfflineRegionInstallConfirmDialog;

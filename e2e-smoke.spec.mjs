@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const EXPECTED_APP_VERSION = /^v0\.8\.6$/;
+const EXPECTED_APP_VERSION = /^v0\.8\.7$/;
 
 const EXTERNAL_RUNTIME_HOSTS = [
   'unpkg.com',
@@ -472,6 +472,40 @@ async function seedSpots(page) {
 }
 
 
+async function seedSingleTrack(page) {
+  await page.evaluate(async () => {
+    const DB_NAME = 'mushroom-spots-db';
+    const DB_VERSION = 4;
+    const TRACKS_STORE = 'tracks';
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    await new Promise((resolve, reject) => {
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(TRACKS_STORE, 'readwrite');
+        tx.objectStore(TRACKS_STORE).put({
+          id: 'e2e-preserved-track',
+          name: 'Маршрут для проверки удаления карты',
+          points: [
+            { lat: 56.95, lon: 24.10, timestamp: '2026-06-07T08:00:00.000Z' },
+            { lat: 56.951, lon: 24.101, timestamp: '2026-06-07T08:01:00.000Z' }
+          ],
+          pointCount: 2,
+          distanceMeters: 140,
+          startedAt: '2026-06-07T08:00:00.000Z',
+          endedAt: '2026-06-07T08:01:00.000Z',
+          createdAt: '2026-06-07T08:01:00.000Z',
+          updatedAt: '2026-06-07T08:01:00.000Z',
+          appVersion: '0.8.7'
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error || new Error('Track seed failed'));
+        tx.onabort = () => reject(tx.error || new Error('Track seed aborted'));
+      };
+    });
+  });
+}
+
 async function readLocalBackupState(page) {
   return page.evaluate(async () => {
     const DB_NAME = 'mushroom-spots-db';
@@ -622,7 +656,7 @@ async function expectOfflinePreviewNearViewportTop(page) {
 test('app loads and bottom navigation switches screens', async ({ page }) => {
   await bootApp(page);
 
-  await expect(page.locator('#appVersion')).toHaveText('v0.8.6');
+  await expect(page.locator('#appVersion')).toHaveText('v0.8.7');
   await expect(page.locator('#appVersion')).not.toContainText('Sprint');
 
   await expect(page.locator('#saveSpotFlowCard')).toBeVisible();
@@ -1081,11 +1115,49 @@ test('offline map manager imports, previews and deletes a local map', async ({ p
 
   await page.locator('#forgetRememberedPmtilesMapBtn').click();
   await expect(page.locator('#offlineDeleteMapDialog')).toBeVisible();
+  await expect(page.locator('#offlineDeleteMapTitle')).toContainText('Карелия север');
+  await expect(page.locator('#offlineDeleteMapText')).toContainText('только файл');
+  await expect(page.locator('#offlineDeleteMapText')).toContainText('Точки, маршруты, группы и backup JSON останутся');
+  await expect(page.locator('#offlineDeleteMapText')).toContainText('скачать или импортировать повторно');
+  await page.locator('#offlineDeleteMapCancelBtn').click();
+  await expect(page.locator('#offlineDeleteMapDialog')).toBeHidden();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+  await page.locator('#forgetRememberedPmtilesMapBtn').click();
   await page.locator('#offlineDeleteMapConfirmBtn').click();
   await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
   await expect(page.locator('#pmtilesPreviewPanel')).toBeHidden();
   await expect(page.locator('#offlineActiveMapDetails')).toBeHidden();
   await expect(page.locator('#offlineMapListSection')).toBeHidden();
+});
+
+
+test('deleting an offline map keeps saved spots and routes intact', async ({ page }) => {
+  await bootApp(page, { fakePmtilesRuntime: true });
+  await seedSpots(page);
+  await seedSingleTrack(page);
+  await page.reload();
+  await expect(page.locator('#appVersion')).toContainText(EXPECTED_APP_VERSION);
+
+  await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
+  await page.locator('#localPmtilesFileInput').setInputFiles({
+    name: 'preserve-data.pmtiles',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from(`PMTiles fake ${'x'.repeat(256)}`)
+  });
+  await expect(page.locator('#offlineImportNameDialog')).toBeVisible();
+  await page.locator('#offlineImportNameKeepBtn').click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('1 офлайн-карта');
+
+  await page.locator('#forgetRememberedPmtilesMapBtn').click();
+  await expect(page.locator('#offlineDeleteMapDialog')).toBeVisible();
+  await expect(page.locator('#offlineDeleteMapText')).toContainText('Точки, маршруты, группы и backup JSON останутся');
+  await page.locator('#offlineDeleteMapConfirmBtn').click();
+  await expect(page.locator('#offlineMapsCountPill')).toContainText('Офлайн-карт нет');
+
+  const state = await readLocalBackupState(page);
+  expect(state.spots).toHaveLength(3);
+  expect(state.tracks).toHaveLength(1);
+  expect(state.tracks[0].id).toBe('e2e-preserved-track');
 });
 
 
@@ -1252,8 +1324,14 @@ test('settings can emergency clear imported offline map files', async ({ page })
   await expect(page.getByRole('button', { name: 'Удалить файлы офлайн-карт' })).toBeVisible();
   await expect(page.locator('#offlineMapFilesClearStatus')).toContainText('Импортированных офлайн-карт: 1');
 
-  page.once('dialog', async (dialog) => { await dialog.accept(); });
   await page.getByRole('button', { name: 'Удалить файлы офлайн-карт' }).click();
+  await expect(page.locator('#destructiveActionDialog')).toBeVisible();
+  await expect(page.locator('#destructiveActionTitle')).toContainText('Удалить все офлайн-карты');
+  await expect(page.locator('#destructiveActionDeleteText')).toContainText('только файлы офлайн-карт');
+  await expect(page.locator('#destructiveActionKeepText')).toContainText('Сохранённые точки, маршруты, папки, группы, чат и backup JSON останутся');
+  await expect(page.locator('#destructiveActionRestoreText')).toContainText('скачать или импортировать повторно');
+  await expect(page.locator('#destructiveActionConfirmBtn')).toHaveText('Удалить офлайн-карты');
+  await page.locator('#destructiveActionConfirmBtn').click();
   await expect(page.locator('#offlineMapFilesClearStatus')).toContainText('Записи “Мои карты” очищены');
 
   await page.getByRole('button', { name: 'Офлайн', exact: true }).click();
@@ -2175,8 +2253,20 @@ test('saved spot map sheet opens spots section for edit and delete CRUD actions'
   await expect(page.locator('#spotListDetails')).toContainText('Разведка');
   await expect(page.locator('#spotsList')).toContainText('Белые у ручья — обновлено');
 
-  page.once('dialog', async (dialog) => { await dialog.accept(); });
   await page.locator('#spotListDeleteBtn').click();
+  await expect(page.locator('#destructiveActionDialog')).toBeVisible();
+  await expect(page.locator('#destructiveActionTitle')).toContainText('Белые у ручья — обновлено');
+  await expect(page.locator('#destructiveActionDeleteText')).toContainText('только эта сохранённая точка');
+  await expect(page.locator('#destructiveActionKeepText')).toContainText('Офлайн-карты, маршруты, папки и другие точки останутся');
+  await expect(page.locator('#destructiveActionRestoreText')).toContainText('backup JSON');
+  await expect(page.locator('#destructiveActionConfirmBtn')).toHaveText('Удалить точку');
+  await page.locator('#destructiveActionCancelBtn').click();
+  await expect(page.locator('#destructiveActionDialog')).toBeHidden();
+  await expect(page.locator('#spotListDetailsCard')).toBeVisible();
+  await expect(page.locator('#spotsList')).toContainText('Белые у ручья — обновлено');
+
+  await page.locator('#spotListDeleteBtn').click();
+  await page.locator('#destructiveActionConfirmBtn').click();
   await expect(page.locator('#spotListDetailsCard')).toBeHidden();
   await expect(page.locator('#spotCount')).toHaveText('1');
   await expect(page.locator('#spotsList')).not.toContainText('Белые у ручья — обновлено');
@@ -2266,9 +2356,14 @@ test('track recorder saves, reloads, draws and deletes a mocked GPS route', asyn
   await expect(page.locator('#screen-map')).toBeVisible();
   await expect(page.locator('#map')).toHaveAttribute('data-track-line-count', /[1-9]/);
 
-  page.once('dialog', async (dialog) => { await dialog.accept(); });
   await expect(page.locator('.track-item').filter({ hasText: 'Маршрут 1' }).getByRole('button', { name: 'Удалить' })).toBeVisible();
   await page.locator('.track-item').filter({ hasText: 'Маршрут 1' }).getByRole('button', { name: 'Удалить' }).click();
+  await expect(page.locator('#destructiveActionDialog')).toBeVisible();
+  await expect(page.locator('#destructiveActionTitle')).toContainText('Маршрут 1');
+  await expect(page.locator('#destructiveActionDeleteText')).toContainText('только этот записанный маршрут');
+  await expect(page.locator('#destructiveActionKeepText')).toContainText('Сохранённые точки, офлайн-карты и другие маршруты останутся');
+  await expect(page.locator('#destructiveActionConfirmBtn')).toHaveText('Удалить маршрут');
+  await page.locator('#destructiveActionConfirmBtn').click();
   await expect(page.locator('#trackList')).toContainText('Сохранённых маршрутов пока нет');
   state = await readLocalBackupState(page);
   expect(state.tracks).toEqual([]);
@@ -2464,6 +2559,8 @@ test('folder delete dialog can delete the folder and all contained spots', async
   await page.locator('#spotFolderDeleteAllRequestBtn').click();
   await expect(page.locator('#spotFolderDeleteDangerDialog')).toBeVisible();
   await expect(page.locator('#spotFolderDeleteDangerText')).toContainText('1 метка');
+  await expect(page.locator('#spotFolderDeleteDangerText')).toContainText('Офлайн-карты, маршруты и остальные папки останутся');
+  await expect(page.locator('#spotFolderDeleteDangerText')).toContainText('backup JSON');
   await page.locator('#spotFolderDeleteAllConfirmBtn').click();
 
   await expect(page.locator('#spotFolderDeleteDangerDialog')).toBeHidden();
@@ -2509,7 +2606,7 @@ test('local JSON backup export creates validated spots and custom folders withou
   const backup = await exportBackupViaSettings(page);
   expect(backup.schema).toBe('mushroom-spots.local-json-backup');
   expect(backup.schemaVersion).toBe(1);
-  expect(backup.appVersion).toBe('0.8.6');
+  expect(backup.appVersion).toBe('0.8.7');
   expect(new Date(backup.exportedAt).toString()).not.toBe('Invalid Date');
   expect(backup.validation).toMatchObject({ spotCount: 3, trackCount: 0, customCollectionCount: 1 });
   expect(backup.validation.checksum).toMatch(/^fnv1a32:[0-9a-f]{8}$/);
@@ -2640,7 +2737,7 @@ test('local JSON backup import rejects unsafe structure before any write', async
   await importJsonFileViaSettings(page, {
     schema: 'mushroom-spots.local-json-backup',
     schemaVersion: 1,
-    appVersion: '0.8.6',
+    appVersion: '0.8.7',
     exportedAt: '2026-06-01T00:00:00.000Z',
     validation: { spotCount: 1, customCollectionCount: 1, checksum: 'fnv1a32:00000000' },
     data: {

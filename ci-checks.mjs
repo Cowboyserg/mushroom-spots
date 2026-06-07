@@ -448,6 +448,30 @@ function checkExactShareAvailabilityContract() {
   }
 }
 
+function checkDestructiveActionConsequenceContract() {
+  const app = read('app.js');
+  const indexHtml = read('index.html');
+  const e2e = read('e2e-smoke.spec.mjs');
+
+  assertIncludes(indexHtml, 'id="destructiveActionDialog"', 'shared destructive action dialog');
+  assertIncludes(indexHtml, 'id="destructiveActionDeleteText"', 'destructive action deleted-scope text');
+  assertIncludes(indexHtml, 'id="destructiveActionKeepText"', 'destructive action preserved-scope text');
+  assertIncludes(indexHtml, 'id="destructiveActionRestoreText"', 'destructive action recovery text');
+  assertIncludes(app, 'function openDestructiveActionDialog(spec = {})', 'shared destructive action controller');
+  assertIncludes(app, "kind: 'spot'", 'saved spot destructive dialog');
+  assertIncludes(app, "kind: 'track'", 'route destructive dialog');
+  assertIncludes(app, "kind: 'all-offline-maps'", 'all offline maps destructive dialog');
+  assertIncludes(app, 'Карту можно скачать или импортировать повторно', 'single offline map recovery explanation');
+  assertIncludes(app, 'Восстановить точку можно только из ранее сохранённого backup JSON', 'spot recovery explanation');
+  assertIncludes(app, 'Восстановить маршрут можно только из ранее сохранённого backup JSON', 'route recovery explanation');
+  assertIncludes(e2e, 'deleting an offline map keeps saved spots and routes intact', 'offline map data preservation E2E oracle');
+  assertIncludes(e2e, "toHaveText('Удалить точку')", 'explicit spot delete action E2E oracle');
+  assertIncludes(e2e, "toHaveText('Удалить маршрут')", 'explicit route delete action E2E oracle');
+  if (pathExists('TEMP_UX_ROADMAP_2026-06-07.md')) {
+    assertIncludes(read('TEMP_UX_ROADMAP_2026-06-07.md'), '## Sprint 5.60 — Destructive Action Consequence Contract — completed', 'completed destructive consequence roadmap marker');
+  }
+}
+
 function checkControlledPwaUpdateContract() {
   const app = read('app.js');
   const indexHtml = read('index.html');
@@ -551,6 +575,7 @@ checkServiceWorkerCacheRules();
 checkControlledPwaUpdateContract();
 checkSharedSectionStatusContract();
 checkExactShareAvailabilityContract();
+checkDestructiveActionConsequenceContract();
 checkDependencyAndLockfilePolicy();
 checkWorkflowTemplate();
 checkNoUnexpectedBinaryFixtures();
